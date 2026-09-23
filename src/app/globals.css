@@ -1,0 +1,119 @@
+@import "tailwindcss";
+
+:root {
+  /* Default: Cyber Emerald (Neón Ciberseguridad / Stripe Radar) */
+  --bg-main: #04070d;
+  --bg-card: rgba(8, 14, 26, 0.78);
+  --bg-card-hover: rgba(12, 22, 40, 0.9);
+  --border-subtle: rgba(0, 245, 155, 0.12);
+  --border-hover: rgba(0, 245, 155, 0.35);
+  --accent-primary: #00f59b;
+  --accent-secondary: #06b6d4;
+  --accent-glow: rgba(0, 245, 155, 0.25);
+  --accent-gradient: linear-gradient(135deg, #00f59b 0%, #06b6d4 100%);
+  --accent-text: #00f59b;
+}
+
+[data-theme="gold"] {
+  /* Luxury Titanium & Gold (Mercury / Brex Private Wealth) */
+  --bg-main: #08080a;
+  --bg-card: rgba(18, 17, 15, 0.82);
+  --bg-card-hover: rgba(28, 26, 22, 0.95);
+  --border-subtle: rgba(245, 158, 11, 0.15);
+  --border-hover: rgba(245, 158, 11, 0.4);
+  --accent-primary: #f59e0b;
+  --accent-secondary: #d97706;
+  --accent-glow: rgba(245, 158, 11, 0.25);
+  --accent-gradient: linear-gradient(135deg, #fbbf24 0%, #d97706 100%);
+  --accent-text: #fbbf24;
+}
+
+[data-theme="crimson"] {
+  /* Crimson Defense (CrowdStrike / High-Sec War Room) */
+  --bg-main: #090609;
+  --bg-card: rgba(22, 10, 18, 0.82);
+  --bg-card-hover: rgba(35, 14, 28, 0.95);
+  --border-subtle: rgba(244, 63, 94, 0.15);
+  --border-hover: rgba(244, 63, 94, 0.45);
+  --accent-primary: #f43f5e;
+  --accent-secondary: #fb923c;
+  --accent-glow: rgba(244, 63, 94, 0.25);
+  --accent-gradient: linear-gradient(135deg, #f43f5e 0%, #fb923c 100%);
+  --accent-text: #f43f5e;
+}
+
+[data-theme="indigo"] {
+  /* Electric Indigo / Linear Deep Tech */
+  --bg-main: #070a14;
+  --bg-card: rgba(14, 20, 38, 0.8);
+  --bg-card-hover: rgba(22, 32, 60, 0.92);
+  --border-subtle: rgba(99, 102, 241, 0.15);
+  --border-hover: rgba(99, 102, 241, 0.4);
+  --accent-primary: #6366f1;
+  --accent-secondary: #38bdf8;
+  --accent-glow: rgba(99, 102, 241, 0.25);
+  --accent-gradient: linear-gradient(135deg, #6366f1 0%, #38bdf8 100%);
+  --accent-text: #818cf8;
+}
+
+body {
+  background-color: var(--bg-main);
+  color: #f1f5f9;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  overflow-x: hidden;
+  transition: background-color 0.4s ease, color 0.4s ease;
+}
+
+/* Custom modern scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0d121f;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+/* Dynamic theme glassmorphism */
+.glass-panel {
+  background: var(--bg-card);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--border-subtle);
+  transition: all 0.3s ease;
+}
+
+.glass-panel:hover {
+  border-color: var(--border-hover);
+}
+
+.theme-btn-primary {
+  background: var(--accent-gradient);
+  color: #000000;
+  font-weight: 700;
+  box-shadow: 0 4px 20px -2px var(--accent-glow);
+  transition: all 0.25s ease;
+}
+
+.theme-btn-primary:hover {
+  filter: brightness(1.12);
+  box-shadow: 0 6px 25px 0 var(--accent-glow);
+}
+
+.theme-accent-text {
+  color: var(--accent-text);
+}
+
+.theme-border {
+  border-color: var(--border-subtle);
+}
+
+.theme-glow {
+  box-shadow: 0 0 30px -5px var(--accent-glow);
+}

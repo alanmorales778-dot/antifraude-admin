@@ -1,0 +1,981 @@
+'use client';
+
+import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import {
+  FintechEntity,
+  IdentityNode,
+  SpecGraphEdge,
+  StoreAuditLog,
+  LookupResult,
+  IncidentCategory,
+  NetworkAlert,
+  AlertSeverity,
+  AlertStatus,
+  BlindAlertIdentifier,
+} from './types';
+import { computeHash, evaluateRisk, upsertIdentityNode, buildEdgesFromReport } from './fraudEngine';
+
+// ─────────────────────────────────────────────────────────────────
+// DATOS SEMILLA (del spec)
+// ─────────────────────────────────────────────────────────────────
+
+// Hashes pre-computados de los casos del spec usando el salt del consorcio.
+// Se calculan en runtime al inicializar el store si no existen en storage.
+const SEED_FINTECH_ALPHA: FintechEntity = {
+  id: 'fintech-alpha',
+  name: 'Fintech Alpha',
+  apiKey: 'antf_live_alpha_a1b2c3d4e5f6',
+  trustWeight: 1.0,
+  status: 'ACTIVE',
+  queriesCount: 142,
+  reportsCount: 3,
+  falsePositivesCount: 0,
+};
+
+const SEED_BANCO_BETA: FintechEntity = {
+  id: 'banco-beta',
+  name: 'Banco Beta',
+  apiKey: 'antf_live_beta_f6e5d4c3b2a1',
+  trustWeight: 0.8,
+  status: 'ACTIVE',
+  queriesCount: 87,
+  reportsCount: 1,
+  falsePositivesCount: 0,
+};
+
+const SEED_AUDIT_LOGS: StoreAuditLog[] = [
+  {
+    timestamp: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
+    actor: 'Fintech Alpha',
+    action: 'FRAUD_REPORT',
+    details: 'Reporte MULE_ACCOUNT ingresado — DNI: 30111222',
+  },
+  {
+    timestamp: new Date(Date.now() - 1000 * 60 * 10).toISOString(),
+    actor: 'Banco Beta',
+    action: 'LOOKUP',
+    details: 'Consulta de riesgo — EMAIL: estafador@gmail.com',
+  },
+  {
+    timestamp: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+    actor: 'SuperAdmin',
+    action: 'TRUST_WEIGHT_UPDATED',
+    details: 'Banco Beta: trustWeight ajustado a 0.8',
+  },
+];
+
+// ─────────────────────────────────────────────────────────────────
+// ALERTAS DE RED SEMILLA
+// ─────────────────────────────────────────────────────────────────
+
+export const SEED_NETWORK_ALERTS: NetworkAlert[] = [
+  {
+    id: 'alt-001',
+    code: 'ALT-2026-9041',
+    title: 'Triangulación Inmediata mediante Cuentas Mula Correlativas',
+    category: 'MULE_ACCOUNT',
+    severity: 'CRITICAL',
+    status: 'PENDING_REVIEW',
+    riskScore: 96,
+    createdAt: new Date(Date.now() - 1000 * 60 * 18).toISOString(),
+    lastActivityAt: new Date(Date.now() - 1000 * 60 * 3).toISOString(),
+    targetEntityId: 'all',
+    reportingEntitiesCount: 4,
+    reportingEntitiesNames: ['Entidad de Red #1', 'Entidad de Red #2', 'Entidad de Red #3', 'Entidad de Red #4'],
+    blindIdentifiers: [
+      {
+        type: 'DNI',
+        hash: 'b4a8e29f3c1d047a5e8b2c6d9f1a3e5c7b9d1f3a5e7b9c1d3e5f7a9b1c3d5e7f',
+        maskedPreview: 'DNI (Blind Hash)',
+        lookupsCount24h: 7,
+        velocityScore: 94,
+      },
+      {
+        type: 'EMAIL',
+        hash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+        maskedPreview: 'EMAIL (Blind Hash)',
+        lookupsCount24h: 5,
+        velocityScore: 90,
+      },
+      {
+        type: 'PHONE',
+        hash: 'a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0',
+        maskedPreview: 'PHONE (Blind Hash)',
+        lookupsCount24h: 4,
+        velocityScore: 88,
+      },
+      {
+        type: 'IP',
+        hash: 'f9e8d7c6b5a43210fedcba9876543210abcdef0123456789abcdef0123456789',
+        maskedPreview: 'IP Subnet (Proxy Residencial)',
+        lookupsCount24h: 12,
+        velocityScore: 96,
+      },
+    ],
+    triggerRule: {
+      ruleId: 'rule-1',
+      ruleName: 'Bloqueo Inmediato por Cuenta Mula Confirmada',
+      description: 'Detección de cuentas receptoras creadas en las últimas 48h con salida a exchange en < 2min.',
+      conditionHit: 'Tipo = MULA_DE_DINERO con severidad >= 4 y consenso >= 3 entidades independientes.',
+    },
+    telemetry: {
+      ipSubnet: '190.210.45.0/24 (Proxy Residencial Anónimo)',
+      asnName: 'AS7303 ISP Residencial',
+      deviceFarmSuspect: true,
+      vpnOrProxyDetected: true,
+      crossEntityVelocity: '48 transferencias cruzadas en 12 minutos entre billeteras de la red',
+    },
+    communityNotes: 'Patrón coordinado de apertura rápida de cuentas con destino inmediato de fondos a exchanges no regulados.',
+    recommendation: 'AUTO_BLOCK',
+  },
+  {
+    id: 'alt-002',
+    code: 'ALT-2026-8917',
+    title: 'Robo de Identidad y Synthetic ID en Onboarding Masivo',
+    category: 'IDENTITY_THEFT',
+    severity: 'HIGH',
+    status: 'PENDING_REVIEW',
+    riskScore: 88,
+    createdAt: new Date(Date.now() - 1000 * 60 * 52).toISOString(),
+    lastActivityAt: new Date(Date.now() - 1000 * 60 * 14).toISOString(),
+    targetEntityId: 'all',
+    reportingEntitiesCount: 3,
+    reportingEntitiesNames: ['Entidad de Red #1', 'Entidad de Red #2', 'Entidad de Red #3'],
+    blindIdentifiers: [
+      {
+        type: 'DNI',
+        hash: 'c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3',
+        maskedPreview: 'DNI (Blind Hash)',
+        lookupsCount24h: 9,
+        velocityScore: 85,
+      },
+      {
+        type: 'EMAIL',
+        hash: 'd4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5',
+        maskedPreview: 'EMAIL (Blind Hash)',
+        lookupsCount24h: 6,
+        velocityScore: 82,
+      },
+      {
+        type: 'DEVICE',
+        hash: 'dev_farm_771_8f9c12b7a9e0441d',
+        maskedPreview: 'Hardware Fingerprint (Emulador Android)',
+        lookupsCount24h: 18,
+        velocityScore: 95,
+      },
+    ],
+    triggerRule: {
+      ruleId: 'rule-2',
+      ruleName: 'Desafío Biométrico Multientidad',
+      description: 'Mismo documento presentado con diferentes emails y emuladores de hardware en varias instituciones.',
+      conditionHit: 'Risk Score > 80 AND Entidades que reportaron >= 2 con divergencia biométrica.',
+    },
+    telemetry: {
+      ipSubnet: '186.138.21.0/24 (Proxy Residencial)',
+      asnName: 'AS10481 ISP Residencial',
+      deviceFarmSuspect: true,
+      vpnOrProxyDetected: true,
+      crossEntityVelocity: '3 intentos en 3 instituciones en 15 minutos',
+    },
+    communityNotes: 'Dispositivo clasificado como emulador de hardware automatizado con rotación de huella digital GPU.',
+    recommendation: 'REQUIRE_BIOMETRICS',
+  },
+  {
+    id: 'alt-003',
+    code: 'ALT-2026-8802',
+    title: 'Campaña Activa de Phishing y Smishing de Red',
+    category: 'PHISHING',
+    severity: 'HIGH',
+    status: 'IN_ANALYSIS',
+    riskScore: 74,
+    createdAt: new Date(Date.now() - 1000 * 60 * 140).toISOString(),
+    lastActivityAt: new Date(Date.now() - 1000 * 60 * 25).toISOString(),
+    targetEntityId: 'all',
+    reportingEntitiesCount: 2,
+    reportingEntitiesNames: ['Entidad de Red #1', 'Entidad de Red #2'],
+    blindIdentifiers: [
+      {
+        type: 'PHONE',
+        hash: 'e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6',
+        maskedPreview: 'PHONE (Blind Hash)',
+        lookupsCount24h: 120,
+        velocityScore: 89,
+      },
+      {
+        type: 'IP',
+        hash: 'b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2',
+        maskedPreview: 'IP (Hostile Subnet)',
+        lookupsCount24h: 44,
+        velocityScore: 78,
+      },
+    ],
+    triggerRule: {
+      ruleId: 'rule-phish',
+      ruleName: 'Alerta Temprana de Smishing de Red',
+      description: 'Envío masivo de SMS engañosos para captura de credenciales y tokens 2FA.',
+      conditionHit: 'Más de 100 reportes telefónicos correlacionados en menos de 2 horas en la red comunitaria.',
+    },
+    telemetry: {
+      ipSubnet: '45.228.190.0/24 (Hosting Offshore)',
+      asnName: 'AS264667 Offshore Provider',
+      deviceFarmSuspect: false,
+      vpnOrProxyDetected: true,
+      crossEntityVelocity: '120 SMS de suplantación detectados',
+    },
+    communityNotes: 'Dominios suplantadores detectados y clasificados para bloqueo preventivo de transacciones.',
+    recommendation: 'REQUIRE_BIOMETRICS',
+  },
+  {
+    id: 'alt-004',
+    code: 'ALT-2026-8744',
+    title: 'Salto Anómalo de Velocidad y Retiro Repentino de Fondos',
+    category: 'SUSPICIOUS',
+    severity: 'MEDIUM',
+    status: 'PENDING_REVIEW',
+    riskScore: 62,
+    createdAt: new Date(Date.now() - 1000 * 60 * 260).toISOString(),
+    lastActivityAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
+    targetEntityId: 'all',
+    reportingEntitiesCount: 2,
+    reportingEntitiesNames: ['Entidad de Red #1', 'Entidad de Red #2'],
+    blindIdentifiers: [
+      {
+        type: 'EMAIL',
+        hash: 'f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8',
+        maskedPreview: 'EMAIL (Blind Hash)',
+        lookupsCount24h: 6,
+        velocityScore: 68,
+      },
+      {
+        type: 'IP',
+        hash: 'a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0',
+        maskedPreview: 'IP (Blind Hash)',
+        lookupsCount24h: 6,
+        velocityScore: 65,
+      },
+    ],
+    triggerRule: {
+      ruleId: 'rule-3',
+      ruleName: 'Auto-pausa Preventiva de Fondos (Kill-Switch 45s)',
+      description: 'Operación financiera de monto alto inmediatamente después de cambio de contraseña o dispositivo.',
+      conditionHit: 'Risk Score >= 60 AND Salto de IP geográfica a más de 400km en 30 minutos.',
+    },
+    telemetry: {
+      ipSubnet: '186.138.21.0/24',
+      asnName: 'AS10481 ISP Residencial',
+      deviceFarmSuspect: false,
+      vpnOrProxyDetected: false,
+      crossEntityVelocity: '6 transacciones sucesivas en 5 minutos',
+    },
+    communityNotes: 'Retención cautelar de 45s aplicada por motor de red. Se recomienda validación biométrica.',
+    recommendation: 'DELAY_FUNDS',
+  },
+  {
+    id: 'alt-005',
+    code: 'ALT-2026-8610',
+    title: 'Contracargo Comercial en Disputa Aclarado y Rehabilitado',
+    category: 'CHARGEBACK',
+    severity: 'LOW',
+    status: 'DISMISSED_FP',
+    riskScore: 12,
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 28).toISOString(),
+    lastActivityAt: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString(),
+    targetEntityId: 'all',
+    reportingEntitiesCount: 1,
+    reportingEntitiesNames: ['Entidad de Red #1'],
+    blindIdentifiers: [
+      {
+        type: 'DNI',
+        hash: '1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b',
+        maskedPreview: 'DNI (Blind Hash)',
+        lookupsCount24h: 1,
+        velocityScore: 10,
+      },
+      {
+        type: 'EMAIL',
+        hash: '2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c',
+        maskedPreview: 'EMAIL (Blind Hash)',
+        lookupsCount24h: 1,
+        velocityScore: 10,
+      },
+    ],
+    triggerRule: {
+      ruleId: 'rule-fp',
+      ruleName: 'Protocolo de Rehabilitación y Corrección de Falso Positivo',
+      description: 'El reclamo fue originado por error involuntario del emisor comercial.',
+      conditionHit: 'Presentación de descargo formal firmado con hash ZK por la entidad emisora.',
+    },
+    telemetry: {
+      ipSubnet: '190.210.12.0/24 (Residencial Legítimo)',
+      asnName: 'AS27747 ISP Residencial',
+      deviceFarmSuspect: false,
+      vpnOrProxyDetected: false,
+      crossEntityVelocity: 'Operación normal de comercio',
+    },
+    communityNotes: 'Disputa aclarada por descargo formal. Identificador restituido a reputación limpia.',
+    recommendation: 'NOTIFY_ANALYST',
+    resolution: {
+      resolvedAt: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString(),
+      resolvedByRole: 'Analista L2 (Entidad Participante)',
+      actionTaken: 'Falso Positivo aceptado — Score saneado a 12',
+      notes: 'Factura comercial y verificación de titularidad verificadas en canal seguro.',
+    },
+  },
+];
+
+// ─────────────────────────────────────────────────────────────────
+// INTERFACES DEL STORE
+// ─────────────────────────────────────────────────────────────────
+
+export type ActiveRole = 'ADMIN' | 'FINTECH';
+
+interface ConsortiumStore {
+  // ── Estado de datos ────────────────────────────────────────────
+  fintechs: FintechEntity[];
+  identityNodes: IdentityNode[];
+  graphEdges: SpecGraphEdge[];
+  auditLogs: StoreAuditLog[];
+  lastLookupResult: LookupResult | null;
+  seedReady: boolean;
+
+  // ── Estado de UI ───────────────────────────────────────────────
+  activeRole: ActiveRole;
+  activeFintechId: string;
+
+  // ── Acciones Admin ─────────────────────────────────────────────
+  addFintech: (name: string) => FintechEntity;
+  updateTrustWeight: (id: string, weight: number) => void;
+  toggleFintechStatus: (id: string) => void;
+
+  // ── Acciones Fintech ───────────────────────────────────────────
+  lookupIdentity: (params: {
+    dni?: string;
+    email?: string;
+    phone?: string;
+  }) => Promise<LookupResult>;
+
+  reportFraud: (params: {
+    dni?: string;
+    email?: string;
+    phone?: string;
+    incidentCategory: IncidentCategory;
+  }) => Promise<void>;
+
+  markFalsePositive: (edgeId: string) => void;
+
+  importCSV: (csvText: string) => Promise<{ imported: number; errors: number }>;
+
+  // ── Alertas de Red Comunitarias ─────────────────────────────
+  networkAlerts: NetworkAlert[];
+  updateAlertStatus: (alertId: string, status: AlertStatus, notes?: string) => void;
+  confirmAndBlockAlert: (alertId: string, notes?: string) => void;
+  challengeAlert2FA: (alertId: string, notes?: string) => void;
+  dismissAlertAsFP: (alertId: string, reason: string) => void;
+
+  // ── Acciones UI ────────────────────────────────────────────────
+  setActiveRole: (role: ActiveRole) => void;
+  setActiveFintechId: (id: string) => void;
+
+  // ── Inicialización de semillas async ──────────────────────────
+  initSeedData: () => Promise<void>;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// HELPERS INTERNOS
+// ─────────────────────────────────────────────────────────────────
+
+function generateApiKey(name: string): string {
+  const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 6);
+  const rand = Math.random().toString(36).slice(2, 10);
+  return `antf_live_${slug}_${rand}`;
+}
+
+function addAuditEntry(
+  logs: StoreAuditLog[],
+  actor: string,
+  action: string,
+  details: string
+): StoreAuditLog[] {
+  const entry: StoreAuditLog = {
+    timestamp: new Date().toISOString(),
+    actor,
+    action,
+    details,
+  };
+  const updated = [entry, ...logs];
+  // Mantener máximo 200 entradas
+  return updated.slice(0, 200);
+}
+
+// ─────────────────────────────────────────────────────────────────
+// STORE ZUSTAND CON PERSIST
+// ─────────────────────────────────────────────────────────────────
+
+export const useConsortiumStore = create<ConsortiumStore>()(
+  persist(
+    (set, get) => ({
+      // ── Estado inicial ─────────────────────────────────────────
+      fintechs: [SEED_FINTECH_ALPHA, SEED_BANCO_BETA],
+      identityNodes: [],
+      graphEdges: [],
+      auditLogs: SEED_AUDIT_LOGS,
+      networkAlerts: SEED_NETWORK_ALERTS,
+      lastLookupResult: null,
+      seedReady: false,
+
+      activeRole: 'FINTECH',
+      activeFintechId: 'fintech-alpha',
+
+      // ── Inicialización de semillas async ──────────────────────
+      initSeedData: async () => {
+        if (get().seedReady) return;
+
+        // Pre-computar hashes de los casos del spec
+        const dniHash = await computeHash('DNI', '30111222');
+        const emailHash = await computeHash('EMAIL', 'estafador@gmail.com');
+        const phoneHash = await computeHash('PHONE', '+5491122334455');
+
+        const dniLegitHash = await computeHash('DNI', '40999888');
+        const emailLegitHash = await computeHash('EMAIL', 'juan.perez@empresa.com');
+
+        const now = new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString(); // 3 días atrás
+
+        // Nodos de identidad del caso fraude
+        const fraudNodes: IdentityNode[] = [
+          {
+            type: 'DNI',
+            hash: dniHash,
+            firstSeen: now,
+            lastSeen: now,
+            totalLookups: 5,
+            lookupsLastHour: 0,
+          },
+          {
+            type: 'EMAIL',
+            hash: emailHash,
+            firstSeen: now,
+            lastSeen: now,
+            totalLookups: 3,
+            lookupsLastHour: 0,
+          },
+          {
+            type: 'PHONE',
+            hash: phoneHash,
+            firstSeen: now,
+            lastSeen: now,
+            totalLookups: 2,
+            lookupsLastHour: 0,
+          },
+        ];
+
+        // Nodos del caso legítimo
+        const legitNodes: IdentityNode[] = [
+          {
+            type: 'DNI',
+            hash: dniLegitHash,
+            firstSeen: now,
+            lastSeen: now,
+            totalLookups: 1,
+            lookupsLastHour: 0,
+          },
+          {
+            type: 'EMAIL',
+            hash: emailLegitHash,
+            firstSeen: now,
+            lastSeen: now,
+            totalLookups: 1,
+            lookupsLastHour: 0,
+          },
+        ];
+
+        // Aristas del grafo — caso fraude reportado por Fintech Alpha
+        const fraudEdges: SpecGraphEdge[] = [
+          {
+            id: 'edge-seed-001',
+            sourceHash: dniHash,
+            targetHash: emailHash,
+            reportedByEntityId: 'fintech-alpha',
+            incidentCategory: 'MULE_ACCOUNT',
+            timestamp: now,
+            isFalsePositive: false,
+          },
+          {
+            id: 'edge-seed-002',
+            sourceHash: dniHash,
+            targetHash: phoneHash,
+            reportedByEntityId: 'fintech-alpha',
+            incidentCategory: 'MULE_ACCOUNT',
+            timestamp: now,
+            isFalsePositive: false,
+          },
+          {
+            id: 'edge-seed-003',
+            sourceHash: emailHash,
+            targetHash: phoneHash,
+            reportedByEntityId: 'fintech-alpha',
+            incidentCategory: 'MULE_ACCOUNT',
+            timestamp: now,
+            isFalsePositive: false,
+          },
+        ];
+
+        set({
+          identityNodes: [...fraudNodes, ...legitNodes],
+          graphEdges: fraudEdges,
+          seedReady: true,
+        });
+      },
+
+      // ── Acciones Admin ────────────────────────────────────────
+
+      addFintech: (name: string) => {
+        const newFintech: FintechEntity = {
+          id: `fintech-${Date.now()}`,
+          name,
+          apiKey: generateApiKey(name),
+          trustWeight: 0.7,
+          status: 'ACTIVE',
+          queriesCount: 0,
+          reportsCount: 0,
+          falsePositivesCount: 0,
+        };
+
+        set(state => ({
+          fintechs: [...state.fintechs, newFintech],
+          auditLogs: addAuditEntry(
+            state.auditLogs,
+            'SuperAdmin',
+            'FINTECH_ADDED',
+            `Nueva entidad registrada: ${name}`
+          ),
+        }));
+
+        return newFintech;
+      },
+
+      updateTrustWeight: (id: string, weight: number) => {
+        const clamped = Math.min(1, Math.max(0, weight));
+        set(state => ({
+          fintechs: state.fintechs.map(f =>
+            f.id === id ? { ...f, trustWeight: clamped } : f
+          ),
+          auditLogs: addAuditEntry(
+            state.auditLogs,
+            'SuperAdmin',
+            'TRUST_WEIGHT_UPDATED',
+            `${state.fintechs.find(f => f.id === id)?.name || id}: trustWeight → ${clamped.toFixed(2)}`
+          ),
+        }));
+      },
+
+      toggleFintechStatus: (id: string) => {
+        set(state => {
+          const fintech = state.fintechs.find(f => f.id === id);
+          if (!fintech) return state;
+          const newStatus = fintech.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
+          return {
+            fintechs: state.fintechs.map(f =>
+              f.id === id ? { ...f, status: newStatus } : f
+            ),
+            auditLogs: addAuditEntry(
+              state.auditLogs,
+              'SuperAdmin',
+              'STATUS_CHANGED',
+              `${fintech.name}: ${fintech.status} → ${newStatus}`
+            ),
+          };
+        });
+      },
+
+      // ── Acciones Fintech ──────────────────────────────────────
+
+      lookupIdentity: async ({ dni, email, phone }) => {
+        const state = get();
+        const fintechId = state.activeFintechId;
+        const fintech = state.fintechs.find(f => f.id === fintechId);
+
+        const result = await evaluateRisk({
+          dni,
+          email,
+          phone,
+          fintechId,
+          fintechs: state.fintechs,
+          identityNodes: state.identityNodes,
+          graphEdges: state.graphEdges,
+        });
+
+        // Actualizar nodos con el lookup
+        let updatedNodes = state.identityNodes;
+        if (result.dniHash)
+          updatedNodes = upsertIdentityNode(updatedNodes, 'DNI', result.dniHash, true);
+        if (result.emailHash)
+          updatedNodes = upsertIdentityNode(updatedNodes, 'EMAIL', result.emailHash, true);
+        if (result.phoneHash)
+          updatedNodes = upsertIdentityNode(updatedNodes, 'PHONE', result.phoneHash, true);
+
+        const actorName = fintech?.name || fintechId;
+        const identifiers = [
+          dni ? `DNI: ${dni}` : null,
+          email ? `EMAIL: ${email}` : null,
+          phone ? `PHONE: ${phone}` : null,
+        ]
+          .filter(Boolean)
+          .join(', ');
+
+        set(state2 => ({
+          identityNodes: updatedNodes,
+          lastLookupResult: result,
+          fintechs: state2.fintechs.map(f =>
+            f.id === fintechId ? { ...f, queriesCount: f.queriesCount + 1 } : f
+          ),
+          auditLogs: addAuditEntry(
+            state2.auditLogs,
+            actorName,
+            'LOOKUP',
+            `Consulta de riesgo — ${identifiers} → Score: ${result.breakdown.finalScore} (${result.breakdown.riskLevel})`
+          ),
+        }));
+
+        return result;
+      },
+
+      reportFraud: async ({ dni, email, phone, incidentCategory }) => {
+        const state = get();
+        const fintechId = state.activeFintechId;
+        const fintech = state.fintechs.find(f => f.id === fintechId);
+
+        if (fintech?.status === 'SUSPENDED') {
+          throw new Error('Entidad suspendida — no puede reportar fraudes.');
+        }
+
+        // Computar hashes
+        const dniHash = dni ? await computeHash('DNI', dni) : null;
+        const emailHash = email ? await computeHash('EMAIL', email) : null;
+        const phoneHash = phone ? await computeHash('PHONE', phone) : null;
+
+        // Crear aristas del grafo
+        const newEdges = buildEdgesFromReport({
+          dniHash,
+          emailHash,
+          phoneHash,
+          reportedByEntityId: fintechId,
+          incidentCategory,
+        });
+
+        // Actualizar nodos (sin contar como lookup)
+        let updatedNodes = state.identityNodes;
+        if (dniHash) updatedNodes = upsertIdentityNode(updatedNodes, 'DNI', dniHash, false);
+        if (emailHash) updatedNodes = upsertIdentityNode(updatedNodes, 'EMAIL', emailHash, false);
+        if (phoneHash) updatedNodes = upsertIdentityNode(updatedNodes, 'PHONE', phoneHash, false);
+
+        const actorName = fintech?.name || fintechId;
+        const identifiers = [
+          dni ? `DNI: ${dni}` : null,
+          email ? `EMAIL: ${email}` : null,
+          phone ? `PHONE: ${phone}` : null,
+        ]
+          .filter(Boolean)
+          .join(', ');
+
+        set(state2 => ({
+          graphEdges: [...state2.graphEdges, ...newEdges],
+          identityNodes: updatedNodes,
+          fintechs: state2.fintechs.map(f =>
+            f.id === fintechId ? { ...f, reportsCount: f.reportsCount + 1 } : f
+          ),
+          auditLogs: addAuditEntry(
+            state2.auditLogs,
+            actorName,
+            'FRAUD_REPORT',
+            `Reporte ${incidentCategory} ingresado — ${identifiers} (${newEdges.length} aristas creadas)`
+          ),
+        }));
+      },
+
+      markFalsePositive: (edgeId: string) => {
+        set(state => {
+          const edge = state.graphEdges.find(e => e.id === edgeId);
+          if (!edge) return state;
+
+          const fintech = state.fintechs.find(f => f.id === edge.reportedByEntityId);
+
+          return {
+            graphEdges: state.graphEdges.map(e =>
+              e.id === edgeId ? { ...e, isFalsePositive: true } : e
+            ),
+            fintechs: state.fintechs.map(f =>
+              f.id === edge.reportedByEntityId
+                ? { ...f, falsePositivesCount: f.falsePositivesCount + 1 }
+                : f
+            ),
+            auditLogs: addAuditEntry(
+              state.auditLogs,
+              fintech?.name || edge.reportedByEntityId,
+              'FALSE_POSITIVE_MARKED',
+              `Arista ${edgeId} marcada como falso positivo — impacto revertido en el score de red`
+            ),
+          };
+        });
+      },
+
+      importCSV: async (csvText: string) => {
+        const state = get();
+        const fintechId = state.activeFintechId;
+        const fintech = state.fintechs.find(f => f.id === fintechId);
+
+        if (fintech?.status === 'SUSPENDED') {
+          throw new Error('Entidad suspendida — no puede importar reportes masivos.');
+        }
+
+        const lines = csvText
+          .split('\n')
+          .map(l => l.trim())
+          .filter(l => l.length > 0);
+
+        let imported = 0;
+        let errors = 0;
+
+        const newEdgesAll: SpecGraphEdge[] = [];
+        let updatedNodes = state.identityNodes;
+
+        for (const line of lines) {
+          // Soporte para formatos: dni,email,phone,category o solo identificadores
+          const parts = line.split(',').map(p => p.trim());
+          if (parts.length < 2) {
+            errors++;
+            continue;
+          }
+
+          try {
+            const [rawDni, rawEmail, rawPhone, rawCategory] = parts;
+            const category =
+              (rawCategory?.toUpperCase() as IncidentCategory) || 'SUSPICIOUS';
+
+            const validCategories: IncidentCategory[] = [
+              'MULE_ACCOUNT',
+              'IDENTITY_THEFT',
+              'CHARGEBACK',
+              'PHISHING',
+              'SUSPICIOUS',
+            ];
+
+            const incidentCategory = validCategories.includes(category)
+              ? category
+              : 'SUSPICIOUS';
+
+            const dniHash = rawDni ? await computeHash('DNI', rawDni) : null;
+            const emailHash = rawEmail ? await computeHash('EMAIL', rawEmail) : null;
+            const phoneHash = rawPhone ? await computeHash('PHONE', rawPhone) : null;
+
+            if (!dniHash && !emailHash && !phoneHash) {
+              errors++;
+              continue;
+            }
+
+            const edges = buildEdgesFromReport({
+              dniHash,
+              emailHash,
+              phoneHash,
+              reportedByEntityId: fintechId,
+              incidentCategory,
+            });
+
+            newEdgesAll.push(...edges);
+
+            if (dniHash) updatedNodes = upsertIdentityNode(updatedNodes, 'DNI', dniHash, false);
+            if (emailHash) updatedNodes = upsertIdentityNode(updatedNodes, 'EMAIL', emailHash, false);
+            if (phoneHash) updatedNodes = upsertIdentityNode(updatedNodes, 'PHONE', phoneHash, false);
+
+            imported++;
+          } catch {
+            errors++;
+          }
+        }
+
+        const actorName = fintech?.name || fintechId;
+
+        set(state2 => ({
+          graphEdges: [...state2.graphEdges, ...newEdgesAll],
+          identityNodes: updatedNodes,
+          fintechs: state2.fintechs.map(f =>
+            f.id === fintechId
+              ? { ...f, reportsCount: f.reportsCount + imported }
+              : f
+          ),
+          auditLogs: addAuditEntry(
+            state2.auditLogs,
+            actorName,
+            'CSV_IMPORT',
+            `Importación masiva: ${imported} registros ingresados, ${errors} errores`
+          ),
+        }));
+
+        return { imported, errors };
+      },
+
+      // ── Acciones Alertas de Red ──────────────────────────────
+
+      updateAlertStatus: (alertId: string, status: AlertStatus, notes?: string) => {
+        const { fintechs, activeFintechId } = get();
+        const activeEntity = fintechs.find(f => f.id === activeFintechId)?.name || 'Entidad Activa';
+
+        set(state => ({
+          networkAlerts: state.networkAlerts.map(alert =>
+            alert.id === alertId
+              ? {
+                  ...alert,
+                  status,
+                  lastActivityAt: new Date().toISOString(),
+                  resolution: {
+                    resolvedAt: new Date().toISOString(),
+                    resolvedByRole: `${activeEntity} (Analista)`,
+                    actionTaken: `Estado cambiado a ${status}`,
+                    notes: notes || alert.resolution?.notes,
+                  },
+                }
+              : alert
+          ),
+          auditLogs: addAuditEntry(
+            state.auditLogs,
+            activeEntity,
+            'ALERT_STATUS_UPDATE',
+            `Alerta ${alertId} actualizada a ${status}${notes ? ` — ${notes}` : ''}`
+          ),
+        }));
+      },
+
+      confirmAndBlockAlert: (alertId: string, notes?: string) => {
+        const { fintechs, activeFintechId } = get();
+        const activeEntity = fintechs.find(f => f.id === activeFintechId)?.name || 'Entidad Activa';
+
+        set(state => {
+          const target = state.networkAlerts.find(a => a.id === alertId);
+          return {
+            networkAlerts: state.networkAlerts.map(alert =>
+              alert.id === alertId
+                ? {
+                    ...alert,
+                    status: 'CONFIRMED_BLOCKED',
+                    lastActivityAt: new Date().toISOString(),
+                    resolution: {
+                      resolvedAt: new Date().toISOString(),
+                      resolvedByRole: `${activeEntity} (Analista de Riesgo)`,
+                      actionTaken: 'Fraude Confirmado y Bloqueo Preventivo Ejecutado',
+                      notes: notes || 'Bloqueo preventivo de cuentas y retroalimentación al consorcio.',
+                    },
+                  }
+                : alert
+            ),
+            fintechs: state.fintechs.map(f =>
+              f.id === activeFintechId
+                ? { ...f, reportsCount: f.reportsCount + 1 }
+                : f
+            ),
+            auditLogs: addAuditEntry(
+              state.auditLogs,
+              activeEntity,
+              'ALERT_CONFIRMED_BLOCK',
+              `Alerta ${target?.code || alertId} confirmada como Fraude. Bloqueo aplicado.${notes ? ` Motivo: ${notes}` : ''}`
+            ),
+          };
+        });
+      },
+
+      challengeAlert2FA: (alertId: string, notes?: string) => {
+        const { fintechs, activeFintechId } = get();
+        const activeEntity = fintechs.find(f => f.id === activeFintechId)?.name || 'Entidad Activa';
+
+        set(state => {
+          const target = state.networkAlerts.find(a => a.id === alertId);
+          return {
+            networkAlerts: state.networkAlerts.map(alert =>
+              alert.id === alertId
+                ? {
+                    ...alert,
+                    status: 'CHALLENGED_2FA',
+                    lastActivityAt: new Date().toISOString(),
+                    resolution: {
+                      resolvedAt: new Date().toISOString(),
+                      resolvedByRole: `${activeEntity} (Analista)`,
+                      actionTaken: 'Desafío Biométrico Facial 2FA Exigido',
+                      notes: notes || 'Fricción preventiva: validación de prueba de vida requerida para operar.',
+                    },
+                  }
+                : alert
+            ),
+            auditLogs: addAuditEntry(
+              state.auditLogs,
+              activeEntity,
+              'ALERT_CHALLENGED_2FA',
+              `Desafío biométrico 2FA aplicado sobre alerta ${target?.code || alertId}`
+            ),
+          };
+        });
+      },
+
+      dismissAlertAsFP: (alertId: string, reason: string) => {
+        const { fintechs, activeFintechId } = get();
+        const activeEntity = fintechs.find(f => f.id === activeFintechId)?.name || 'Entidad Activa';
+
+        set(state => {
+          const target = state.networkAlerts.find(a => a.id === alertId);
+          return {
+            networkAlerts: state.networkAlerts.map(alert =>
+              alert.id === alertId
+                ? {
+                    ...alert,
+                    status: 'DISMISSED_FP',
+                    riskScore: Math.min(alert.riskScore, 15),
+                    lastActivityAt: new Date().toISOString(),
+                    resolution: {
+                      resolvedAt: new Date().toISOString(),
+                      resolvedByRole: `${activeEntity} (Analista L2)`,
+                      actionTaken: 'Descartada como Falso Positivo / Reputación Saneada',
+                      notes: reason,
+                    },
+                  }
+                : alert
+            ),
+            fintechs: state.fintechs.map(f =>
+              f.id === activeFintechId
+                ? { ...f, falsePositivesCount: f.falsePositivesCount + 1 }
+                : f
+            ),
+            auditLogs: addAuditEntry(
+              state.auditLogs,
+              activeEntity,
+              'ALERT_DISMISSED_FP',
+              `Alerta ${target?.code || alertId} marcada como Falso Positivo. Motivo: ${reason}`
+            ),
+          };
+        });
+      },
+
+      // ── Acciones UI ──────────────────────────────────────────
+
+      setActiveRole: (role: ActiveRole) => {
+        set({ activeRole: role });
+      },
+
+      setActiveFintechId: (id: string) => {
+        set({ activeFintechId: id });
+      },
+    }),
+    {
+      name: 'antifraude-consortium-store-v1',
+      storage: createJSONStorage(() => localStorage),
+      // Serializar todo excepto `lastLookupResult` para no inflar el storage
+      partialize: state => ({
+        fintechs: state.fintechs,
+        identityNodes: state.identityNodes,
+        graphEdges: state.graphEdges,
+        networkAlerts: state.networkAlerts,
+        auditLogs: state.auditLogs,
+        activeRole: state.activeRole,
+        activeFintechId: state.activeFintechId,
+        seedReady: state.seedReady,
+      }),
+    }
+  )
+);
