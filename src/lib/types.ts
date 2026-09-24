@@ -50,6 +50,19 @@ export interface ScoreBreakdown {
   historicalReportsScore: number;
   mismatchPenalty: number;
   velocityPenalty: number;
+  emailPenalty?: number;
+  emailVerification?: {
+    email: string;
+    domain: string;
+    status: 'EXISTING' | 'NON_EXISTENT' | 'DISPOSABLE' | 'INVALID_FORMAT';
+    isDeliverable: boolean;
+    isDisposable: boolean;
+    mxValid: boolean;
+    scorePenalty: number;
+    badgeText: string;
+    alertTitle?: string;
+    alertMessage?: string;
+  } | null;
   finalScore: number;
   riskLevel: 'BAJO' | 'MEDIO' | 'ALTO';
   mismatchDetected: boolean;
