@@ -30,18 +30,20 @@ import { useConsortiumStore } from '@/lib/store';
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, description: 'KPIs y estadísticas' },
-  { id: 'consulta', label: 'Consulta de Riesgo', icon: Search, description: 'Lookup unitario ZK' },
+  { id: 'consulta', label: 'Consulta de Riesgo', icon: Search, description: 'Lookup unitario y combinado ZK' },
+  { id: 'consulta_masiva', label: 'Consulta Masiva CSV', icon: Upload, description: 'Evaluación masiva con layout' },
   { id: 'reporte', label: 'Reportar Fraude', icon: ShieldAlert, description: 'Ingreso de incidentes' },
-  { id: 'csv', label: 'Importación CSV', icon: Upload, description: 'Carga masiva' },
+  { id: 'csv', label: 'Importación CSV', icon: Upload, description: 'Carga masiva de fraudes' },
   { id: 'historial', label: 'Historial', icon: History, description: 'Mis reportes' },
   { id: 'analytics', label: 'Analytics', icon: TrendingUp, description: 'Inteligencia de amenazas' },
   { id: 'api', label: 'API & Webhooks', icon: Key, description: 'Integración y claves' },
 ];
 
 // Mapea cada tab al módulo dentro de FintechDashboard
-type FintechModule = 'lookup' | 'report' | 'csv' | 'history';
+type FintechModule = 'lookup' | 'bulk_lookup' | 'report' | 'csv' | 'history';
 const TAB_TO_MODULE: Record<string, FintechModule> = {
   consulta: 'lookup',
+  consulta_masiva: 'bulk_lookup',
   reporte: 'report',
   csv: 'csv',
   historial: 'history',
@@ -260,3 +262,4 @@ export default function EntityPortal({
     </div>
   );
 }
+
