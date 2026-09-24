@@ -66,6 +66,10 @@ export function normalizeIdentifier(
     case 'IP':
       return trimmed;
 
+    case 'CBU':
+      // CBU / CVU argentino: 22 dígitos numéricos sin espacios ni guiones
+      return trimmed.replace(/\D/g, '');
+
     default:
       return trimmed.toLowerCase();
   }
@@ -172,3 +176,4 @@ export function generateCryptographicProof(
     );
   }
 }
+
