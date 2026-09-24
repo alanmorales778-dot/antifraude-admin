@@ -264,8 +264,21 @@ export function buildEdgesFromReport(params: {
   ipHash?: string | null;
   reportedByEntityId: string;
   incidentCategory: IncidentCategory;
+  uploadedFields?: string;
+  uploadMethod?: 'MANUAL' | 'CSV_BULK' | 'API';
+  entityName?: string;
 }): SpecGraphEdge[] {
-  const { dniHash, emailHash, phoneHash, ipHash, reportedByEntityId, incidentCategory } = params;
+  const {
+    dniHash,
+    emailHash,
+    phoneHash,
+    ipHash,
+    reportedByEntityId,
+    incidentCategory,
+    uploadedFields,
+    uploadMethod = 'MANUAL',
+    entityName,
+  } = params;
   const hashes = [dniHash, emailHash, phoneHash, ipHash].filter(Boolean) as string[];
   const edges: SpecGraphEdge[] = [];
   const now = new Date().toISOString();
@@ -280,6 +293,9 @@ export function buildEdgesFromReport(params: {
         incidentCategory,
         timestamp: now,
         isFalsePositive: false,
+        uploadedFields,
+        uploadMethod,
+        entityName,
       });
     }
   }
