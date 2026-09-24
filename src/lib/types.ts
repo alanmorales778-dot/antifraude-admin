@@ -24,7 +24,7 @@ export interface IdentityNode {
   type: 'DNI' | 'EMAIL' | 'PHONE' | 'IP';
   hash: string; // SHA-256 con salt
   firstSeen: string; // ISO
-  lastSeen: string;  // ISO
+  lastSeen: string; // ISO
   totalLookups: number;
   lookupsLastHour: number;
 }
@@ -52,22 +52,16 @@ export interface ScoreBreakdown {
   velocityPenalty: number;
   finalScore: number;
   riskLevel: 'BAJO' | 'MEDIO' | 'ALTO';
-  /** Clasificación de 4 niveles del nuevo modelo probabilístico */
-  riskTier?: RiskTier;
   mismatchDetected: boolean;
   velocityTriggered: boolean;
   matchingEdges: SpecGraphEdge[];
-  /** Campos extendidos del nuevo modelo */
-  networkMultiplier?: number;
-  distinctReporters?: number;
-  okAttenuation?: number;
-  hasCommunityConflict?: boolean;
 }
 
 export interface LookupResult {
   dniHash: string | null;
   emailHash: string | null;
   phoneHash: string | null;
+  ipHash?: string | null;
   breakdown: ScoreBreakdown;
   timestamp: string;
   fintechId: string;
@@ -77,21 +71,11 @@ export interface LookupResult {
 // TIPOS LEGACY (API server-side / db.ts / risk-engine.ts)
 // ─────────────────────────────────────────────────────────────────
 
-export type IdentifierType = 'EMAIL' | 'DNI' | 'PHONE' | 'TAX_ID' | 'CARD_BIN';
+export type IdentifierType = 'EMAIL' | 'DNI' | 'PHONE' | 'IP' | 'TAX_ID' | 'CARD_BIN';
 
 export type RiskLevel = 'BAJO' | 'MEDIO' | 'ALTO';
 
-/**
- * Clasificación de 4 niveles accionables del Modelo Probabilístico Dinámico v2
- *
- * 0-20   → CONFIABLE   (Verde):   Sin alertas recientes. Aprobar.
- * 21-50  → ALERTA      (Amarillo): Sospechas aisladas o reportes decaídos. Step-up 2FA.
- * 51-75  → ALTO_RIESGO (Naranja):  Phishing reciente o contracargo recurrente. Revisión Manual.
- * 76-100 → CRITICO     (Rojo):     Cuenta mula / robo de identidad confirmado multientidad. Bloquear.
- */
-export type RiskTier = 'CONFIABLE' | 'ALERTA' | 'ALTO_RIESGO' | 'CRITICO';
-
-export type Recommendation = 'APROBAR' | 'DESAFIO_2FA' | 'REVISION_MANUAL' | 'BLOQUEAR';
+export type Recommendation = 'APROBAR' | 'DESAFIO_2FA' | 'BLOQUEAR';
 
 export type FraudTypology =
   | 'MULA_DE_DINERO'
@@ -123,7 +107,6 @@ export interface Tenant {
 }
 
 export interface RiskMatrixFactors {
-  // ── Campos originales (mantenidos para compatibilidad UI) ──
   consensusScore: number;
   consensusWeight: number;
   velocityScore: number;
@@ -133,17 +116,6 @@ export interface RiskMatrixFactors {
   recencyScore: number;
   recencyWeight: number;
   totalWeightedScore: number;
-  // ── Campos del Modelo Probabilístico Dinámico v2 ──────────
-  /** Multiplicador de red: 1 + 0.2 × (n_entidades − 1) */
-  networkMultiplier?: number;
-  /** Impacto bruto de fraude tras decaimiento exponencial (antes de M_red) */
-  fraudImpactDecayed?: number;
-  /** Atenuación por votos OK decaídos */
-  okAttenuation?: number;
-  /** Vida media en días usada para el decaimiento */
-  halfLifeDays?: number;
-  /** Nivel de 4 bandas resultante */
-  riskTier?: RiskTier;
 }
 
 export interface FraudEvent {
@@ -195,8 +167,6 @@ export interface RiskEvaluationResult {
   identifierType: IdentifierType;
   riskScore: number;
   riskLevel: RiskLevel;
-  /** Nivel de 4 bandas del Modelo Probabilístico Dinámico v2 */
-  riskTier?: RiskTier;
   recommendation: Recommendation;
   networkMatches: number;
   distinctInstitutionsCount: number;
@@ -336,3 +306,4 @@ export interface NetworkAlert {
     notes?: string;
   };
 }
+
