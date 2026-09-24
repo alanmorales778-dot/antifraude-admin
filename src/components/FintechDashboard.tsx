@@ -117,7 +117,7 @@ function ScoreGauge({ score }: { score: number }) {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// MÓDULO 1: CONSULTA DE RIESGO (UNITARIA - DNI, EMAIL, TEL, IP)
+// MÓDULO 1: CONSULTA DE RIESGO (UNITARIA - DNI, EMAIL, TEL, IP, CBU)
 // ─────────────────────────────────────────────────────────────────
 
 function SingleLookupView() {
@@ -126,6 +126,7 @@ function SingleLookupView() {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [ip, setIp] = useState('');
+  const [cbu, setCbu] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState<LookupResult | null>(lastLookupResult);
@@ -145,8 +146,8 @@ function SingleLookupView() {
 
   const handleLookup = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!dni.trim() && !email.trim() && !phone.trim() && !ip.trim()) {
-      setError('Ingresá al menos un identificador (DNI, Email, Teléfono o IP) para consultar.');
+    if (!dni.trim() && !email.trim() && !phone.trim() && !ip.trim() && !cbu.trim()) {
+      setError('Ingresá al menos un identificador (DNI, Email, Teléfono, IP o CBU/CVU) para consultar.');
       return;
     }
     setError('');
@@ -159,6 +160,7 @@ function SingleLookupView() {
         email: email.trim() || undefined,
         phone: phone.trim() || undefined,
         ip: ip.trim() || undefined,
+        cbu: cbu.trim() || undefined,
       });
       setResult(res);
     } catch (err) {
@@ -199,6 +201,7 @@ function SingleLookupView() {
         email: email.trim() || undefined,
         phone: phone.trim() || undefined,
         ip: ip.trim() || undefined,
+        cbu: cbu.trim() || undefined,
       });
       setResult(refreshed);
     }, 250);
@@ -218,8 +221,8 @@ function SingleLookupView() {
   return (
     <div className="space-y-5">
       <form onSubmit={handleLookup} className="space-y-4">
-        {/* DNI, Email, Teléfono e IP — SIN Device Fingerprint */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+        {/* DNI, Email, Teléfono, IP y CBU/CVU */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
               DNI / CUIL
@@ -240,7 +243,7 @@ function SingleLookupView() {
               type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
-              placeholder="Ej: estafador@gmail.com o usuario@noexiste.com"
+              placeholder="Ej: estafador@gmail.com"
               className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-cyan-500/50 focus:outline-none focus:ring-1 focus:ring-cyan-500/30 transition"
             />
           </div>
@@ -268,10 +271,23 @@ function SingleLookupView() {
               className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-cyan-500/50 focus:outline-none focus:ring-1 focus:ring-cyan-500/30 transition font-mono"
             />
           </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1.5">
+              <Building className="h-3.5 w-3.5 text-cyan-400" /> CBU / CVU (22 d)
+            </label>
+            <input
+              type="text"
+              value={cbu}
+              onChange={e => setCbu(e.target.value.replace(/\D/g, '').slice(0, 22))}
+              placeholder="Ej: 0000003100010000000001"
+              maxLength={22}
+              className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-cyan-500/50 focus:outline-none focus:ring-1 focus:ring-cyan-500/30 transition font-mono"
+            />
+          </div>
         </div>
 
         <p className="text-[11px] text-slate-400">
-          💡 Podés consultar <strong>1 solo campo</strong> o <strong>varios campos combinados</strong> (DNI, Email, Teléfono, IP). La plataforma valida automáticamente la <strong>existencia del email</strong> e identifica dominios sin registros MX o descartables.
+          💡 Podés consultar <strong>1 solo campo</strong> o <strong>varios campos combinados</strong> (DNI, Email, Teléfono, IP, CBU/CVU). La plataforma valida automáticamente la <strong>existencia del email</strong>, detecta cruces de titularidad con CBU y consulta la red federada con Zero-Knowledge.
         </p>
 
         {error && (
@@ -591,14 +607,14 @@ function SingleLookupView() {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// MÓDULO 1B: CONSULTA MASIVA CSV (DNI, EMAIL, TEL, IP)
+// MÓDULO 1B: CONSULTA MASIVA CSV (DNI, EMAIL, TEL, IP, CBU)
 // ─────────────────────────────────────────────────────────────────
 
-const SAMPLE_BULK_CSV = `dni,email,phone,ip
-30111222,estafador@gmail.com,+5491122334455,190.191.200.45
-40999888,usuario_falso@noexiste.com,,181.44.120.10
-,,+5491155667788,
-20123456789,burner@yopmail.com,+5491188990011,200.45.12.89
+const SAMPLE_BULK_CSV = `dni,email,phone,ip,cbu
+30111222,estafador@gmail.com,+5491122334455,190.191.200.45,0000003100010000000001
+40999888,usuario_falso@noexiste.com,,181.44.120.10,0000003100020000000002
+,,+5491155667788,,0000003100030000000003
+20123456789,burner@yopmail.com,+5491188990011,200.45.12.89,0000003100040000000004
 `;
 
 function maskField(val?: string) {
@@ -612,6 +628,10 @@ function maskField(val?: string) {
     const parts = val.split('.');
     if (parts.length === 4) return `${parts[0]}.${parts[1]}.***.${parts[3]}`;
   }
+  if (val.length === 22) {
+    // CBU / CVU: 22 dígitos numéricos
+    return `${val.slice(0, 4)}***${val.slice(-4)}`;
+  }
   if (val.length <= 4) return `${val.slice(0, 1)}***`;
   return `${val.slice(0, 2)}***${val.slice(-3)}`;
 }
@@ -622,6 +642,7 @@ interface BulkRowResult {
   emailMasked: string;
   phoneMasked: string;
   ipMasked: string;
+  cbuMasked: string;
   emailStatus: 'EXISTING' | 'NON_EXISTENT' | 'DISPOSABLE' | 'NONE';
   score: number;
   level: 'BAJO' | 'MEDIO' | 'ALTO' | 'ERROR';
@@ -654,11 +675,11 @@ function BulkLookupView() {
   const downloadResults = () => {
     if (!bulkResults.length) return;
     const csv =
-      'fila,dni_masked,email_masked,phone_masked,ip_masked,estado_email,score,nivel,tipologia\n' +
+      'fila,dni_masked,email_masked,phone_masked,ip_masked,cbu_masked,estado_email,score,nivel,tipologia\n' +
       bulkResults
         .map(
           r =>
-            `${r.row},"${r.dniMasked}","${r.emailMasked}","${r.phoneMasked}","${r.ipMasked}","${r.emailStatus}",${r.score},${r.level},"${r.tipologia}"`
+            `${r.row},"${r.dniMasked}","${r.emailMasked}","${r.phoneMasked}","${r.ipMasked}","${r.cbuMasked}","${r.emailStatus}",${r.score},${r.level},"${r.tipologia}"`
         )
         .join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -688,10 +709,10 @@ function BulkLookupView() {
       const header = lines[0].toLowerCase();
       const dataLines = lines.slice(1);
 
-      // Soportar formato columna: dni,email,phone,ip O formato tipo,valor
+      // Soportar formato columna: dni,email,phone,ip,cbu O formato tipo,valor
       const isTipoValor = header.includes('tipo') && header.includes('valor');
 
-      const itemsToQuery: { dni?: string; email?: string; phone?: string; ip?: string }[] = [];
+      const itemsToQuery: { dni?: string; email?: string; phone?: string; ip?: string; cbu?: string }[] = [];
 
       if (isTipoValor) {
         for (const line of dataLines) {
@@ -703,14 +724,16 @@ function BulkLookupView() {
           else if (tipo === 'EMAIL') itemsToQuery.push({ email: val });
           else if (tipo === 'PHONE') itemsToQuery.push({ phone: val });
           else if (tipo === 'IP') itemsToQuery.push({ ip: val });
+          else if (tipo === 'CBU' || tipo === 'CVU') itemsToQuery.push({ cbu: val });
         }
       } else {
-        // Formato columnas: dni,email,phone,ip (en cualquier orden de header)
+        // Formato columnas: dni,email,phone,ip,cbu (en cualquier orden de header)
         const cols = header.split(',').map(c => c.trim().replace(/^["']|["']$/g, ''));
         const dniIdx = cols.findIndex(c => c.includes('dni') || c.includes('cuil') || c.includes('cuit'));
         const emailIdx = cols.findIndex(c => c.includes('email') || c.includes('correo'));
         const phoneIdx = cols.findIndex(c => c.includes('phone') || c.includes('tel') || c.includes('cel'));
         const ipIdx = cols.findIndex(c => c.includes('ip') || c.includes('ip_address'));
+        const cbuIdx = cols.findIndex(c => c.includes('cbu') || c.includes('cvu') || c.includes('cuenta'));
 
         for (const line of dataLines) {
           const parts = line.split(',').map(s => s.trim().replace(/^["']|["']$/g, ''));
@@ -718,13 +741,15 @@ function BulkLookupView() {
           const rowEmail = emailIdx >= 0 ? parts[emailIdx] : undefined;
           const rowPhone = phoneIdx >= 0 ? parts[phoneIdx] : undefined;
           const rowIp = ipIdx >= 0 ? parts[ipIdx] : undefined;
+          const rowCbu = cbuIdx >= 0 ? parts[cbuIdx] : undefined;
 
-          if (rowDni || rowEmail || rowPhone || rowIp) {
+          if (rowDni || rowEmail || rowPhone || rowIp || rowCbu) {
             itemsToQuery.push({
               dni: rowDni || undefined,
               email: rowEmail || undefined,
               phone: rowPhone || undefined,
               ip: rowIp || undefined,
+              cbu: rowCbu || undefined,
             });
           }
         }
@@ -758,6 +783,7 @@ function BulkLookupView() {
             emailMasked: maskField(item.email),
             phoneMasked: maskField(item.phone),
             ipMasked: maskField(item.ip),
+            cbuMasked: maskField(item.cbu),
             emailStatus,
             score: res.breakdown.finalScore,
             level: res.breakdown.riskLevel,
@@ -770,6 +796,7 @@ function BulkLookupView() {
             emailMasked: maskField(item.email),
             phoneMasked: maskField(item.phone),
             ipMasked: maskField(item.ip),
+            cbuMasked: maskField(item.cbu),
             emailStatus: 'NONE',
             score: 0,
             level: 'ERROR',
@@ -808,7 +835,7 @@ function BulkLookupView() {
             </h4>
           </div>
           <p className="text-xs text-slate-400 max-w-xl leading-relaxed">
-            Evaluá múltiples identidades en simultáneo (DNI, Email, Teléfono, IP). Descargá el layout de prueba para verificar el formato de columnas o subí directamente tu archivo para calcular el score individual de cada registro.
+            Evaluá múltiples identidades en simultáneo (DNI, Email, Teléfono, IP, CBU/CVU). Descargá el layout de prueba para verificar el formato de columnas o subí directamente tu archivo para calcular el score individual de cada registro.
           </p>
         </div>
 
@@ -838,10 +865,10 @@ function BulkLookupView() {
 
       <div className="rounded-xl bg-black/40 p-3 font-mono text-xs border border-white/5">
         <p className="text-slate-400 font-sans text-[11px] mb-1 font-semibold">Formato admitido (uno o varios campos por fila):</p>
-        <p className="text-cyan-400">dni,email,phone,ip</p>
-        <p className="text-slate-500">30111222,estafador@gmail.com,+5491122334455,190.191.200.45</p>
-        <p className="text-slate-500">40999888,usuario_falso@noexiste.com,,181.44.120.10</p>
-        <p className="text-slate-500">,,+5491155667788,</p>
+        <p className="text-cyan-400">dni,email,phone,ip,cbu</p>
+        <p className="text-slate-500">30111222,estafador@gmail.com,+5491122334455,190.191.200.45,0000003100010000000001</p>
+        <p className="text-slate-500">40999888,usuario_falso@noexiste.com,,181.44.120.10,0000003100020000000002</p>
+        <p className="text-slate-500">,,+5491155667788,,0000003100030000000003</p>
       </div>
 
       {/* Zona de Drop */}
@@ -941,6 +968,7 @@ function BulkLookupView() {
                   <th className="px-4 py-3">Estado Email</th>
                   <th className="px-4 py-3">Teléfono (masked)</th>
                   <th className="px-4 py-3">IP (masked)</th>
+                  <th className="px-4 py-3">CBU / CVU (masked)</th>
                   <th className="px-4 py-3 text-center">Score (0-100)</th>
                   <th className="px-4 py-3 text-center">Nivel</th>
                   <th className="px-4 py-3">Tipología Principal</th>
@@ -980,6 +1008,7 @@ function BulkLookupView() {
                     </td>
                     <td className="px-4 py-3 font-mono text-slate-300">{r.phoneMasked}</td>
                     <td className="px-4 py-3 font-mono text-cyan-400/90">{r.ipMasked}</td>
+                    <td className="px-4 py-3 font-mono text-cyan-300/90">{r.cbuMasked}</td>
                     <td
                       className="px-4 py-3 text-center font-mono font-black text-sm"
                       style={{ color: scoreColor(r.score) }}
@@ -1058,7 +1087,7 @@ function LookupModule({ initialSubTab = 'single' }: { initialSubTab?: 'single' |
             }`}
           >
             <Search className="h-3.5 w-3.5" />
-            Consulta Unitaria (DNI, Email, Tel, IP)
+            Consulta Unitaria (DNI, Email, Tel, IP, CBU)
           </button>
           <button
             type="button"
@@ -1081,8 +1110,10 @@ function LookupModule({ initialSubTab = 'single' }: { initialSubTab?: 'single' |
   );
 }
 
+
 // ─────────────────────────────────────────────────────────────────
-// MÓDULO 2: REPORTE DE FRAUDE (DNI, EMAIL, TEL, IP)
+// ─────────────────────────────────────────────────────────────────
+// MÓDULO 2: REPORTE DE FRAUDE (DNI, EMAIL, TEL, IP, CBU)
 // ─────────────────────────────────────────────────────────────────
 
 function ReportFraudModule() {
@@ -1091,6 +1122,7 @@ function ReportFraudModule() {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [ip, setIp] = useState('');
+  const [cbu, setCbu] = useState('');
   const [category, setCategory] = useState<IncidentCategory>('MULE_ACCOUNT');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -1100,8 +1132,8 @@ function ReportFraudModule() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!dni && !email && !phone && !ip) {
-      setError('Ingresá al menos un identificador (DNI, Email, Teléfono o IP) para reportar.');
+    if (!dni && !email && !phone && !ip && !cbu) {
+      setError('Ingresá al menos un identificador (DNI, Email, Teléfono, IP o CBU/CVU) para reportar.');
       return;
     }
     setError('');
@@ -1113,6 +1145,7 @@ function ReportFraudModule() {
         email: email || undefined,
         phone: phone || undefined,
         ip: ip || undefined,
+        cbu: cbu || undefined,
         incidentCategory: category,
       });
       setSuccess(true);
@@ -1120,6 +1153,7 @@ function ReportFraudModule() {
       setEmail('');
       setPhone('');
       setIp('');
+      setCbu('');
       setTimeout(() => setSuccess(false), 4000);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Error al registrar el reporte.';
@@ -1149,7 +1183,7 @@ function ReportFraudModule() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
           <div>
             <label className="block text-xs text-slate-400 mb-1">DNI / CUIL</label>
             <input
@@ -1189,6 +1223,19 @@ function ReportFraudModule() {
               value={ip}
               onChange={e => setIp(e.target.value)}
               placeholder="190.191.200.45"
+              className="w-full rounded-xl border border-white/10 bg-slate-800 px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:border-rose-500/50 focus:outline-none focus:ring-1 focus:ring-rose-500/30 transition font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1 flex items-center gap-1">
+              <Building className="h-3 w-3 text-cyan-400" /> CBU / CVU (22 d)
+            </label>
+            <input
+              type="text"
+              value={cbu}
+              onChange={e => setCbu(e.target.value.replace(/\D/g, '').slice(0, 22))}
+              placeholder="0000003100010000000001"
+              maxLength={22}
               className="w-full rounded-xl border border-white/10 bg-slate-800 px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:border-rose-500/50 focus:outline-none focus:ring-1 focus:ring-rose-500/30 transition font-mono"
             />
           </div>
@@ -1296,11 +1343,11 @@ function CSVImportModule() {
   );
 
   const downloadSampleLayout = () => {
-    const csv = `dni,email,phone,ip,categoria
-30111222,estafador@gmail.com,+5491122334455,190.191.200.45,MULE_ACCOUNT
-40999888,victima@hotmail.com,,,IDENTITY_THEFT
-,,+5491155667788,,PHISHING
-20123456789,otro@empresa.com,,200.45.12.89,SUSPICIOUS
+    const csv = `dni,email,phone,ip,cbu,categoria
+30111222,estafador@gmail.com,+5491122334455,190.191.200.45,0000003100010000000001,MULE_ACCOUNT
+40999888,victima@hotmail.com,,,,0000003100020000000002,IDENTITY_THEFT
+,,+5491155667788,,,PHISHING
+20123456789,otro@empresa.com,,200.45.12.89,,SUSPICIOUS
 `;
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -1331,8 +1378,8 @@ function CSVImportModule() {
 
       <div className="rounded-xl bg-black/40 p-3 font-mono text-xs">
         <p className="text-slate-500 font-sans text-[11px] mb-1 font-semibold">Formato requerido:</p>
-        <p className="text-slate-400">dni,email,phone,ip,categoria</p>
-        <p className="text-slate-600">30111222,estafador@gmail.com,+54911...,190.191.200.45,MULE_ACCOUNT</p>
+        <p className="text-slate-400">dni,email,phone,ip,cbu,categoria</p>
+        <p className="text-slate-600">30111222,estafador@gmail.com,+54911...,190.191.200.45,0000003100010000000001,MULE_ACCOUNT</p>
         <p className="text-[10px] text-slate-600 font-sans mt-1">Categorías: MULE_ACCOUNT · IDENTITY_THEFT · CHARGEBACK · PHISHING · SUSPICIOUS</p>
       </div>
 
