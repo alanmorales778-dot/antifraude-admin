@@ -31,7 +31,7 @@ const VELOCITY_WINDOW_MS = 60 * 60 * 1000; // 60 minutos
 // ─────────────────────────────────────────────────────────────────
 
 export async function computeHash(
-  type: 'DNI' | 'EMAIL' | 'PHONE' | 'IP',
+  type: 'DNI' | 'EMAIL' | 'PHONE' | 'IP' | 'CBU',
   rawValue: string
 ): Promise<string> {
   const normalized = normalizeIdentifier(type, rawValue);
@@ -57,20 +57,22 @@ export async function evaluateRisk(params: {
   email?: string;
   phone?: string;
   ip?: string;
+  cbu?: string;
   fintechId: string;
   fintechs: FintechEntity[];
   identityNodes: IdentityNode[];
   graphEdges: SpecGraphEdge[];
 }): Promise<LookupResult> {
-  const { dni, email, phone, ip, fintechId, fintechs, identityNodes, graphEdges } = params;
+  const { dni, email, phone, ip, cbu, fintechId, fintechs, identityNodes, graphEdges } = params;
 
   // Hashes de los identificadores provistos
   const dniHash = dni ? await computeHash('DNI', dni) : null;
   const emailHash = email ? await computeHash('EMAIL', email) : null;
   const phoneHash = phone ? await computeHash('PHONE', phone) : null;
   const ipHash = ip ? await computeHash('IP', ip) : null;
+  const cbuHash = cbu ? await computeHash('CBU', cbu) : null;
 
-  const inputHashes = [dniHash, emailHash, phoneHash, ipHash].filter(Boolean) as string[];
+  const inputHashes = [dniHash, emailHash, phoneHash, ipHash, cbuHash].filter(Boolean) as string[];
 
   // ── FACTOR 1: Base por Reportes Históricos ───────────────────
   // Para cada arista activa que involucre alguno de los hashes consultados,
@@ -103,7 +105,7 @@ export async function evaluateRisk(params: {
   let mismatchDetected = false;
   let mismatchPenalty = 0;
 
-  if (dniHash && (emailHash || phoneHash)) {
+  if (dniHash && (emailHash || phoneHash || cbuHash)) {
     for (const edge of graphEdges) {
       if (edge.isFalsePositive) continue;
 
@@ -129,6 +131,20 @@ export async function evaluateRisk(params: {
         if (phoneInEdge) {
           const otherHash =
             edge.sourceHash === phoneHash ? edge.targetHash : edge.sourceHash;
+          if (otherHash !== dniHash) {
+            mismatchDetected = true;
+            break;
+          }
+        }
+      }
+
+      // Caso CBU-DNI: el CBU está en una arista con un DNI diferente (Mula/suplantación)
+      if (!mismatchDetected && cbuHash) {
+        const cbuInEdge =
+          edge.sourceHash === cbuHash || edge.targetHash === cbuHash;
+        if (cbuInEdge) {
+          const otherHash =
+            edge.sourceHash === cbuHash ? edge.targetHash : edge.sourceHash;
           if (otherHash !== dniHash) {
             mismatchDetected = true;
             break;
@@ -207,6 +223,7 @@ export async function evaluateRisk(params: {
     emailHash,
     phoneHash,
     ipHash,
+    cbuHash,
     breakdown,
     timestamp: new Date().toISOString(),
     fintechId,
@@ -222,7 +239,7 @@ export async function evaluateRisk(params: {
  */
 export function upsertIdentityNode(
   nodes: IdentityNode[],
-  type: 'DNI' | 'EMAIL' | 'PHONE' | 'IP',
+  type: 'DNI' | 'EMAIL' | 'PHONE' | 'IP' | 'CBU',
   hash: string,
   isLookup: boolean
 ): IdentityNode[] {
@@ -262,6 +279,7 @@ export function buildEdgesFromReport(params: {
   emailHash: string | null;
   phoneHash: string | null;
   ipHash?: string | null;
+  cbuHash?: string | null;
   reportedByEntityId: string;
   incidentCategory: IncidentCategory;
   uploadedFields?: string;
@@ -273,13 +291,14 @@ export function buildEdgesFromReport(params: {
     emailHash,
     phoneHash,
     ipHash,
+    cbuHash,
     reportedByEntityId,
     incidentCategory,
     uploadedFields,
     uploadMethod = 'MANUAL',
     entityName,
   } = params;
-  const hashes = [dniHash, emailHash, phoneHash, ipHash].filter(Boolean) as string[];
+  const hashes = [dniHash, emailHash, phoneHash, ipHash, cbuHash].filter(Boolean) as string[];
   const edges: SpecGraphEdge[] = [];
   const now = new Date().toISOString();
 
