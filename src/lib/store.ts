@@ -491,7 +491,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           },
         ];
 
-        // Aristas del grafo — caso fraude reportado por Fintech Alpha
+        // Aristas del grafo con metadata de auditoría
         const fraudEdges: SpecGraphEdge[] = [
           {
             id: 'edge-seed-001',
@@ -501,6 +501,9 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             incidentCategory: 'MULE_ACCOUNT',
             timestamp: now,
             isFalsePositive: false,
+            uploadedFields: 'DNI: 30.***.222 · Email: estafador.red@***',
+            uploadMethod: 'MANUAL',
+            entityName: 'Fintech Alpha',
           },
           {
             id: 'edge-seed-002',
@@ -510,6 +513,9 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             incidentCategory: 'MULE_ACCOUNT',
             timestamp: now,
             isFalsePositive: false,
+            uploadedFields: 'DNI: 30.***.222 · Tel: +54 9 11 *** 4455',
+            uploadMethod: 'MANUAL',
+            entityName: 'Fintech Alpha',
           },
           {
             id: 'edge-seed-003',
@@ -519,6 +525,21 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             incidentCategory: 'MULE_ACCOUNT',
             timestamp: now,
             isFalsePositive: false,
+            uploadedFields: 'Email: estafador.red@*** · Tel: +54 9 11 *** 4455',
+            uploadMethod: 'MANUAL',
+            entityName: 'Fintech Alpha',
+          },
+          {
+            id: 'edge-seed-004',
+            sourceHash: emailHash,
+            targetHash: dniHash,
+            reportedByEntityId: 'banco-beta',
+            incidentCategory: 'IDENTITY_THEFT',
+            timestamp: new Date(Date.now() - 3600000 * 5).toISOString(),
+            isFalsePositive: false,
+            uploadedFields: 'DNI: 30.***.222 · Email: estafador.red@***',
+            uploadMethod: 'CSV_BULK',
+            entityName: 'Banco Beta',
           },
         ];
 
@@ -661,6 +682,16 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         const phoneHash = phone ? await computeHash('PHONE', phone) : null;
         const ipHash = ip ? await computeHash('IP', ip) : null;
 
+        const actorName = fintech?.name || fintechId;
+        const identifiers = [
+          dni ? `DNI: ${dni.slice(0, 2)}***${dni.slice(-3)}` : null,
+          email ? `Email: ${email.slice(0, 3)}***@${email.split('@')[1] || ''}` : null,
+          phone ? `Tel: ${phone.slice(0, 4)}***${phone.slice(-3)}` : null,
+          ip ? `IP: ${ip.split('.').slice(0, 2).join('.')}.***.${ip.split('.')[3] || ''}` : null,
+        ]
+          .filter(Boolean)
+          .join(' · ');
+
         // Crear aristas del grafo
         const newEdges = buildEdgesFromReport({
           dniHash,
@@ -669,6 +700,9 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           ipHash,
           reportedByEntityId: fintechId,
           incidentCategory,
+          uploadedFields: identifiers || 'Identificador Criptográfico',
+          uploadMethod: 'MANUAL',
+          entityName: actorName,
         });
 
         // Actualizar nodos (sin contar como lookup)
@@ -795,6 +829,14 @@ export const useConsortiumStore = create<ConsortiumStore>()(
               continue;
             }
 
+            const actorName = fintech?.name || fintechId;
+            const rowIdentifiers = [
+              rawDni ? `DNI: ${rawDni.slice(0, 2)}***${rawDni.slice(-3)}` : null,
+              rawEmail ? `Email: ${rawEmail.slice(0, 3)}***@${rawEmail.split('@')[1] || ''}` : null,
+              rawPhone ? `Tel: ${rawPhone.slice(0, 4)}***${rawPhone.slice(-3)}` : null,
+              rawIp ? `IP: ${rawIp.split('.').slice(0, 2).join('.')}.***.${rawIp.split('.')[3] || ''}` : null,
+            ].filter(Boolean).join(' · ');
+
             const edges = buildEdgesFromReport({
               dniHash,
               emailHash,
@@ -802,6 +844,9 @@ export const useConsortiumStore = create<ConsortiumStore>()(
               ipHash,
               reportedByEntityId: fintechId,
               incidentCategory,
+              uploadedFields: rowIdentifiers || 'Carga Masiva CSV',
+              uploadMethod: 'CSV_BULK',
+              entityName: actorName,
             });
 
             newEdgesAll.push(...edges);
