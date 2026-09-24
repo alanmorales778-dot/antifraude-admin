@@ -71,57 +71,6 @@ export default function ThreatAnalytics() {
         </p>
       </div>
 
-      {/* Top 3 Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="glass-panel rounded-2xl p-5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-400">Tasa de Falsos Positivos</span>
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400">
-              <ShieldCheck className="h-4 w-4" />
-            </span>
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-white">2.8%</span>
-            <span className="text-xs text-emerald-400 font-medium">Bajo estándar global (avg: 5.4%)</span>
-          </div>
-          <p className="mt-2 text-[11px] text-slate-500">
-            Gracias a la regla de consenso multientidad (se requieren reportes independientes).
-          </p>
-        </div>
-
-        <div className="glass-panel rounded-2xl p-5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-400">Tiempo Medio de Rehabilitación</span>
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-400">
-              <Activity className="h-4 w-4" />
-            </span>
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-white">3.4 hrs</span>
-            <span className="text-xs text-cyan-400 font-medium">SLA de disputa &lt; 24h</span>
-          </div>
-          <p className="mt-2 text-[11px] text-slate-500">
-            Validación biométrica automatizada con soporte de verificación RENAPER.
-          </p>
-        </div>
-
-        <div className="glass-panel rounded-2xl p-5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-400">Ataques Sindicados Detectados</span>
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-rose-500/10 text-rose-400">
-              <ShieldAlert className="h-4 w-4" />
-            </span>
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-white">41 bandas</span>
-            <span className="text-xs text-rose-400 font-medium">100% neutralizadas</span>
-          </div>
-          <p className="mt-2 text-[11px] text-slate-500">
-            Detección de patrones coordinados operando en más de 4 entidades en menos de 1 hora.
-          </p>
-        </div>
-      </div>
-
       {/* Breakdown by Typology */}
       <div className="glass-panel rounded-2xl p-6 shadow-xl">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-4">
@@ -176,3 +125,4 @@ export default function ThreatAnalytics() {
     </div>
   );
 }
+
