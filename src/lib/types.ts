@@ -37,6 +37,9 @@ export interface SpecGraphEdge {
   incidentCategory: IncidentCategory;
   timestamp: string; // ISO
   isFalsePositive: boolean;
+  uploadedFields?: string;
+  uploadMethod?: 'MANUAL' | 'CSV_BULK' | 'API';
+  entityName?: string;
 }
 
 export interface StoreAuditLog {
