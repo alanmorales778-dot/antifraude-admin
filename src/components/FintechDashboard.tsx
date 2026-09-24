@@ -1406,15 +1406,46 @@ function CSVImportModule() {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// MÓDULO 4: HISTORIAL DE REPORTES DE FRAUDE (SIN HASHES RAW)
+// MÓDULO 4: HISTORIAL DE REPORTES DE FRAUDE POR ENTIDAD (AUDITORÍA COMPLETA)
 // ─────────────────────────────────────────────────────────────────
+
+const CATEGORY_TRANSLATIONS: Record<IncidentCategory, { label: string; color: string }> = {
+  MULE_ACCOUNT: { label: 'Cuenta Mula', color: 'bg-rose-500/20 text-rose-300 border-rose-500/40' },
+  IDENTITY_THEFT: { label: 'Robo de Identidad', color: 'bg-orange-500/20 text-orange-300 border-orange-500/40' },
+  CHARGEBACK: { label: 'Contracargo Comercial', color: 'bg-amber-500/20 text-amber-300 border-amber-500/40' },
+  PHISHING: { label: 'Phishing Bancario', color: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40' },
+  SUSPICIOUS: { label: 'Actividad Sospechosa', color: 'bg-slate-700/60 text-slate-300 border-slate-600' },
+};
 
 function ReportHistoryModule() {
   const { graphEdges, markFalsePositive, activeFintechId, fintechs } = useConsortiumStore();
+  const [selectedEntityFilter, setSelectedEntityFilter] = useState<string>(activeFintechId);
+  const [searchTerm, setSearchTerm] = useState('');
 
   const activeFintech = fintechs.find(f => f.id === activeFintechId);
-  const myEdges = graphEdges
-    .filter(e => e.reportedByEntityId === activeFintechId)
+
+  // Sincronizar filtro con entidad activa por defecto
+  React.useEffect(() => {
+    if (selectedEntityFilter !== 'ALL' && !fintechs.some(f => f.id === selectedEntityFilter)) {
+      setSelectedEntityFilter(activeFintechId);
+    }
+  }, [activeFintechId, fintechs, selectedEntityFilter]);
+
+  const filteredEdges = graphEdges
+    .filter(e => {
+      if (selectedEntityFilter !== 'ALL' && e.reportedByEntityId !== selectedEntityFilter) {
+        return false;
+      }
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase();
+        const cat = (e.incidentCategory || '').toLowerCase();
+        const catLabel = (CATEGORY_TRANSLATIONS[e.incidentCategory]?.label || '').toLowerCase();
+        const fields = (e.uploadedFields || '').toLowerCase();
+        const entity = (e.entityName || '').toLowerCase();
+        return cat.includes(term) || catLabel.includes(term) || fields.includes(term) || entity.includes(term);
+      }
+      return true;
+    })
     .slice()
     .reverse();
 
@@ -1423,31 +1454,90 @@ function ReportHistoryModule() {
     markFalsePositive(edgeId);
   };
 
+  const getEntityName = (id: string, storedName?: string) => {
+    if (storedName) return storedName;
+    const f = fintechs.find(item => item.id === id);
+    return f ? f.name : id;
+  };
+
   return (
-    <div className="glass-panel rounded-2xl p-6 space-y-4">
-      <div className="flex items-center gap-2">
-        <FileText className="h-5 w-5 text-amber-400" />
-        <h3 className="text-sm font-bold text-white">Historial de Reportes de Fraude</h3>
-        {activeFintech && (
-          <span className="ml-auto text-[11px] font-mono text-slate-500">
-            {myEdges.length} reporte(s) de{' '}
-            <span className="text-slate-300">{activeFintech.name}</span>
+    <div className="glass-panel rounded-2xl p-6 space-y-5">
+      {/* Header con título y controles de filtro */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <FileText className="h-5 w-5 text-amber-400" />
+            <h3 className="text-base font-bold text-white">Historial de Reportes por Banco / Fintech</h3>
+          </div>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Registro detallado y auditable de todo lo que cada entidad financiera subió a la red comunitaria.
+          </p>
+        </div>
+
+        {/* Filtro por entidad */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-slate-400 font-medium flex items-center gap-1">
+            <Building className="h-3.5 w-3.5 text-cyan-400" />
+            Ver reportes de:
           </span>
-        )}
+          <select
+            value={selectedEntityFilter}
+            onChange={e => setSelectedEntityFilter(e.target.value)}
+            className="rounded-xl border border-white/10 bg-slate-900 px-3 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-400 font-medium"
+          >
+            <option value={activeFintechId}>
+              {activeFintech ? `Mi Entidad (${activeFintech.name})` : 'Mi Entidad'}
+            </option>
+            <option value="ALL">🌐 Todas las entidades del Consorcio</option>
+            {fintechs
+              .filter(f => f.id !== activeFintechId)
+              .map(f => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+          </select>
+        </div>
       </div>
 
-      {myEdges.length === 0 ? (
-        <div className="rounded-xl border border-white/10 bg-slate-800/30 py-10 text-center">
-          <Shield className="h-8 w-8 text-slate-600 mx-auto mb-2" />
-          <p className="text-sm text-slate-500">No hay reportes registrados por esta entidad.</p>
+      {/* Buscador de registros y contador */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            placeholder="Buscar por DNI, email, IP, tipología o banco..."
+            className="w-full rounded-xl border border-white/10 bg-slate-950/60 pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400"
+          />
+        </div>
+
+        <div className="text-xs text-slate-400 font-mono">
+          Mostrando <strong className="text-white">{filteredEdges.length}</strong> registro(s)
+          {selectedEntityFilter !== 'ALL' && activeFintech && (
+            <span> de <strong className="text-cyan-300">{getEntityName(selectedEntityFilter)}</strong></span>
+          )}
+        </div>
+      </div>
+
+      {filteredEdges.length === 0 ? (
+        <div className="rounded-xl border border-white/10 bg-slate-800/30 py-12 text-center space-y-2">
+          <Shield className="h-8 w-8 text-slate-600 mx-auto" />
+          <p className="text-sm font-semibold text-slate-400">No hay reportes registrados para el filtro seleccionado.</p>
+          <p className="text-xs text-slate-500">
+            Podés cargar nuevos reportes desde «Reportar Fraude» o mediante «Importación CSV».
+          </p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-white/10">
+        <div className="overflow-x-auto rounded-xl border border-white/10 shadow-lg">
           <table className="w-full text-xs text-left">
-            <thead className="bg-slate-900 border-b border-white/10 text-[11px] uppercase text-slate-400">
+            <thead className="bg-slate-950 border-b border-white/10 text-[11px] uppercase text-slate-400 tracking-wider">
               <tr>
-                <th className="px-4 py-3">Registro</th>
-                <th className="px-4 py-3">Privacidad</th>
+                <th className="px-4 py-3"># Registro</th>
+                <th className="px-4 py-3">Entidad Emisora</th>
+                <th className="px-4 py-3">Datos e Identificadores Subidos</th>
+                <th className="px-4 py-3">Canal de Carga</th>
                 <th className="px-4 py-3">Categoría de Fraude</th>
                 <th className="px-4 py-3">Fecha y Hora</th>
                 <th className="px-4 py-3 text-center">Estado de Red</th>
@@ -1455,67 +1545,116 @@ function ReportHistoryModule() {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5 text-slate-300">
-              {myEdges.map((edge, idx) => (
-                <tr
-                  key={edge.id}
-                  className={edge.isFalsePositive ? 'opacity-50 bg-amber-950/10' : 'hover:bg-white/5 transition'}
-                >
-                  <td className="px-4 py-3 font-mono text-slate-400">
-                    REP-{myEdges.length - idx}
-                  </td>
-                  <td className="px-4 py-3 text-cyan-400/90 flex items-center gap-1.5 font-medium">
-                    <Lock className="h-3 w-3 text-cyan-400/70" />
-                    Identificador Protegido (ZK)
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`rounded-lg px-2 py-0.5 text-[10px] font-bold border ${
-                        edge.incidentCategory === 'MULE_ACCOUNT'
-                          ? 'bg-rose-500/20 text-rose-400 border-rose-500/30'
-                          : edge.incidentCategory === 'IDENTITY_THEFT'
-                          ? 'bg-orange-500/20 text-orange-400 border-orange-500/30'
-                          : edge.incidentCategory === 'CHARGEBACK'
-                          ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-                          : edge.incidentCategory === 'PHISHING'
-                          ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
-                          : 'bg-slate-700 text-slate-400 border-slate-600'
-                      }`}
-                    >
-                      {edge.incidentCategory.replace(/_/g, ' ')}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-slate-500 tabular-nums">
-                    {new Date(edge.timestamp).toLocaleDateString('es-AR', {
-                      day: '2-digit',
-                      month: '2-digit',
-                      year: '2-digit',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    {edge.isFalsePositive ? (
-                      <span className="rounded bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-400 border border-amber-500/30">
-                        FALSO POSITIVO
+              {filteredEdges.map((edge, idx) => {
+                const catConfig = CATEGORY_TRANSLATIONS[edge.incidentCategory] || {
+                  label: edge.incidentCategory,
+                  color: 'bg-slate-800 text-slate-300 border-slate-700',
+                };
+                const entityName = getEntityName(edge.reportedByEntityId, edge.entityName);
+                const isMyEntity = edge.reportedByEntityId === activeFintechId;
+
+                return (
+                  <tr
+                    key={edge.id}
+                    className={
+                      edge.isFalsePositive
+                        ? 'opacity-50 bg-amber-950/10'
+                        : isMyEntity
+                        ? 'bg-cyan-950/10 hover:bg-cyan-950/20 transition'
+                        : 'hover:bg-white/5 transition'
+                    }
+                  >
+                    {/* ID Registro */}
+                    <td className="px-4 py-3 font-mono text-slate-400 font-bold whitespace-nowrap">
+                      REP-{String(filteredEdges.length - idx).padStart(3, '0')}
+                    </td>
+
+                    {/* Entidad Emisora */}
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-bold border ${
+                        isMyEntity
+                          ? 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300'
+                          : 'bg-slate-800 border-white/10 text-slate-300'
+                      }`}>
+                        <Building className="h-3 w-3 text-cyan-400" />
+                        {entityName}
                       </span>
-                    ) : (
-                      <span className="rounded bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-400 border border-rose-500/30">
-                        ACTIVO EN RED
+                    </td>
+
+                    {/* Datos Subidos (Enmascarados) */}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <Lock className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                        <span className="font-mono text-slate-200 font-medium">
+                          {edge.uploadedFields || 'DNI: 30.***.222 · Email: estafador.red@***'}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-slate-500 block pl-5 mt-0.5">
+                        Protección Zero-Knowledge (Hash Blindado en Red)
                       </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {!edge.isFalsePositive && (
-                      <button
-                        onClick={() => handleMarkFP(edge.id)}
-                        className="rounded-xl border border-amber-500/30 bg-amber-950/40 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-900/50 active:scale-95 transition"
-                      >
-                        Falso Positivo
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+                    </td>
+
+                    {/* Canal de Carga */}
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {edge.uploadMethod === 'CSV_BULK' ? (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-indigo-500/15 border border-indigo-500/30 px-2 py-0.5 text-[10px] font-bold text-indigo-300">
+                          <FileSpreadsheet className="h-3 w-3" /> Carga Masiva CSV
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
+                          <Upload className="h-3 w-3" /> Carga Unitaria
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Categoría */}
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className={`rounded-lg px-2.5 py-1 text-[11px] font-bold border ${catConfig.color}`}>
+                        {catConfig.label}
+                      </span>
+                    </td>
+
+                    {/* Fecha y Hora */}
+                    <td className="px-4 py-3 text-slate-400 tabular-nums whitespace-nowrap font-medium">
+                      {new Date(edge.timestamp).toLocaleDateString('es-AR', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })} hs
+                    </td>
+
+                    {/* Estado de Red */}
+                    <td className="px-4 py-3 text-center whitespace-nowrap">
+                      {edge.isFalsePositive ? (
+                        <span className="rounded-lg bg-amber-500/20 px-2.5 py-1 text-[10px] font-bold text-amber-400 border border-amber-500/30">
+                          FALSO POSITIVO (Revertido)
+                        </span>
+                      ) : (
+                        <span className="rounded-lg bg-rose-500/20 px-2.5 py-1 text-[10px] font-bold text-rose-400 border border-rose-500/30">
+                          ACTIVO EN RED
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Gestión */}
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      {!edge.isFalsePositive ? (
+                        <button
+                          onClick={() => handleMarkFP(edge.id)}
+                          className="rounded-xl border border-amber-500/30 bg-amber-950/40 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-900/50 hover:text-white active:scale-95 transition"
+                          title="Desactivar y atenuar este reporte si fue resuelto o es un cliente legítimo"
+                        >
+                          Falso Positivo
+                        </button>
+                      ) : (
+                        <span className="text-[11px] text-slate-500 italic">Revertido</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
