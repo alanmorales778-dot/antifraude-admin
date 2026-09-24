@@ -246,15 +246,15 @@ export default function EntityPortal({
         </main>
       </div>
 
-      {/* AI Copilot */}
+      {/* Centinela AI Floating Trigger */}
       <div className="fixed bottom-6 right-6 z-30">
         <button
           onClick={() => setIsCopilotOpen(true)}
-          className="group flex items-center gap-2 rounded-xl bg-[#131228] border border-indigo-500/20 hover:border-indigo-500/35 px-4 py-2.5 text-xs font-semibold text-slate-400 hover:text-white shadow-xl shadow-black/40 hover:scale-105 active:scale-95 transition-all"
+          className="group flex items-center gap-2 rounded-xl bg-[#0e1424] border border-cyan-500/30 hover:border-cyan-400/60 px-4 py-2.5 text-xs font-bold text-slate-200 hover:text-white shadow-xl shadow-cyan-950/40 hover:scale-105 active:scale-95 transition-all"
         >
-          <Sparkles className="h-3.5 w-3.5 text-indigo-400 group-hover:rotate-12 transition" />
-          AI Copilot
-          <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <Sparkles className="h-4 w-4 text-cyan-400 group-hover:rotate-12 transition animate-pulse" />
+          <span>Centinela AI</span>
+          <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
         </button>
       </div>
 
