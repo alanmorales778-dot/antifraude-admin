@@ -712,16 +712,6 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         if (phoneHash) updatedNodes = upsertIdentityNode(updatedNodes, 'PHONE', phoneHash, false);
         if (ipHash) updatedNodes = upsertIdentityNode(updatedNodes, 'IP', ipHash, false);
 
-        const actorName = fintech?.name || fintechId;
-        const identifiers = [
-          dni ? `DNI: ${dni}` : null,
-          email ? `EMAIL: ${email}` : null,
-          phone ? `PHONE: ${phone}` : null,
-          ip ? `IP: ${ip}` : null,
-        ]
-          .filter(Boolean)
-          .join(', ');
-
         set(state2 => ({
           graphEdges: [...state2.graphEdges, ...newEdges],
           identityNodes: updatedNodes,
