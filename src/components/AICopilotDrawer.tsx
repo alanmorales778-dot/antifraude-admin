@@ -21,7 +21,7 @@ export default function AICopilotDrawer({ isOpen: controlledIsOpen, onClose }: A
   >([
     {
       sender: 'ai',
-      text: '¡Hola! Soy tu AI Behavioral Copilot del Consorcio Antifraude. Puedo explicarte la causa raíz de cualquier score, simular escenarios de ataque de mulas o redactar informes de auditoría para el BCRA o reguladores. ¿En qué te ayudo hoy?',
+      text: '¡Hola! Soy Centinela AI, tu copiloto inteligente del Consorcio Antifraude. Puedo explicarte la causa raíz de cualquier score, simular escenarios de ataque de mulas o redactar informes de auditoría para el BCRA y reguladores. ¿En qué te ayudo hoy?',
     },
   ]);
   const [inputQuery, setInputQuery] = useState('');
@@ -59,7 +59,7 @@ export default function AICopilotDrawer({ isOpen: controlledIsOpen, onClose }: A
         hasReport = true;
       } else if (query.includes('Kill-Switch')) {
         reply =
-          'El Kill-Switch se dispara de forma automática cuando el Risk Score ponderado alcanza o supera los 90 puntos. Su propósito es interceptar la salida de fondos en menos de 15ms y aplicar una auto-pausa preventiva de 45 segundos mientras se verifica si el dispositivo pertenece a una granja de emuladores (Device Farm).';
+          'El Kill-Switch se dispara de forma automática cuando el Risk Score ponderado alcanza o supera los 90 puntos. Su propósito es interceptar la salida de fondos en menos de 15ms y aplicar una auto-pausa preventiva de 45 segundos mientras se verifica si el dispositivo pertenece a una red organizada.';
       } else if (query.includes('auditoría') || query.includes('informe')) {
         reply =
           'He generado un informe técnico de cumplimiento conforme al protocolo de Privacidad Ciega (Ley 25.326). Los dictámenes han sido emitidos con firmas HMAC-SHA256 y cero retención de datos personales en texto claro.';
@@ -75,16 +75,18 @@ export default function AICopilotDrawer({ isOpen: controlledIsOpen, onClose }: A
 
   return (
     <>
-      {/* Floating Copilot Button */}
-      <button
-        onClick={() => setInternalIsOpen(true)}
-        className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-500 via-purple-600 to-cyan-500 p-0.5 shadow-2xl shadow-indigo-500/30 transition hover:scale-105 active:scale-95"
-      >
-        <div className="flex items-center gap-2 rounded-[14px] bg-[#090d16] px-4 py-2.5 text-xs font-bold text-white">
-          <Sparkles className="h-4 w-4 text-cyan-400 animate-pulse" />
-          <span>AI Behavioral Copilot</span>
-        </div>
-      </button>
+      {/* Floating Copilot Button (only if not controlled by parent) */}
+      {controlledIsOpen === undefined && (
+        <button
+          onClick={() => setInternalIsOpen(true)}
+          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-500 via-purple-600 to-cyan-500 p-0.5 shadow-2xl shadow-indigo-500/30 transition hover:scale-105 active:scale-95"
+        >
+          <div className="flex items-center gap-2 rounded-[14px] bg-[#090d16] px-4 py-2.5 text-xs font-bold text-white">
+            <Sparkles className="h-4 w-4 text-cyan-400 animate-pulse" />
+            <span>Centinela AI</span>
+          </div>
+        </button>
+      )}
 
       {/* Slide-out Drawer */}
       {isOpen && (
@@ -97,8 +99,8 @@ export default function AICopilotDrawer({ isOpen: controlledIsOpen, onClose }: A
                   <Bot className="h-5 w-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-white">AI Behavioral Copilot</h3>
-                  <p className="text-[11px] text-slate-400">Inteligencia Artificial Forense de Red</p>
+                  <h3 className="text-sm font-bold text-white">Centinela AI</h3>
+                  <p className="text-[11px] text-slate-400">Inteligencia Forense y Prevención de Fraude</p>
                 </div>
               </div>
 
@@ -140,7 +142,7 @@ export default function AICopilotDrawer({ isOpen: controlledIsOpen, onClose }: A
                   <p className="whitespace-pre-line leading-relaxed">{m.text}</p>
                   {m.actionReport && (
                     <button
-                      onClick={() => alert('Informe oficial descargado como: Dictamen_Auditoria_Consorcio.pdf')}
+                      onClick={() => alert('Informe oficial descargado como: Dictamen_Auditoria_CentinelaAI.pdf')}
                       className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/40 px-3 py-1.5 text-[11px] font-semibold text-cyan-300 hover:bg-black/60 transition"
                     >
                       <FileText className="h-3.5 w-3.5" /> Descargar Dictamen en PDF
@@ -151,7 +153,7 @@ export default function AICopilotDrawer({ isOpen: controlledIsOpen, onClose }: A
               {isThinking && (
                 <div className="flex items-center gap-2 text-xs text-slate-400 italic">
                   <Sparkles className="h-3.5 w-3.5 text-cyan-400 animate-spin" />
-                  Analizando telemetría de grafos y consenso...
+                  Centinela está analizando la telemetría de grafos y consenso...
                 </div>
               )}
             </div>
@@ -162,7 +164,7 @@ export default function AICopilotDrawer({ isOpen: controlledIsOpen, onClose }: A
                 type="text"
                 value={inputQuery}
                 onChange={e => setInputQuery(e.target.value)}
-                placeholder="Pregunta sobre causas de score, mulas o regulaciones..."
+                placeholder="Pregúntale a Centinela sobre causas de score, mulas o regulaciones..."
                 className="flex-1 rounded-xl border border-white/10 bg-black/50 px-3 py-2.5 text-xs text-white focus:outline-none focus:border-cyan-400"
               />
               <button
@@ -178,3 +180,4 @@ export default function AICopilotDrawer({ isOpen: controlledIsOpen, onClose }: A
     </>
   );
 }
+
