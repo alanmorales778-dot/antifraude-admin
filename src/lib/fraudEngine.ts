@@ -7,6 +7,7 @@ import {
   IncidentCategory,
 } from './types';
 import { normalizeIdentifier, hashData, CONSORTIUM_SALT } from './crypto';
+import { verifyEmailExistence } from './emailVerifier';
 
 // ─────────────────────────────────────────────────────────────────
 // CONSTANTES DE SCORING
@@ -176,8 +177,13 @@ export async function evaluateRisk(params: {
     velocityPenalty = VELOCITY_PENALTY;
   }
 
+  // ── FACTOR 4: Verificación de Existencia de Email ─────────────
+  const emailVerification = email ? verifyEmailExistence(email) : null;
+  const emailPenalty = emailVerification ? emailVerification.scorePenalty : 0;
+
   // ── SCORE FINAL ───────────────────────────────────────────────
-  const rawScore = historicalReportsScore + mismatchPenalty + velocityPenalty;
+  const rawScore =
+    historicalReportsScore + mismatchPenalty + velocityPenalty + emailPenalty;
   const finalScore = Math.min(100, Math.max(0, Math.round(rawScore)));
 
   const riskLevel: 'BAJO' | 'MEDIO' | 'ALTO' =
@@ -187,6 +193,8 @@ export async function evaluateRisk(params: {
     historicalReportsScore: Math.round(historicalReportsScore),
     mismatchPenalty,
     velocityPenalty,
+    emailPenalty,
+    emailVerification,
     finalScore,
     riskLevel,
     mismatchDetected,
