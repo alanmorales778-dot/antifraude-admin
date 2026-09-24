@@ -17,6 +17,7 @@ import {
   X,
   Sparkles,
   Activity,
+  FileSpreadsheet,
 } from 'lucide-react';
 import FintechDashboard from '@/components/FintechDashboard';
 import DashboardKPIs from '@/components/DashboardKPIs';
@@ -31,7 +32,7 @@ import { useConsortiumStore } from '@/lib/store';
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, description: 'KPIs y estadísticas' },
   { id: 'consulta', label: 'Consulta de Riesgo', icon: Search, description: 'Lookup unitario y combinado ZK' },
-  { id: 'consulta_masiva', label: 'Consulta Masiva CSV', icon: Upload, description: 'Evaluación masiva con layout' },
+  { id: 'consulta_masiva', label: 'Consultas Masivas', icon: FileSpreadsheet, description: 'Subir CSV y descargar layout' },
   { id: 'reporte', label: 'Reportar Fraude', icon: ShieldAlert, description: 'Ingreso de incidentes' },
   { id: 'csv', label: 'Importación CSV', icon: Upload, description: 'Carga masiva de fraudes' },
   { id: 'historial', label: 'Historial', icon: History, description: 'Mis reportes' },
