@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const validTypes: IdentifierType[] = ['EMAIL', 'DNI', 'PHONE', 'TAX_ID', 'CARD_BIN'];
+    const validTypes: IdentifierType[] = ['EMAIL', 'DNI', 'PHONE', 'IP', 'CBU', 'TAX_ID', 'CARD_BIN'];
     if (!validTypes.includes(identifier_type as IdentifierType)) {
       return NextResponse.json(
         {
@@ -90,3 +90,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
