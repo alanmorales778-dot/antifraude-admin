@@ -353,12 +353,14 @@ interface ConsortiumStore {
     dni?: string;
     email?: string;
     phone?: string;
+    ip?: string;
   }) => Promise<LookupResult>;
 
   reportFraud: (params: {
     dni?: string;
     email?: string;
     phone?: string;
+    ip?: string;
     incidentCategory: IncidentCategory;
   }) => Promise<void>;
 
@@ -590,7 +592,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
 
       // ── Acciones Fintech ──────────────────────────────────────
 
-      lookupIdentity: async ({ dni, email, phone }) => {
+      lookupIdentity: async ({ dni, email, phone, ip }) => {
         const state = get();
         const fintechId = state.activeFintechId;
         const fintech = state.fintechs.find(f => f.id === fintechId);
@@ -599,6 +601,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           dni,
           email,
           phone,
+          ip,
           fintechId,
           fintechs: state.fintechs,
           identityNodes: state.identityNodes,
@@ -613,12 +616,15 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           updatedNodes = upsertIdentityNode(updatedNodes, 'EMAIL', result.emailHash, true);
         if (result.phoneHash)
           updatedNodes = upsertIdentityNode(updatedNodes, 'PHONE', result.phoneHash, true);
+        if (result.ipHash)
+          updatedNodes = upsertIdentityNode(updatedNodes, 'IP', result.ipHash, true);
 
         const actorName = fintech?.name || fintechId;
         const identifiers = [
           dni ? `DNI: ${dni}` : null,
           email ? `EMAIL: ${email}` : null,
           phone ? `PHONE: ${phone}` : null,
+          ip ? `IP: ${ip}` : null,
         ]
           .filter(Boolean)
           .join(', ');
@@ -640,7 +646,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         return result;
       },
 
-      reportFraud: async ({ dni, email, phone, incidentCategory }) => {
+      reportFraud: async ({ dni, email, phone, ip, incidentCategory }) => {
         const state = get();
         const fintechId = state.activeFintechId;
         const fintech = state.fintechs.find(f => f.id === fintechId);
@@ -653,12 +659,14 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         const dniHash = dni ? await computeHash('DNI', dni) : null;
         const emailHash = email ? await computeHash('EMAIL', email) : null;
         const phoneHash = phone ? await computeHash('PHONE', phone) : null;
+        const ipHash = ip ? await computeHash('IP', ip) : null;
 
         // Crear aristas del grafo
         const newEdges = buildEdgesFromReport({
           dniHash,
           emailHash,
           phoneHash,
+          ipHash,
           reportedByEntityId: fintechId,
           incidentCategory,
         });
@@ -668,12 +676,14 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         if (dniHash) updatedNodes = upsertIdentityNode(updatedNodes, 'DNI', dniHash, false);
         if (emailHash) updatedNodes = upsertIdentityNode(updatedNodes, 'EMAIL', emailHash, false);
         if (phoneHash) updatedNodes = upsertIdentityNode(updatedNodes, 'PHONE', phoneHash, false);
+        if (ipHash) updatedNodes = upsertIdentityNode(updatedNodes, 'IP', ipHash, false);
 
         const actorName = fintech?.name || fintechId;
         const identifiers = [
           dni ? `DNI: ${dni}` : null,
           email ? `EMAIL: ${email}` : null,
           phone ? `PHONE: ${phone}` : null,
+          ip ? `IP: ${ip}` : null,
         ]
           .filter(Boolean)
           .join(', ');
@@ -740,7 +750,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         let updatedNodes = state.identityNodes;
 
         for (const line of lines) {
-          // Soporte para formatos: dni,email,phone,category o solo identificadores
+          // Soporte para formatos: dni,email,phone,ip,category o dni,email,phone,category
           const parts = line.split(',').map(p => p.trim());
           if (parts.length < 2) {
             errors++;
@@ -748,7 +758,18 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           }
 
           try {
-            const [rawDni, rawEmail, rawPhone, rawCategory] = parts;
+            let rawDni: string | undefined;
+            let rawEmail: string | undefined;
+            let rawPhone: string | undefined;
+            let rawIp: string | undefined;
+            let rawCategory: string | undefined;
+
+            if (parts.length >= 5) {
+              [rawDni, rawEmail, rawPhone, rawIp, rawCategory] = parts;
+            } else {
+              [rawDni, rawEmail, rawPhone, rawCategory] = parts;
+            }
+
             const category =
               (rawCategory?.toUpperCase() as IncidentCategory) || 'SUSPICIOUS';
 
@@ -767,8 +788,9 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             const dniHash = rawDni ? await computeHash('DNI', rawDni) : null;
             const emailHash = rawEmail ? await computeHash('EMAIL', rawEmail) : null;
             const phoneHash = rawPhone ? await computeHash('PHONE', rawPhone) : null;
+            const ipHash = rawIp ? await computeHash('IP', rawIp) : null;
 
-            if (!dniHash && !emailHash && !phoneHash) {
+            if (!dniHash && !emailHash && !phoneHash && !ipHash) {
               errors++;
               continue;
             }
@@ -777,6 +799,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
               dniHash,
               emailHash,
               phoneHash,
+              ipHash,
               reportedByEntityId: fintechId,
               incidentCategory,
             });
@@ -786,6 +809,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             if (dniHash) updatedNodes = upsertIdentityNode(updatedNodes, 'DNI', dniHash, false);
             if (emailHash) updatedNodes = upsertIdentityNode(updatedNodes, 'EMAIL', emailHash, false);
             if (phoneHash) updatedNodes = upsertIdentityNode(updatedNodes, 'PHONE', phoneHash, false);
+            if (ipHash) updatedNodes = upsertIdentityNode(updatedNodes, 'IP', ipHash, false);
 
             imported++;
           } catch {
@@ -979,3 +1003,4 @@ export const useConsortiumStore = create<ConsortiumStore>()(
     }
   )
 );
+
