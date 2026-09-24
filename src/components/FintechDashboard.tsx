@@ -797,24 +797,43 @@ function BulkLookupView() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-indigo-950/20 border border-indigo-500/20 rounded-2xl p-4">
-        <div>
-          <h4 className="text-sm font-bold text-white flex items-center gap-2">
-            <FileSpreadsheet className="h-4 w-4 text-indigo-400" />
-            Consulta Masiva por Archivo CSV
-          </h4>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Podés cargar un archivo con uno o varios campos por fila (DNI, Email, Teléfono, IP). La plataforma valida automáticamente la existencia de cada email y calcula el score individual.
+      {/* Apartado de Consultas Masivas con ambos botones: Descargar y Subir */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border border-indigo-500/25 rounded-2xl p-5 shadow-xl">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="flex h-2 w-2 rounded-full bg-cyan-400 animate-pulse" />
+            <h4 className="text-sm font-bold text-white flex items-center gap-2">
+              <FileSpreadsheet className="h-4 w-4 text-cyan-400" />
+              Apartado de Consultas Masivas (CSV)
+            </h4>
+          </div>
+          <p className="text-xs text-slate-400 max-w-xl leading-relaxed">
+            Evaluá múltiples identidades en simultáneo (DNI, Email, Teléfono, IP). Descargá el layout de prueba para verificar el formato de columnas o subí directamente tu archivo para calcular el score individual de cada registro.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={downloadSampleLayout}
-          className="inline-flex items-center gap-2 rounded-xl border border-indigo-500/40 bg-indigo-500/10 px-3.5 py-2 text-xs font-bold text-indigo-300 hover:bg-indigo-500/20 active:scale-95 transition whitespace-nowrap self-start sm:self-auto"
-        >
-          <Download className="h-3.5 w-3.5" />
-          Descargar Layout de Prueba
-        </button>
+
+        {/* Los dos botones de Consultas Masivas juntos */}
+        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+          <button
+            type="button"
+            onClick={downloadSampleLayout}
+            className="flex items-center gap-2 rounded-xl border border-indigo-500/40 bg-indigo-500/10 px-4 py-2.5 text-xs font-bold text-indigo-300 hover:bg-indigo-500/20 hover:text-white active:scale-95 transition shadow-md"
+            title="Descargar archivo CSV de prueba con las columnas preparadas"
+          >
+            <Download className="h-4 w-4" />
+            <span>Descargar Layout de Prueba</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-2 rounded-xl theme-btn-primary px-4 py-2.5 text-xs font-bold shadow-lg shadow-cyan-950/50 transition active:scale-95"
+            title="Seleccionar y subir archivo CSV para consultar"
+          >
+            <Upload className="h-4 w-4" />
+            <span>Subir Archivo CSV</span>
+          </button>
+        </div>
       </div>
 
       <div className="rounded-xl bg-black/40 p-3 font-mono text-xs border border-white/5">
@@ -1003,13 +1022,23 @@ function LookupModule({ initialSubTab = 'single' }: { initialSubTab?: 'single' |
   const { activeFintechId, fintechs } = useConsortiumStore();
   const activeFintech = fintechs.find(f => f.id === activeFintechId);
 
+  React.useEffect(() => {
+    setActiveSubTab(initialSubTab);
+  }, [initialSubTab]);
+
   return (
     <div className="glass-panel rounded-2xl p-6 space-y-6">
       {/* Header con Tabs de Selección */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
         <div className="flex items-center gap-2.5">
-          <Search className="h-5 w-5 text-cyan-400" />
-          <h3 className="text-base font-bold text-white">Consulta de Riesgo</h3>
+          {activeSubTab === 'bulk' ? (
+            <FileSpreadsheet className="h-5 w-5 text-indigo-400" />
+          ) : (
+            <Search className="h-5 w-5 text-cyan-400" />
+          )}
+          <h3 className="text-base font-bold text-white">
+            {activeSubTab === 'bulk' ? 'Consultas Masivas' : 'Consulta de Riesgo'}
+          </h3>
           {activeFintech && (
             <span className="text-[11px] font-mono text-slate-400 bg-white/5 px-2 py-0.5 rounded-lg border border-white/5">
               Entidad: <strong className="text-slate-200">{activeFintech.name}</strong>
