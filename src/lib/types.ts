@@ -21,7 +21,7 @@ export interface FintechEntity {
 }
 
 export interface IdentityNode {
-  type: 'DNI' | 'EMAIL' | 'PHONE' | 'IP';
+  type: 'DNI' | 'EMAIL' | 'PHONE' | 'IP' | 'CBU';
   hash: string; // SHA-256 con salt
   firstSeen: string; // ISO
   lastSeen: string; // ISO
@@ -78,6 +78,7 @@ export interface LookupResult {
   emailHash: string | null;
   phoneHash: string | null;
   ipHash?: string | null;
+  cbuHash?: string | null;
   breakdown: ScoreBreakdown;
   timestamp: string;
   fintechId: string;
@@ -87,7 +88,7 @@ export interface LookupResult {
 // TIPOS LEGACY (API server-side / db.ts / risk-engine.ts)
 // ─────────────────────────────────────────────────────────────────
 
-export type IdentifierType = 'EMAIL' | 'DNI' | 'PHONE' | 'IP' | 'TAX_ID' | 'CARD_BIN';
+export type IdentifierType = 'EMAIL' | 'DNI' | 'PHONE' | 'IP' | 'CBU' | 'TAX_ID' | 'CARD_BIN';
 
 export type RiskLevel = 'BAJO' | 'MEDIO' | 'ALTO';
 
