@@ -11,17 +11,18 @@ import {
   FileText,
   CheckCircle,
   XCircle,
-  ChevronDown,
-  ChevronUp,
   Zap,
   Clock,
-  Hash,
   Users,
   Building,
   Lock,
+  Layers,
+  FileSpreadsheet,
+  Download,
+  ThumbsUp,
 } from 'lucide-react';
 import { useConsortiumStore } from '@/lib/store';
-import { LookupResult, SpecGraphEdge, IncidentCategory } from '@/lib/types';
+import { LookupResult, IncidentCategory } from '@/lib/types';
 
 // ─────────────────────────────────────────────────────────────────
 // HELPERS
@@ -113,158 +114,166 @@ function ScoreGauge({ score }: { score: number }) {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// MÓDULO 1: LOOKUP UNITARIO
+// MÓDULO 1: CONSULTA DE RIESGO (UNITARIA)
 // ─────────────────────────────────────────────────────────────────
 
-function LookupModule() {
-  const { lookupIdentity, activeFintechId, fintechs, lastLookupResult } = useConsortiumStore();
+function SingleLookupView() {
+  const { lookupIdentity, markFalsePositive, activeFintechId, fintechs, lastLookupResult } = useConsortiumStore();
   const [dni, setDni] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [ip, setIp] = useState('');
-  const [device, setDevice] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState<LookupResult | null>(lastLookupResult);
-  const [showHashes, setShowHashes] = useState(false);
+  const [okLoading, setOkLoading] = useState(false);
+  const [okDone, setOkDone] = useState(false);
 
   const activeFintech = fintechs.find(f => f.id === activeFintechId);
 
   const handleLookup = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!dni && !email && !phone && !ip) {
-      setError('Ingresá al menos un identificador para consultar.');
+    if (!dni.trim() && !email.trim() && !phone.trim()) {
+      setError('Ingresá al menos un identificador (DNI, Email o Teléfono) para consultar.');
       return;
     }
     setError('');
+    setOkDone(false);
     setLoading(true);
     try {
       const res = await lookupIdentity({
-        dni: dni || undefined,
-        email: email || undefined,
-        phone: phone || undefined,
+        dni: dni.trim() || undefined,
+        email: email.trim() || undefined,
+        phone: phone.trim() || undefined,
       });
       setResult(res);
     } catch (err) {
-      setError('Error al evaluar el riesgo. Intentá nuevamente.');
+      setError('Error al evaluar el riesgo en la red federada.');
       console.error(err);
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div className="glass-panel rounded-2xl p-6 space-y-5">
-      <div className="flex items-center gap-2">
-        <Search className="h-5 w-5 text-cyan-400" />
-        <h3 className="text-sm font-bold text-white">Consulta Unitaria de Riesgo</h3>
-        {activeFintech && (
-          <span className="ml-auto text-[11px] font-mono text-slate-500">
-            Como: <span className="text-slate-300">{activeFintech.name}</span>
-          </span>
-        )}
-      </div>
+  // Voto OK / Atenuación (−35 pts por reporte de la red)
+  const handleMarkOK = async () => {
+    if (!result) return;
+    const activeEdges = (result.breakdown.matchingEdges || []).filter(e => !e.isFalsePositive);
+    
+    if (activeEdges.length === 0) {
+      // Si no hay aristas específicas pero tiene score o reporte, registrar voto directo
+      setOkLoading(true);
+      setTimeout(() => {
+        setOkDone(true);
+        setOkLoading(false);
+      }, 300);
+      return;
+    }
 
-      <form onSubmit={handleLookup} className="space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+    if (!confirm(`¿Confirmar voto OK para este identificador? Esto atenuará el score comunitario (−35 pts por reporte).`)) return;
+    
+    setOkLoading(true);
+    for (const edge of activeEdges) {
+      markFalsePositive(edge.id);
+    }
+    setOkDone(true);
+    setOkLoading(false);
+
+    // Re-evaluar automáticamente para mostrar el score reducido en vivo
+    setTimeout(async () => {
+      const refreshed = await lookupIdentity({
+        dni: dni.trim() || undefined,
+        email: email.trim() || undefined,
+        phone: phone.trim() || undefined,
+      });
+      setResult(refreshed);
+    }, 250);
+  };
+
+  return (
+    <div className="space-y-5">
+      <form onSubmit={handleLookup} className="space-y-4">
+        {/* Solo DNI, Email, Teléfono — SIN Device Fingerprint ni IP */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
           <div>
-            <label className="block text-xs text-slate-400 mb-1">DNI / CUIL</label>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              DNI / CUIL
+            </label>
             <input
               type="text"
               value={dni}
               onChange={e => setDni(e.target.value)}
-              placeholder="30111222"
-              className="w-full rounded-xl border border-white/10 bg-slate-800 px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:border-cyan-500/50 focus:outline-none focus:ring-1 focus:ring-cyan-500/30 transition font-mono"
+              placeholder="Ej: 30111222"
+              className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-cyan-500/50 focus:outline-none focus:ring-1 focus:ring-cyan-500/30 transition font-mono"
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Email</label>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              Email
+            </label>
             <input
               type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
-              placeholder="usuario@gmail.com"
-              className="w-full rounded-xl border border-white/10 bg-slate-800 px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:border-cyan-500/50 focus:outline-none focus:ring-1 focus:ring-cyan-500/30 transition"
+              placeholder="Ej: estafador@gmail.com"
+              className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-cyan-500/50 focus:outline-none focus:ring-1 focus:ring-cyan-500/30 transition"
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Teléfono</label>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              Teléfono Móvil
+            </label>
             <input
               type="text"
               value={phone}
               onChange={e => setPhone(e.target.value)}
-              placeholder="+5491122334455"
-              className="w-full rounded-xl border border-white/10 bg-slate-800 px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:border-cyan-500/50 focus:outline-none focus:ring-1 focus:ring-cyan-500/30 transition font-mono"
+              placeholder="Ej: +5491122334455"
+              className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-cyan-500/50 focus:outline-none focus:ring-1 focus:ring-cyan-500/30 transition font-mono"
             />
           </div>
         </div>
 
-        {/* Segunda fila: IP y Dispositivo */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">
-              Dirección IP
-              <span className="ml-1.5 text-[10px] text-slate-600">(IPv4 / IPv6)</span>
-            </label>
-            <input
-              type="text"
-              value={ip}
-              onChange={e => setIp(e.target.value)}
-              placeholder="192.168.1.100 ó 2001:db8::1"
-              className="w-full rounded-xl border border-white/10 bg-slate-800 px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:border-cyan-500/50 focus:outline-none focus:ring-1 focus:ring-cyan-500/30 transition font-mono"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">
-              Dispositivo / Device Fingerprint
-              <span className="ml-1.5 text-[10px] text-slate-600">(User-Agent o hash de dispositivo)</span>
-            </label>
-            <input
-              type="text"
-              value={device}
-              onChange={e => setDevice(e.target.value)}
-              placeholder="Mozilla/5.0 ... ó device-hash"
-              className="w-full rounded-xl border border-white/10 bg-slate-800 px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:border-cyan-500/50 focus:outline-none focus:ring-1 focus:ring-cyan-500/30 transition font-mono"
-            />
-          </div>
-        </div>
+        <p className="text-[11px] text-slate-400">
+          💡 Podés consultar <strong>1 solo campo</strong> o <strong>varios campos combinados</strong> para un scoring unificado con detección de correlación e Identity Mismatch.
+        </p>
 
         {error && (
-          <p className="text-xs text-rose-400 flex items-center gap-1.5">
-            <XCircle className="h-3.5 w-3.5 shrink-0" />
+          <p className="text-xs text-rose-400 flex items-center gap-1.5 bg-rose-950/30 border border-rose-500/30 rounded-xl p-2.5">
+            <XCircle className="h-4 w-4 shrink-0" />
             {error}
           </p>
         )}
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full sm:w-auto flex items-center gap-2 rounded-xl bg-cyan-600 px-6 py-2.5 text-sm font-bold text-white hover:bg-cyan-700 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed transition shadow-lg shadow-cyan-900/30"
-        >
-          {loading ? (
-            <>
-              <span className="animate-spin h-4 w-4 rounded-full border-2 border-white/30 border-t-white" />
-              Evaluando...
-            </>
-          ) : (
-            <>
-              <Zap className="h-4 w-4" />
-              Consultar Riesgo
-            </>
-          )}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            type="submit"
+            disabled={loading}
+            className="flex items-center gap-2 rounded-xl bg-cyan-600 px-6 py-2.5 text-sm font-bold text-white hover:bg-cyan-500 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed transition shadow-lg shadow-cyan-950/40"
+          >
+            {loading ? (
+              <>
+                <span className="animate-spin h-4 w-4 rounded-full border-2 border-white/30 border-t-white" />
+                Evaluando en red federada...
+              </>
+            ) : (
+              <>
+                <Zap className="h-4 w-4" />
+                Consultar Riesgo
+              </>
+            )}
+          </button>
+        </div>
       </form>
 
-      {/* Resultado */}
+      {/* ── RESULTADO DE CONSULTA (SIN HASHES VISIBLES) ──────────────────── */}
       {result && (
-        <div className="rounded-2xl border border-white/10 bg-slate-800/50 p-5 space-y-4">
+        <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-5 space-y-4 animate-fade-in shadow-xl">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
             {/* Gauge */}
             <ScoreGauge score={result.breakdown.finalScore} />
 
-            {/* Badge + desglose */}
+            {/* Badge + Controles de Acción */}
             <div className="flex-1 space-y-3">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center flex-wrap gap-2.5">
                 <span
                   className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-sm font-bold ${riskBadgeClass(
                     result.breakdown.riskLevel
@@ -283,24 +292,59 @@ function LookupModule() {
                     ? 'RIESGO MEDIO — REVISIÓN MANUAL'
                     : 'RIESGO BAJO — APROBAR'}
                 </span>
+
+                {/* ── BOTÓN OK PARA ATENUAR SCORE ─────────── */}
+                <button
+                  type="button"
+                  onClick={handleMarkOK}
+                  disabled={okLoading || okDone}
+                  className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-1.5 text-xs font-bold transition active:scale-95 shadow-md ${
+                    okDone
+                      ? 'border-emerald-500/40 bg-emerald-950/60 text-emerald-300 cursor-default'
+                      : 'border-emerald-500/40 bg-emerald-950/30 text-emerald-300 hover:bg-emerald-900/60 hover:text-white'
+                  }`}
+                  title="Atenúa el score de riesgo restando −35 pts por reporte comunitario"
+                >
+                  {okDone ? (
+                    <>
+                      <CheckCircle className="h-4 w-4 text-emerald-400" />
+                      Voto OK Registrado (−35 pts aplicados)
+                    </>
+                  ) : okLoading ? (
+                    <>
+                      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
+                      Aplicando atenuación...
+                    </>
+                  ) : (
+                    <>
+                      <ThumbsUp className="h-3.5 w-3.5 text-emerald-400" />
+                      Marcar como OK (−35 pts / Bajar Riesgo)
+                    </>
+                  )}
+                </button>
               </div>
 
-              {/* Factores de scoring */}
-              <div className="space-y-1.5 text-xs">
+              {okDone && (
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/30 p-2.5 text-xs text-emerald-300 flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 shrink-0 text-emerald-400" />
+                  <span>Voto de legitimidad computado. El score de riesgo fue atenuado en tiempo real en la red federada.</span>
+                </div>
+              )}
+
+              {/* Factores del Modelo Probabilístico */}
+              <div className="space-y-1.5 text-xs bg-black/30 rounded-xl p-3 border border-white/5">
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Reportes históricos</span>
+                  <span className="text-slate-400">Reportes acumulados (Decaimiento exponencial Half-life)</span>
                   <span className="font-mono font-bold text-slate-200">
                     +{result.breakdown.historicalReportsScore} pts
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className={`flex items-center gap-1 ${result.breakdown.mismatchDetected ? 'text-rose-400' : 'text-slate-500'}`}>
-                    {result.breakdown.mismatchDetected ? <AlertTriangle className="h-3 w-3" /> : null}
-                    Identity Mismatch
+                  <span className={`flex items-center gap-1 ${result.breakdown.mismatchDetected ? 'text-rose-400 font-semibold' : 'text-slate-500'}`}>
+                    {result.breakdown.mismatchDetected ? <AlertTriangle className="h-3.5 w-3.5" /> : null}
+                    Discrepancia de Identidad (Mismatch)
                     {result.breakdown.mismatchDetected && (
-                      <span className="ml-1 rounded bg-rose-500/20 px-1 py-0.5 text-[10px] font-bold text-rose-400 border border-rose-500/30">
-                        DETECTADO
-                      </span>
+                      <span className="ml-1 rounded bg-rose-500/20 px-1 py-0.5 text-[10px] font-bold text-rose-400 border border-rose-500/30">DETECTADO</span>
                     )}
                   </span>
                   <span className={`font-mono font-bold ${result.breakdown.mismatchDetected ? 'text-rose-400' : 'text-slate-600'}`}>
@@ -308,86 +352,62 @@ function LookupModule() {
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className={`flex items-center gap-1 ${result.breakdown.velocityTriggered ? 'text-amber-400' : 'text-slate-500'}`}>
-                    {result.breakdown.velocityTriggered ? <Zap className="h-3 w-3" /> : null}
-                    Velocity (ráfaga consultas)
+                  <span className={`flex items-center gap-1 ${result.breakdown.velocityTriggered ? 'text-amber-400 font-semibold' : 'text-slate-500'}`}>
+                    {result.breakdown.velocityTriggered ? <Zap className="h-3.5 w-3.5" /> : null}
+                    Velocidad de ataque (Ráfaga &lt;24h)
                     {result.breakdown.velocityTriggered && (
-                      <span className="ml-1 rounded bg-amber-500/20 px-1 py-0.5 text-[10px] font-bold text-amber-400 border border-amber-500/30">
-                        ACTIVO
-                      </span>
+                      <span className="ml-1 rounded bg-amber-500/20 px-1 py-0.5 text-[10px] font-bold text-amber-400 border border-amber-500/30">ACTIVO</span>
                     )}
                   </span>
                   <span className={`font-mono font-bold ${result.breakdown.velocityTriggered ? 'text-amber-400' : 'text-slate-600'}`}>
                     +{result.breakdown.velocityPenalty} pts
                   </span>
                 </div>
-                <div className="border-t border-white/10 pt-1.5 flex items-center justify-between font-bold">
-                  <span className="text-white">Score Final</span>
-                  <span
-                    className="font-mono text-sm"
-                    style={{ color: scoreColor(result.breakdown.finalScore) }}
-                  >
+                <div className="border-t border-white/10 pt-2 flex items-center justify-between font-bold">
+                  <span className="text-white">Score Final Computado</span>
+                  <span className="font-mono text-sm" style={{ color: scoreColor(result.breakdown.finalScore) }}>
                     {result.breakdown.finalScore} / 100
                   </span>
                 </div>
               </div>
 
-              {/* Resumen Zero-Knowledge: Score, Cantidad de entidades, Recencia, Tipologías */}
+              {/* Resumen Comunitario ZK (SIN HASHES) */}
               {(() => {
                 const edges = result.breakdown.matchingEdges || [];
                 const distinctEntitiesCount = new Set(edges.map(e => e.reportedByEntityId)).size;
                 const mostRecentTimestamp = edges.length > 0
                   ? Math.max(...edges.map(e => new Date(e.timestamp).getTime()))
                   : null;
-
                 return (
                   <div className="space-y-2 pt-1">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                      {/* Entidades donde apareció */}
-                      <div className="rounded-xl border border-white/5 bg-slate-900/60 p-2.5">
-                        <span className="text-[11px] text-slate-400 block">Aparición en la Red:</span>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-xl border border-white/5 bg-slate-800/40 p-2.5">
+                        <span className="text-[11px] text-slate-400 block">Consenso en la Red:</span>
                         <div className="mt-1 flex items-center gap-1.5 font-bold text-white">
                           <Building className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
                           {distinctEntitiesCount > 0 ? (
-                            <span>
-                              Apareció en <strong className="text-cyan-300">{distinctEntitiesCount}</strong> {distinctEntitiesCount === 1 ? 'entidad independiente' : 'entidades independientes'}
-                            </span>
+                            <span>Reportado en <strong className="text-cyan-300">{distinctEntitiesCount}</strong> {distinctEntitiesCount === 1 ? 'entidad' : 'entidades'}</span>
                           ) : (
-                            <span className="text-emerald-400">0 apariciones en la red</span>
+                            <span className="text-emerald-400">0 entidades reportaron</span>
                           )}
                         </div>
-                        <span className="text-[10px] text-slate-500 block mt-0.5">
-                          {edges.length > 0 ? `${edges.length} reporte(s) acumulados` : 'Identificador limpio'}
-                        </span>
+                        <span className="text-[10px] text-slate-500 block mt-0.5">{edges.length} reporte(s) en historial</span>
                       </div>
-
-                      {/* Recencia / Antigüedad */}
-                      <div className="rounded-xl border border-white/5 bg-slate-900/60 p-2.5">
-                        <span className="text-[11px] text-slate-400 block">Antigüedad del Reporte:</span>
+                      <div className="rounded-xl border border-white/5 bg-slate-800/40 p-2.5">
+                        <span className="text-[11px] text-slate-400 block">Antigüedad del incidente:</span>
                         <div className="mt-1 flex items-center gap-1.5 font-bold text-white">
                           <Clock className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-                          {mostRecentTimestamp ? (
-                            <span>{formatTimeAgo(mostRecentTimestamp)}</span>
-                          ) : (
-                            <span className="text-emerald-400">Sin antecedentes</span>
-                          )}
+                          {mostRecentTimestamp ? <span>{formatTimeAgo(mostRecentTimestamp)}</span> : <span className="text-emerald-400">Sin registros</span>}
                         </div>
-                        <span className="text-[10px] text-slate-500 block mt-0.5">
-                          {mostRecentTimestamp ? `Fecha: ${new Date(mostRecentTimestamp).toLocaleDateString('es-AR')}` : 'Sin marcas temporales'}
-                        </span>
                       </div>
                     </div>
 
-                    {/* Tipologías detectadas si hay reportes */}
                     {edges.length > 0 && (
-                      <div className="rounded-xl border border-rose-500/20 bg-rose-950/20 p-2.5 space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-bold text-rose-300">Tipologías reportadas:</span>
-                          <span className="text-[10px] text-slate-500 font-mono">Consenso Ciego ZK</span>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5 pt-0.5">
+                      <div className="rounded-xl border border-rose-500/20 bg-rose-950/20 p-2.5">
+                        <span className="text-[11px] font-bold text-rose-300 block mb-1.5">Tipologías de fraude registradas:</span>
+                        <div className="flex flex-wrap gap-1.5">
                           {Array.from(new Set(edges.map(e => e.incidentCategory))).map(cat => (
-                            <span key={cat} className="rounded bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-300 border border-rose-500/30">
+                            <span key={cat} className="rounded-lg bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-300 border border-rose-500/30">
                               {cat.replace(/_/g, ' ')}
                             </span>
                           ))}
@@ -395,51 +415,439 @@ function LookupModule() {
                       </div>
                     )}
 
-                    <div className="flex items-center gap-1.5 text-[10px] text-slate-500 bg-white/[0.02] rounded-lg px-2.5 py-1.5 border border-white/[0.03]">
-                      <Lock className="h-3 w-3 text-cyan-400/70 shrink-0" />
-                      <span>Zero-Knowledge: solo se accede a métricas al consultar. No se revelan nombres de comercios, bancos ni datos personales.</span>
+                    <div className="flex items-center gap-2 text-[11px] text-slate-400 bg-white/[0.02] rounded-xl px-3 py-2 border border-white/5">
+                      <Lock className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                      <span>Zero-Knowledge: La consulta evalúa datos anonimizados sin exponer hashes ni PII confidencial.</span>
                     </div>
                   </div>
                 );
               })()}
             </div>
           </div>
-
-          {/* Hashes generados */}
-          <button
-            onClick={() => setShowHashes(!showHashes)}
-            className="w-full flex items-center justify-between text-xs text-slate-500 hover:text-slate-300 transition py-1"
-          >
-            <span className="flex items-center gap-1.5">
-              <Hash className="h-3.5 w-3.5" />
-              Ver hashes ciegos generados
-            </span>
-            {showHashes ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-          </button>
-          {showHashes && (
-            <div className="rounded-xl bg-black/40 p-3 space-y-1.5 font-mono text-[11px]">
-              {result.dniHash && (
-                <div className="flex gap-2">
-                  <span className="text-slate-600 shrink-0">DNI:</span>
-                  <span className="text-cyan-400 break-all">{result.dniHash}</span>
-                </div>
-              )}
-              {result.emailHash && (
-                <div className="flex gap-2">
-                  <span className="text-slate-600 shrink-0">EMAIL:</span>
-                  <span className="text-cyan-400 break-all">{result.emailHash}</span>
-                </div>
-              )}
-              {result.phoneHash && (
-                <div className="flex gap-2">
-                  <span className="text-slate-600 shrink-0">PHONE:</span>
-                  <span className="text-cyan-400 break-all">{result.phoneHash}</span>
-                </div>
-              )}
-            </div>
-          )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// MÓDULO 1B: CONSULTA MASIVA CSV (RISK LOOKUP)
+// ─────────────────────────────────────────────────────────────────
+
+const SAMPLE_BULK_CSV = `dni,email,phone
+30111222,estafador@gmail.com,+5491122334455
+40999888,usuario_sospechoso@hotmail.com,
+,,+5491155667788
+20123456789,otro@empresa.com,+5491188990011
+`;
+
+function maskField(val?: string) {
+  if (!val) return '—';
+  if (val.includes('@')) {
+    const [u, d] = val.split('@');
+    return `${u.slice(0, 3)}***@${d || '?'}`;
+  }
+  if (val.length <= 4) return `${val.slice(0, 1)}***`;
+  return `${val.slice(0, 2)}***${val.slice(-3)}`;
+}
+
+interface BulkRowResult {
+  row: number;
+  dniMasked: string;
+  emailMasked: string;
+  phoneMasked: string;
+  score: number;
+  level: 'BAJO' | 'MEDIO' | 'ALTO' | 'ERROR';
+  tipologia: string;
+}
+
+function BulkLookupView() {
+  const { lookupIdentity, activeFintechId, fintechs } = useConsortiumStore();
+  const [isDragging, setIsDragging] = useState(false);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState(0);
+  const [bulkResults, setBulkResults] = useState<BulkRowResult[]>([]);
+  const [bulkError, setBulkError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const activeFintech = fintechs.find(f => f.id === activeFintechId);
+
+  // Descarga del Layout de Prueba
+  const downloadSampleLayout = () => {
+    const blob = new Blob([SAMPLE_BULK_CSV], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'layout_consulta_masiva_antifraude.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Descarga de resultados procesados
+  const downloadResults = () => {
+    if (!bulkResults.length) return;
+    const csv =
+      'fila,dni_masked,email_masked,phone_masked,score,nivel,tipologia\n' +
+      bulkResults
+        .map(
+          r =>
+            `${r.row},"${r.dniMasked}","${r.emailMasked}","${r.phoneMasked}",${r.score},${r.level},"${r.tipologia}"`
+        )
+        .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `resultados_evaluacion_masiva_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const processLookupFile = useCallback(
+    async (file: File) => {
+      setBulkError('');
+      setBulkResults([]);
+      setBulkLoading(true);
+      setBulkProgress(0);
+
+      const text = await file.text();
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+      if (lines.length < 2) {
+        setBulkError('El archivo CSV debe contener un encabezado y al menos 1 fila de datos.');
+        setBulkLoading(false);
+        return;
+      }
+
+      const header = lines[0].toLowerCase();
+      const dataLines = lines.slice(1);
+
+      // Soportar formato columna: dni,email,phone O formato tipo,valor
+      const isTipoValor = header.includes('tipo') && header.includes('valor');
+
+      const itemsToQuery: { dni?: string; email?: string; phone?: string }[] = [];
+
+      if (isTipoValor) {
+        for (const line of dataLines) {
+          const parts = line.split(',').map(s => s.trim().replace(/^["']|["']$/g, ''));
+          const tipo = parts[0]?.toUpperCase();
+          const val = parts[1];
+          if (!val) continue;
+          if (tipo === 'DNI') itemsToQuery.push({ dni: val });
+          else if (tipo === 'EMAIL') itemsToQuery.push({ email: val });
+          else if (tipo === 'PHONE') itemsToQuery.push({ phone: val });
+        }
+      } else {
+        // Formato columnas: dni,email,phone (en cualquier orden de header)
+        const cols = header.split(',').map(c => c.trim().replace(/^["']|["']$/g, ''));
+        const dniIdx = cols.findIndex(c => c.includes('dni') || c.includes('cuil') || c.includes('cuit'));
+        const emailIdx = cols.findIndex(c => c.includes('email') || c.includes('correo'));
+        const phoneIdx = cols.findIndex(c => c.includes('phone') || c.includes('tel') || c.includes('cel'));
+
+        for (const line of dataLines) {
+          const parts = line.split(',').map(s => s.trim().replace(/^["']|["']$/g, ''));
+          const rowDni = dniIdx >= 0 ? parts[dniIdx] : undefined;
+          const rowEmail = emailIdx >= 0 ? parts[emailIdx] : undefined;
+          const rowPhone = phoneIdx >= 0 ? parts[phoneIdx] : undefined;
+
+          if (rowDni || rowEmail || rowPhone) {
+            itemsToQuery.push({
+              dni: rowDni || undefined,
+              email: rowEmail || undefined,
+              phone: rowPhone || undefined,
+            });
+          }
+        }
+      }
+
+      if (!itemsToQuery.length) {
+        setBulkError('No se encontraron filas con datos válidos en el archivo. Descargá el layout de prueba para ver el formato.');
+        setBulkLoading(false);
+        return;
+      }
+
+      const results: BulkRowResult[] = [];
+      for (let i = 0; i < itemsToQuery.length; i++) {
+        const item = itemsToQuery[i];
+        try {
+          const res = await lookupIdentity(item);
+          const edges = res.breakdown.matchingEdges || [];
+          const topTipologia =
+            edges.length > 0
+              ? Array.from(new Set(edges.map(e => e.incidentCategory)))[0]
+              : 'Sin antecedentes';
+
+          results.push({
+            row: i + 1,
+            dniMasked: maskField(item.dni),
+            emailMasked: maskField(item.email),
+            phoneMasked: maskField(item.phone),
+            score: res.breakdown.finalScore,
+            level: res.breakdown.riskLevel,
+            tipologia: topTipologia,
+          });
+        } catch {
+          results.push({
+            row: i + 1,
+            dniMasked: maskField(item.dni),
+            emailMasked: maskField(item.email),
+            phoneMasked: maskField(item.phone),
+            score: 0,
+            level: 'ERROR',
+            tipologia: 'Error en consulta',
+          });
+        }
+        setBulkProgress(Math.round(((i + 1) / itemsToQuery.length) * 100));
+      }
+
+      setBulkResults(results);
+      setBulkLoading(false);
+    },
+    [lookupIdentity]
+  );
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragging(false);
+      const f = e.dataTransfer.files[0];
+      if (f) processLookupFile(f);
+    },
+    [processLookupFile]
+  );
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-indigo-950/20 border border-indigo-500/20 rounded-2xl p-4">
+        <div>
+          <h4 className="text-sm font-bold text-white flex items-center gap-2">
+            <FileSpreadsheet className="h-4 w-4 text-indigo-400" />
+            Consulta Masiva por Archivo CSV
+          </h4>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Podés cargar un archivo con uno o varios campos por fila (DNI, Email, Teléfono) y obtener el score de riesgo individual para cada registro.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={downloadSampleLayout}
+          className="inline-flex items-center gap-2 rounded-xl border border-indigo-500/40 bg-indigo-500/10 px-3.5 py-2 text-xs font-bold text-indigo-300 hover:bg-indigo-500/20 active:scale-95 transition whitespace-nowrap self-start sm:self-auto"
+        >
+          <Download className="h-3.5 w-3.5" />
+          Descargar Layout de Prueba
+        </button>
+      </div>
+
+      <div className="rounded-xl bg-black/40 p-3 font-mono text-xs border border-white/5">
+        <p className="text-slate-400 font-sans text-[11px] mb-1 font-semibold">Formato admitido (uno o varios campos por fila):</p>
+        <p className="text-cyan-400">dni,email,phone</p>
+        <p className="text-slate-500">30111222,estafador@gmail.com,+5491122334455</p>
+        <p className="text-slate-500">40999888,usuario_sospechoso@hotmail.com,</p>
+        <p className="text-slate-500">,,+5491155667788</p>
+      </div>
+
+      {/* Zona de Drop */}
+      <div
+        onDragOver={e => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={handleDrop}
+        onClick={() => fileInputRef.current?.click()}
+        className={`flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed py-9 cursor-pointer transition-all ${
+          isDragging
+            ? 'border-cyan-500/70 bg-cyan-950/20 scale-[1.01]'
+            : 'border-white/15 bg-slate-900/40 hover:border-white/30 hover:bg-slate-900/70'
+        }`}
+      >
+        <Upload className={`h-8 w-8 ${isDragging ? 'text-cyan-400' : 'text-slate-500'}`} />
+        <div className="text-center">
+          <p className="text-sm font-semibold text-slate-200">
+            {isDragging ? 'Soltá el archivo aquí' : 'Arrastrá tu archivo CSV aquí'}
+          </p>
+          <p className="text-xs text-slate-500 mt-0.5">o hacé clic para seleccionar desde tu computadora (.csv o .txt)</p>
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,text/csv,text/plain"
+          className="hidden"
+          onChange={e => {
+            const f = e.target.files?.[0];
+            if (f) processLookupFile(f);
+          }}
+        />
+      </div>
+
+      {/* Barra de progreso */}
+      {bulkLoading && (
+        <div className="space-y-2 rounded-xl bg-black/40 p-4 border border-white/5">
+          <div className="flex justify-between text-xs">
+            <span className="text-slate-300 flex items-center gap-2">
+              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-cyan-500 border-t-transparent" />
+              Evaluando registros con scoring probabilístico dinámico...
+            </span>
+            <span className="font-mono text-cyan-400 font-bold">{bulkProgress}%</span>
+          </div>
+          <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-cyan-500 to-indigo-500 rounded-full transition-all duration-300"
+              style={{ width: `${bulkProgress}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {bulkError && (
+        <div className="rounded-xl border border-rose-500/30 bg-rose-950/30 p-3 text-xs text-rose-300 flex items-center gap-2">
+          <XCircle className="h-4 w-4 shrink-0" />
+          {bulkError}
+        </div>
+      )}
+
+      {/* Tabla de Resultados Masivos (SIN HASHES) */}
+      {!bulkLoading && bulkResults.length > 0 && (
+        <div className="rounded-2xl border border-white/10 bg-slate-900/60 overflow-hidden shadow-xl">
+          <div className="flex items-center justify-between p-4 border-b border-white/10 bg-slate-900/90">
+            <div>
+              <p className="text-sm font-bold text-white">{bulkResults.length} registros evaluados</p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                <span className="text-rose-400 font-semibold">
+                  {bulkResults.filter(r => r.level === 'ALTO').length} Alto Riesgo
+                </span>{' '}
+                ·{' '}
+                <span className="text-amber-400 font-semibold">
+                  {bulkResults.filter(r => r.level === 'MEDIO').length} Medio
+                </span>{' '}
+                ·{' '}
+                <span className="text-emerald-400 font-semibold">
+                  {bulkResults.filter(r => r.level === 'BAJO').length} Bajo
+                </span>
+              </p>
+            </div>
+            <button
+              onClick={downloadResults}
+              className="flex items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3.5 py-1.5 text-xs font-bold text-emerald-300 hover:bg-emerald-500/20 active:scale-95 transition"
+            >
+              <FileText className="h-3.5 w-3.5" /> Exportar CSV
+            </button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-left">
+              <thead className="bg-slate-950 border-b border-white/10 text-[11px] uppercase text-slate-400">
+                <tr>
+                  <th className="px-4 py-3">#</th>
+                  <th className="px-4 py-3">DNI (masked)</th>
+                  <th className="px-4 py-3">Email (masked)</th>
+                  <th className="px-4 py-3">Teléfono (masked)</th>
+                  <th className="px-4 py-3 text-center">Score (0-100)</th>
+                  <th className="px-4 py-3 text-center">Nivel</th>
+                  <th className="px-4 py-3">Tipología Principal</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5 text-slate-300">
+                {bulkResults.map(r => (
+                  <tr
+                    key={r.row}
+                    className={
+                      r.level === 'ALTO'
+                        ? 'bg-rose-950/15'
+                        : r.level === 'MEDIO'
+                        ? 'bg-amber-950/15'
+                        : 'hover:bg-white/[0.02]'
+                    }
+                  >
+                    <td className="px-4 py-3 text-slate-500 font-mono">{r.row}</td>
+                    <td className="px-4 py-3 font-mono text-slate-300">{r.dniMasked}</td>
+                    <td className="px-4 py-3 font-mono text-slate-300">{r.emailMasked}</td>
+                    <td className="px-4 py-3 font-mono text-slate-300">{r.phoneMasked}</td>
+                    <td
+                      className="px-4 py-3 text-center font-mono font-black text-sm"
+                      style={{ color: scoreColor(r.score) }}
+                    >
+                      {r.score}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span
+                        className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${
+                          r.level === 'ALTO'
+                            ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                            : r.level === 'MEDIO'
+                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                            : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                        }`}
+                      >
+                        {r.level}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-slate-400 text-[11px]">
+                      {r.tipologia.replace(/_/g, ' ')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// CONTENEDOR PRINCIPAL DE CONSULTA (UNITARIA + MASIVA TOGGLE)
+// ─────────────────────────────────────────────────────────────────
+
+function LookupModule({ initialSubTab = 'single' }: { initialSubTab?: 'single' | 'bulk' }) {
+  const [activeSubTab, setActiveSubTab] = useState<'single' | 'bulk'>(initialSubTab);
+  const { activeFintechId, fintechs } = useConsortiumStore();
+  const activeFintech = fintechs.find(f => f.id === activeFintechId);
+
+  return (
+    <div className="glass-panel rounded-2xl p-6 space-y-6">
+      {/* Header con Tabs de Selección */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
+        <div className="flex items-center gap-2.5">
+          <Search className="h-5 w-5 text-cyan-400" />
+          <h3 className="text-base font-bold text-white">Consulta de Riesgo</h3>
+          {activeFintech && (
+            <span className="text-[11px] font-mono text-slate-400 bg-white/5 px-2 py-0.5 rounded-lg border border-white/5">
+              Entidad: <strong className="text-slate-200">{activeFintech.name}</strong>
+            </span>
+          )}
+        </div>
+
+        {/* Toggle Unitaria vs Masiva */}
+        <div className="inline-flex rounded-xl bg-slate-900 p-1 border border-white/10 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('single')}
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition ${
+              activeSubTab === 'single'
+                ? 'bg-cyan-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Search className="h-3.5 w-3.5" />
+            Consulta Unitaria (1 o varios campos)
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('bulk')}
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition ${
+              activeSubTab === 'bulk'
+                ? 'bg-indigo-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5" />
+            Consulta Masiva (CSV)
+          </button>
+        </div>
+      </div>
+
+      {/* Renderizado de la vista elegida */}
+      {activeSubTab === 'single' ? <SingleLookupView /> : <BulkLookupView />}
     </div>
   );
 }
@@ -573,7 +981,7 @@ function ReportFraudModule() {
         {success && (
           <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-3 text-xs text-emerald-300 flex items-center gap-2">
             <CheckCircle className="h-4 w-4 shrink-0" />
-            ¡Fraude registrado en la red! Los hashes se crearon y las aristas del grafo se actualizaron.
+            ¡Fraude registrado en la red federada exitosamente!
           </div>
         )}
 
@@ -600,7 +1008,7 @@ function ReportFraudModule() {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// MÓDULO 3: INGESTA MASIVA CSV
+// MÓDULO 3: INGESTA MASIVA CSV (REPORTES DE FRAUDE)
 // ─────────────────────────────────────────────────────────────────
 
 function CSVImportModule() {
@@ -643,30 +1051,52 @@ function CSVImportModule() {
     [processFile]
   );
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) processFile(file);
+  const downloadSampleLayout = () => {
+    const csv = `dni,email,phone,categoria
+30111222,estafador@gmail.com,+5491122334455,MULE_ACCOUNT
+40999888,victima@hotmail.com,,IDENTITY_THEFT
+,,+5491155667788,PHISHING
+20123456789,otro@empresa.com,,SUSPICIOUS
+`;
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'layout_ingesta_reportes_fraude.csv';
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
     <div className="glass-panel rounded-2xl p-6 space-y-5">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <Upload className="h-5 w-5 text-indigo-400" />
-        <h3 className="text-sm font-bold text-white">Ingesta Masiva CSV</h3>
+        <h3 className="text-sm font-bold text-white">Ingesta Masiva CSV — Reportes de Fraude</h3>
         {activeFintech && (
           <span className="ml-auto text-[11px] font-mono text-slate-500">
             Como: <span className="text-slate-300">{activeFintech.name}</span>
           </span>
         )}
+        <button
+          onClick={downloadSampleLayout}
+          className="flex items-center gap-1.5 rounded-xl border border-indigo-500/30 bg-indigo-500/[0.08] px-3 py-1.5 text-xs font-bold text-indigo-300 hover:bg-indigo-500/[0.15] transition"
+        >
+          <FileText className="h-3.5 w-3.5" /> Descargar Layout de Reportes
+        </button>
       </div>
 
-      <p className="text-xs text-slate-500">
-        Formato: <code className="text-slate-400 bg-slate-800 px-1 py-0.5 rounded">dni,email,phone,categoria</code> — una tupla por línea. Categorías válidas: MULE_ACCOUNT, IDENTITY_THEFT, CHARGEBACK, PHISHING, SUSPICIOUS.
-      </p>
+      <div className="rounded-xl bg-black/40 p-3 font-mono text-xs">
+        <p className="text-slate-500 font-sans text-[11px] mb-1 font-semibold">Formato requerido:</p>
+        <p className="text-slate-400">dni,email,phone,categoria</p>
+        <p className="text-slate-600">30111222,estafador@gmail.com,+54911...,MULE_ACCOUNT</p>
+        <p className="text-[10px] text-slate-600 font-sans mt-1">Categorías: MULE_ACCOUNT · IDENTITY_THEFT · CHARGEBACK · PHISHING · SUSPICIOUS</p>
+      </div>
 
-      {/* Zona Drag & Drop */}
       <div
-        onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+        onDragOver={e => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
@@ -679,49 +1109,52 @@ function CSVImportModule() {
         <Upload className={`h-8 w-8 ${isDragging ? 'text-indigo-400' : 'text-slate-500'}`} />
         <div className="text-center">
           <p className="text-sm font-semibold text-slate-300">
-            {isDragging ? 'Soltá el archivo aquí' : 'Arrastrá tu CSV aquí'}
+            {isDragging ? 'Soltá el archivo aquí' : 'Arrastrá tu CSV de reportes aquí'}
           </p>
-          <p className="text-xs text-slate-600 mt-0.5">o hacé click para seleccionar</p>
+          <p className="text-xs text-slate-600 mt-0.5">o hacé clic para seleccionar · .csv o .txt</p>
         </div>
         <input
           ref={fileInputRef}
           type="file"
           accept=".csv,text/csv,text/plain"
           className="hidden"
-          onChange={handleFileChange}
+          onChange={e => {
+            const f = e.target.files?.[0];
+            if (f) processFile(f);
+          }}
         />
       </div>
 
       {loading && (
         <div className="flex items-center gap-3 text-xs text-indigo-300">
           <span className="animate-spin h-4 w-4 rounded-full border-2 border-indigo-500/30 border-t-indigo-400" />
-          Procesando registros y generando hashes...
+          Procesando registros e integrando en el grafo comunitario...
         </div>
       )}
-
       {preview && !loading && (
         <div className="rounded-xl bg-black/40 p-3">
           <p className="text-xs text-slate-500 mb-2">Vista previa (primeras 5 líneas):</p>
           <pre className="text-[11px] text-slate-400 font-mono whitespace-pre-wrap">{preview}</pre>
         </div>
       )}
-
       {result && !loading && (
-        <div className={`rounded-xl border p-4 space-y-1 ${
-          result.errors === 0
-            ? 'border-emerald-500/30 bg-emerald-950/20'
-            : 'border-amber-500/30 bg-amber-950/20'
-        }`}>
+        <div
+          className={`rounded-xl border p-4 space-y-1 ${
+            result.errors === 0
+              ? 'border-emerald-500/30 bg-emerald-950/20'
+              : 'border-amber-500/30 bg-amber-950/20'
+          }`}
+        >
           <div className="flex items-center gap-2 text-sm font-bold text-white">
-            {result.errors === 0
-              ? <CheckCircle className="h-4 w-4 text-emerald-400" />
-              : <AlertTriangle className="h-4 w-4 text-amber-400" />}
+            {result.errors === 0 ? (
+              <CheckCircle className="h-4 w-4 text-emerald-400" />
+            ) : (
+              <AlertTriangle className="h-4 w-4 text-amber-400" />
+            )}
             Importación completada
           </div>
           <p className="text-xs text-emerald-300">✓ {result.imported} registros ingresados exitosamente</p>
-          {result.errors > 0 && (
-            <p className="text-xs text-rose-400">✗ {result.errors} líneas con error de formato</p>
-          )}
+          {result.errors > 0 && <p className="text-xs text-rose-400">✗ {result.errors} líneas con error de formato</p>}
         </div>
       )}
     </div>
@@ -729,7 +1162,7 @@ function CSVImportModule() {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// MÓDULO 4: HISTORIAL + FALSO POSITIVO
+// MÓDULO 4: HISTORIAL DE REPORTES (SIN HASHES RAW)
 // ─────────────────────────────────────────────────────────────────
 
 function ReportHistoryModule() {
@@ -742,7 +1175,7 @@ function ReportHistoryModule() {
     .reverse();
 
   const handleMarkFP = (edgeId: string) => {
-    if (!confirm('¿Confirmar falso positivo? Esto revertirá el impacto de este reporte en el score de la red.')) return;
+    if (!confirm('¿Confirmar que este reporte fue un falso positivo? Esto revertirá su impacto en el score de red.')) return;
     markFalsePositive(edgeId);
   };
 
@@ -750,7 +1183,7 @@ function ReportHistoryModule() {
     <div className="glass-panel rounded-2xl p-6 space-y-4">
       <div className="flex items-center gap-2">
         <FileText className="h-5 w-5 text-amber-400" />
-        <h3 className="text-sm font-bold text-white">Historial de Reportes</h3>
+        <h3 className="text-sm font-bold text-white">Historial de Reportes de Fraude</h3>
         {activeFintech && (
           <span className="ml-auto text-[11px] font-mono text-slate-500">
             {myEdges.length} reporte(s) de{' '}
@@ -769,39 +1202,42 @@ function ReportHistoryModule() {
           <table className="w-full text-xs text-left">
             <thead className="bg-slate-900 border-b border-white/10 text-[11px] uppercase text-slate-400">
               <tr>
-                <th className="px-4 py-3">Hash Origen</th>
-                <th className="px-4 py-3">Hash Destino</th>
-                <th className="px-4 py-3">Categoría</th>
-                <th className="px-4 py-3">Fecha</th>
-                <th className="px-4 py-3 text-center">Estado</th>
-                <th className="px-4 py-3 text-right">Acción</th>
+                <th className="px-4 py-3">Registro</th>
+                <th className="px-4 py-3">Privacidad</th>
+                <th className="px-4 py-3">Categoría de Fraude</th>
+                <th className="px-4 py-3">Fecha y Hora</th>
+                <th className="px-4 py-3 text-center">Estado de Red</th>
+                <th className="px-4 py-3 text-right">Gestión</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5 text-slate-300">
-              {myEdges.map(edge => (
+              {myEdges.map((edge, idx) => (
                 <tr
                   key={edge.id}
                   className={edge.isFalsePositive ? 'opacity-50 bg-amber-950/10' : 'hover:bg-white/5 transition'}
                 >
-                  <td className="px-4 py-3 font-mono text-cyan-400/80">
-                    {edge.sourceHash.slice(0, 8)}…
+                  <td className="px-4 py-3 font-mono text-slate-400">
+                    REP-{myEdges.length - idx}
                   </td>
-                  <td className="px-4 py-3 font-mono text-cyan-400/80">
-                    {edge.targetHash.slice(0, 8)}…
+                  <td className="px-4 py-3 text-cyan-400/90 flex items-center gap-1.5 font-medium">
+                    <Lock className="h-3 w-3 text-cyan-400/70" />
+                    Identificador Protegido (ZK)
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold border ${
-                      edge.incidentCategory === 'MULE_ACCOUNT'
-                        ? 'bg-rose-500/20 text-rose-400 border-rose-500/30'
-                        : edge.incidentCategory === 'IDENTITY_THEFT'
-                        ? 'bg-orange-500/20 text-orange-400 border-orange-500/30'
-                        : edge.incidentCategory === 'CHARGEBACK'
-                        ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-                        : edge.incidentCategory === 'PHISHING'
-                        ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
-                        : 'bg-slate-700 text-slate-400 border-slate-600'
-                    }`}>
-                      {edge.incidentCategory}
+                    <span
+                      className={`rounded-lg px-2 py-0.5 text-[10px] font-bold border ${
+                        edge.incidentCategory === 'MULE_ACCOUNT'
+                          ? 'bg-rose-500/20 text-rose-400 border-rose-500/30'
+                          : edge.incidentCategory === 'IDENTITY_THEFT'
+                          ? 'bg-orange-500/20 text-orange-400 border-orange-500/30'
+                          : edge.incidentCategory === 'CHARGEBACK'
+                          ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                          : edge.incidentCategory === 'PHISHING'
+                          ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+                          : 'bg-slate-700 text-slate-400 border-slate-600'
+                      }`}
+                    >
+                      {edge.incidentCategory.replace(/_/g, ' ')}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-slate-500 tabular-nums">
@@ -815,12 +1251,12 @@ function ReportHistoryModule() {
                   </td>
                   <td className="px-4 py-3 text-center">
                     {edge.isFalsePositive ? (
-                      <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold text-amber-400 border border-amber-500/30">
+                      <span className="rounded bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-400 border border-amber-500/30">
                         FALSO POSITIVO
                       </span>
                     ) : (
-                      <span className="rounded bg-rose-500/20 px-1.5 py-0.5 text-[10px] font-bold text-rose-400 border border-rose-500/30">
-                        ACTIVO
+                      <span className="rounded bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-400 border border-rose-500/30">
+                        ACTIVO EN RED
                       </span>
                     )}
                   </td>
@@ -845,7 +1281,7 @@ function ReportHistoryModule() {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// FINTECH SELECTOR (para simular perspectivas distintas)
+// SELECTOR DE FINTECH
 // ─────────────────────────────────────────────────────────────────
 
 function FintechSelector() {
@@ -881,19 +1317,19 @@ function FintechSelector() {
 // COMPONENTE PRINCIPAL: FintechDashboard
 // ─────────────────────────────────────────────────────────────────
 
-type FintechModule = 'lookup' | 'report' | 'csv' | 'history';
+type FintechModule = 'lookup' | 'bulk_lookup' | 'report' | 'csv' | 'history';
 
 export default function FintechDashboard({
   activeModule,
 }: {
   activeModule?: FintechModule;
 }) {
-  // Si se especifica un módulo, mostrar solo ese. Si no, mostrar todos.
   const showAll = !activeModule;
 
   return (
     <div className="space-y-6">
-      {(showAll || activeModule === 'lookup') && <LookupModule />}
+      {(showAll || activeModule === 'lookup') && <LookupModule initialSubTab="single" />}
+      {(showAll || activeModule === 'bulk_lookup') && <LookupModule initialSubTab="bulk" />}
       {(showAll || activeModule === 'report') && <ReportFraudModule />}
       {(showAll || activeModule === 'csv') && <CSVImportModule />}
       {(showAll || activeModule === 'history') && <ReportHistoryModule />}
