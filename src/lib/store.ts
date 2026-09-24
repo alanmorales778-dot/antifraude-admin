@@ -354,6 +354,7 @@ interface ConsortiumStore {
     email?: string;
     phone?: string;
     ip?: string;
+    cbu?: string;
   }) => Promise<LookupResult>;
 
   reportFraud: (params: {
@@ -361,6 +362,7 @@ interface ConsortiumStore {
     email?: string;
     phone?: string;
     ip?: string;
+    cbu?: string;
     incidentCategory: IncidentCategory;
   }) => Promise<void>;
 
@@ -613,7 +615,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
 
       // ── Acciones Fintech ──────────────────────────────────────
 
-      lookupIdentity: async ({ dni, email, phone, ip }) => {
+      lookupIdentity: async ({ dni, email, phone, ip, cbu }) => {
         const state = get();
         const fintechId = state.activeFintechId;
         const fintech = state.fintechs.find(f => f.id === fintechId);
@@ -623,6 +625,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           email,
           phone,
           ip,
+          cbu,
           fintechId,
           fintechs: state.fintechs,
           identityNodes: state.identityNodes,
@@ -639,6 +642,8 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           updatedNodes = upsertIdentityNode(updatedNodes, 'PHONE', result.phoneHash, true);
         if (result.ipHash)
           updatedNodes = upsertIdentityNode(updatedNodes, 'IP', result.ipHash, true);
+        if (result.cbuHash)
+          updatedNodes = upsertIdentityNode(updatedNodes, 'CBU', result.cbuHash, true);
 
         const actorName = fintech?.name || fintechId;
         const identifiers = [
@@ -646,6 +651,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           email ? `EMAIL: ${email}` : null,
           phone ? `PHONE: ${phone}` : null,
           ip ? `IP: ${ip}` : null,
+          cbu ? `CBU/CVU: ${cbu.slice(0, 4)}***${cbu.slice(-4)}` : null,
         ]
           .filter(Boolean)
           .join(', ');
@@ -667,7 +673,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         return result;
       },
 
-      reportFraud: async ({ dni, email, phone, ip, incidentCategory }) => {
+      reportFraud: async ({ dni, email, phone, ip, cbu, incidentCategory }) => {
         const state = get();
         const fintechId = state.activeFintechId;
         const fintech = state.fintechs.find(f => f.id === fintechId);
@@ -681,6 +687,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         const emailHash = email ? await computeHash('EMAIL', email) : null;
         const phoneHash = phone ? await computeHash('PHONE', phone) : null;
         const ipHash = ip ? await computeHash('IP', ip) : null;
+        const cbuHash = cbu ? await computeHash('CBU', cbu) : null;
 
         const actorName = fintech?.name || fintechId;
         const identifiers = [
@@ -688,6 +695,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           email ? `Email: ${email.slice(0, 3)}***@${email.split('@')[1] || ''}` : null,
           phone ? `Tel: ${phone.slice(0, 4)}***${phone.slice(-3)}` : null,
           ip ? `IP: ${ip.split('.').slice(0, 2).join('.')}.***.${ip.split('.')[3] || ''}` : null,
+          cbu ? `CBU/CVU: ${cbu.slice(0, 4)}***${cbu.slice(-4)}` : null,
         ]
           .filter(Boolean)
           .join(' · ');
@@ -698,6 +706,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           emailHash,
           phoneHash,
           ipHash,
+          cbuHash,
           reportedByEntityId: fintechId,
           incidentCategory,
           uploadedFields: identifiers || 'Identificador Criptográfico',
@@ -711,6 +720,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         if (emailHash) updatedNodes = upsertIdentityNode(updatedNodes, 'EMAIL', emailHash, false);
         if (phoneHash) updatedNodes = upsertIdentityNode(updatedNodes, 'PHONE', phoneHash, false);
         if (ipHash) updatedNodes = upsertIdentityNode(updatedNodes, 'IP', ipHash, false);
+        if (cbuHash) updatedNodes = upsertIdentityNode(updatedNodes, 'CBU', cbuHash, false);
 
         set(state2 => ({
           graphEdges: [...state2.graphEdges, ...newEdges],
@@ -767,15 +777,46 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           .map(l => l.trim())
           .filter(l => l.length > 0);
 
+        if (lines.length === 0) return { imported: 0, errors: 0 };
+
         let imported = 0;
         let errors = 0;
 
         const newEdgesAll: SpecGraphEdge[] = [];
         let updatedNodes = state.identityNodes;
 
-        for (const line of lines) {
-          // Soporte para formatos: dni,email,phone,ip,category o dni,email,phone,category
-          const parts = line.split(',').map(p => p.trim());
+        // Auto-detección de cabecera CSV
+        const firstLine = lines[0].toLowerCase();
+        const hasHeader =
+          firstLine.includes('dni') ||
+          firstLine.includes('email') ||
+          firstLine.includes('phone') ||
+          firstLine.includes('categoria') ||
+          firstLine.includes('category') ||
+          firstLine.includes('cbu') ||
+          firstLine.includes('cvu');
+
+        let dniIdx = -1;
+        let emailIdx = -1;
+        let phoneIdx = -1;
+        let ipIdx = -1;
+        let cbuIdx = -1;
+        let catIdx = -1;
+
+        const dataLines = hasHeader ? lines.slice(1) : lines;
+
+        if (hasHeader) {
+          const cols = firstLine.split(',').map(c => c.trim().replace(/^["']|["']$/g, ''));
+          dniIdx = cols.findIndex(c => c.includes('dni') || c.includes('cuil') || c.includes('cuit'));
+          emailIdx = cols.findIndex(c => c.includes('email') || c.includes('correo'));
+          phoneIdx = cols.findIndex(c => c.includes('phone') || c.includes('tel') || c.includes('cel'));
+          ipIdx = cols.findIndex(c => c.includes('ip'));
+          cbuIdx = cols.findIndex(c => c.includes('cbu') || c.includes('cvu') || c.includes('cuenta'));
+          catIdx = cols.findIndex(c => c.includes('cat') || c.includes('tipo') || c.includes('motivo'));
+        }
+
+        for (const line of dataLines) {
+          const parts = line.split(',').map(p => p.trim().replace(/^["']|["']$/g, ''));
           if (parts.length < 2) {
             errors++;
             continue;
@@ -786,12 +827,28 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             let rawEmail: string | undefined;
             let rawPhone: string | undefined;
             let rawIp: string | undefined;
+            let rawCbu: string | undefined;
             let rawCategory: string | undefined;
 
-            if (parts.length >= 5) {
-              [rawDni, rawEmail, rawPhone, rawIp, rawCategory] = parts;
+            if (hasHeader && (dniIdx >= 0 || emailIdx >= 0 || cbuIdx >= 0)) {
+              rawDni = dniIdx >= 0 ? parts[dniIdx] : undefined;
+              rawEmail = emailIdx >= 0 ? parts[emailIdx] : undefined;
+              rawPhone = phoneIdx >= 0 ? parts[phoneIdx] : undefined;
+              rawIp = ipIdx >= 0 ? parts[ipIdx] : undefined;
+              rawCbu = cbuIdx >= 0 ? parts[cbuIdx] : undefined;
+              rawCategory = catIdx >= 0 ? parts[catIdx] : undefined;
             } else {
-              [rawDni, rawEmail, rawPhone, rawCategory] = parts;
+              // Fallback posicional:
+              // 6 campos: dni,email,phone,ip,cbu,category
+              // 5 campos: dni,email,phone,ip,category
+              // 4 campos: dni,email,phone,category
+              if (parts.length >= 6) {
+                [rawDni, rawEmail, rawPhone, rawIp, rawCbu, rawCategory] = parts;
+              } else if (parts.length === 5) {
+                [rawDni, rawEmail, rawPhone, rawIp, rawCategory] = parts;
+              } else {
+                [rawDni, rawEmail, rawPhone, rawCategory] = parts;
+              }
             }
 
             const category =
@@ -813,8 +870,9 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             const emailHash = rawEmail ? await computeHash('EMAIL', rawEmail) : null;
             const phoneHash = rawPhone ? await computeHash('PHONE', rawPhone) : null;
             const ipHash = rawIp ? await computeHash('IP', rawIp) : null;
+            const cbuHash = rawCbu ? await computeHash('CBU', rawCbu) : null;
 
-            if (!dniHash && !emailHash && !phoneHash && !ipHash) {
+            if (!dniHash && !emailHash && !phoneHash && !ipHash && !cbuHash) {
               errors++;
               continue;
             }
@@ -825,6 +883,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
               rawEmail ? `Email: ${rawEmail.slice(0, 3)}***@${rawEmail.split('@')[1] || ''}` : null,
               rawPhone ? `Tel: ${rawPhone.slice(0, 4)}***${rawPhone.slice(-3)}` : null,
               rawIp ? `IP: ${rawIp.split('.').slice(0, 2).join('.')}.***.${rawIp.split('.')[3] || ''}` : null,
+              rawCbu ? `CBU/CVU: ${rawCbu.slice(0, 4)}***${rawCbu.slice(-4)}` : null,
             ].filter(Boolean).join(' · ');
 
             const edges = buildEdgesFromReport({
@@ -832,6 +891,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
               emailHash,
               phoneHash,
               ipHash,
+              cbuHash,
               reportedByEntityId: fintechId,
               incidentCategory,
               uploadedFields: rowIdentifiers || 'Carga Masiva CSV',
@@ -845,6 +905,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             if (emailHash) updatedNodes = upsertIdentityNode(updatedNodes, 'EMAIL', emailHash, false);
             if (phoneHash) updatedNodes = upsertIdentityNode(updatedNodes, 'PHONE', phoneHash, false);
             if (ipHash) updatedNodes = upsertIdentityNode(updatedNodes, 'IP', ipHash, false);
+            if (cbuHash) updatedNodes = upsertIdentityNode(updatedNodes, 'CBU', cbuHash, false);
 
             imported++;
           } catch {
