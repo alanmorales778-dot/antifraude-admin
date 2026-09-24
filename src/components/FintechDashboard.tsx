@@ -20,9 +20,12 @@ import {
   Download,
   ThumbsUp,
   Globe,
+  Mail,
+  Send,
 } from 'lucide-react';
 import { useConsortiumStore } from '@/lib/store';
 import { LookupResult, IncidentCategory } from '@/lib/types';
+import { simulateSendVerificationEmail } from '@/lib/emailVerifier';
 
 // ─────────────────────────────────────────────────────────────────
 // HELPERS
@@ -129,6 +132,15 @@ function SingleLookupView() {
   const [okLoading, setOkLoading] = useState(false);
   const [okDone, setOkDone] = useState(false);
 
+  // Estado para la prueba de envío / verificación de correo
+  const [emailPingLoading, setEmailPingLoading] = useState(false);
+  const [emailPingResult, setEmailPingResult] = useState<{
+    success: boolean;
+    message: string;
+    otpCode?: string;
+    bounceCode?: string;
+  } | null>(null);
+
   const activeFintech = fintechs.find(f => f.id === activeFintechId);
 
   const handleLookup = async (e: React.FormEvent) => {
@@ -139,6 +151,7 @@ function SingleLookupView() {
     }
     setError('');
     setOkDone(false);
+    setEmailPingResult(null);
     setLoading(true);
     try {
       const res = await lookupIdentity({
@@ -191,6 +204,17 @@ function SingleLookupView() {
     }, 250);
   };
 
+  // Función para enviar correo de verificación / probar rebote
+  const handleSendEmailVerification = async () => {
+    const targetEmail = email.trim() || result?.breakdown.emailVerification?.email;
+    if (!targetEmail) return;
+    setEmailPingLoading(true);
+    setEmailPingResult(null);
+    const res = await simulateSendVerificationEmail(targetEmail);
+    setEmailPingResult(res);
+    setEmailPingLoading(false);
+  };
+
   return (
     <div className="space-y-5">
       <form onSubmit={handleLookup} className="space-y-4">
@@ -216,7 +240,7 @@ function SingleLookupView() {
               type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
-              placeholder="Ej: estafador@gmail.com"
+              placeholder="Ej: estafador@gmail.com o usuario@noexiste.com"
               className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-cyan-500/50 focus:outline-none focus:ring-1 focus:ring-cyan-500/30 transition"
             />
           </div>
@@ -247,7 +271,7 @@ function SingleLookupView() {
         </div>
 
         <p className="text-[11px] text-slate-400">
-          💡 Podés consultar <strong>1 solo campo</strong> o <strong>varios campos combinados</strong> (DNI, Email, Teléfono, IP) para un scoring unificado con correlación e Identity Mismatch.
+          💡 Podés consultar <strong>1 solo campo</strong> o <strong>varios campos combinados</strong> (DNI, Email, Teléfono, IP). La plataforma valida automáticamente la <strong>existencia del email</strong> e identifica dominios sin registros MX o descartables.
         </p>
 
         {error && (
@@ -345,6 +369,114 @@ function SingleLookupView() {
                 </div>
               )}
 
+              {/* ── ALERTA DE EXISTENCIA DE EMAIL ────────────────────────── */}
+              {result.breakdown.emailVerification && (
+                <div className="space-y-2 pt-1">
+                  {result.breakdown.emailVerification.status === 'NON_EXISTENT' && (
+                    <div className="rounded-2xl border-2 border-rose-500/80 bg-gradient-to-r from-rose-950/80 via-red-950/50 to-slate-900 p-4 text-white shadow-xl shadow-rose-950/40 animate-pulse">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-600 text-white font-black text-xl shadow-lg">
+                            ⚠️
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-black tracking-wider text-rose-300 uppercase">
+                                ALERTA CRÍTICA: EL CORREO NO EXISTE
+                              </span>
+                              <span className="rounded bg-rose-500 px-2 py-0.5 text-[10px] font-extrabold text-black">
+                                +35 PTS RIESGO
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs text-rose-200/90 leading-relaxed">
+                              El correo <strong>{result.breakdown.emailVerification.email}</strong> no posee registros DNS MX o el buzón fue rechazado por el servidor (550 Mailbox not found). Alta probabilidad de <strong>identidad sintética o cuenta ficticia para estafas</strong>.
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleSendEmailVerification}
+                          disabled={emailPingLoading}
+                          className="shrink-0 flex items-center gap-1.5 rounded-xl border border-rose-400/40 bg-rose-600/30 px-3.5 py-2 text-xs font-bold text-white hover:bg-rose-600/60 active:scale-95 transition whitespace-nowrap self-start sm:self-auto"
+                        >
+                          <Mail className="h-3.5 w-3.5" />
+                          {emailPingLoading ? 'Comprobando entrega...' : 'Probar Envío / Ver Rebote'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {result.breakdown.emailVerification.status === 'DISPOSABLE' && (
+                    <div className="rounded-xl border border-amber-500/50 bg-amber-950/30 p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5 text-xs text-amber-200">
+                        <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
+                        <div>
+                          <span className="font-bold text-amber-300">Proveedor de Correo Temporal / Descartable detectado:</span>
+                          <p className="text-[11px] text-amber-300/80 mt-0.5">El dominio @{result.breakdown.emailVerification.domain} es un servicio descartable (10-minute mail). (+25 pts de penalidad).</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleSendEmailVerification}
+                        disabled={emailPingLoading}
+                        className="shrink-0 flex items-center gap-1.5 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-bold text-amber-300 hover:bg-amber-500/20 transition whitespace-nowrap self-start sm:self-auto"
+                      >
+                        <Mail className="h-3.5 w-3.5" />
+                        {emailPingLoading ? 'Enviando...' : 'Probar Envío'}
+                      </button>
+                    </div>
+                  )}
+
+                  {result.breakdown.emailVerification.status === 'EXISTING' && (
+                    <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+                      <div className="flex items-center gap-2 text-xs text-emerald-300">
+                        <CheckCircle className="h-4 w-4 text-emerald-400 shrink-0" />
+                        <span>Buzón verificado: <strong>{result.breakdown.emailVerification.email}</strong> existe y posee servidores MX activos.</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleSendEmailVerification}
+                        disabled={emailPingLoading}
+                        className="shrink-0 flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 transition whitespace-nowrap self-start sm:self-auto"
+                      >
+                        <Mail className="h-3 w-3" />
+                        {emailPingLoading ? 'Enviando OTP...' : 'Enviar Desafío OTP de Prueba'}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Feedback del Ping / Envío */}
+                  {emailPingResult && (
+                    <div
+                      className={`rounded-xl border p-3 text-xs flex items-start gap-2.5 transition animate-fade-in ${
+                        emailPingResult.success
+                          ? 'border-emerald-500/40 bg-emerald-950/40 text-emerald-200'
+                          : 'border-rose-500/50 bg-rose-950/50 text-rose-200'
+                      }`}
+                    >
+                      {emailPingResult.success ? (
+                        <CheckCircle className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                      ) : (
+                        <XCircle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+                      )}
+                      <div className="flex-1">
+                        <p className="font-semibold">{emailPingResult.message}</p>
+                        {emailPingResult.otpCode && (
+                          <p className="text-[11px] text-emerald-400 font-mono mt-1">
+                            Código emitido para el titular: <strong>{emailPingResult.otpCode}</strong> (válido por 10 min)
+                          </p>
+                        )}
+                        {emailPingResult.bounceCode && (
+                          <p className="text-[11px] text-rose-300 font-mono mt-1">
+                            Respuesta del Host Remoto: <code>{emailPingResult.bounceCode}</code>
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Factores del Modelo Probabilístico */}
               <div className="space-y-1.5 text-xs bg-black/30 rounded-xl p-3 border border-white/5">
                 <div className="flex items-center justify-between">
@@ -377,6 +509,20 @@ function SingleLookupView() {
                     +{result.breakdown.velocityPenalty} pts
                   </span>
                 </div>
+
+                {/* Penalidad de Email si aplica */}
+                {result.breakdown.emailPenalty ? (
+                  <div className="flex items-center justify-between text-rose-400 font-semibold">
+                    <span className="flex items-center gap-1">
+                      <Mail className="h-3.5 w-3.5" />
+                      Penalidad por Correo ({result.breakdown.emailVerification?.badgeText})
+                    </span>
+                    <span className="font-mono font-bold">
+                      +{result.breakdown.emailPenalty} pts
+                    </span>
+                  </div>
+                ) : null}
+
                 <div className="border-t border-white/10 pt-2 flex items-center justify-between font-bold">
                   <span className="text-white">Score Final Computado</span>
                   <span className="font-mono text-sm" style={{ color: scoreColor(result.breakdown.finalScore) }}>
@@ -450,9 +596,9 @@ function SingleLookupView() {
 
 const SAMPLE_BULK_CSV = `dni,email,phone,ip
 30111222,estafador@gmail.com,+5491122334455,190.191.200.45
-40999888,usuario_sospechoso@hotmail.com,,181.44.120.10
+40999888,usuario_falso@noexiste.com,,181.44.120.10
 ,,+5491155667788,
-20123456789,otro@empresa.com,+5491188990011,200.45.12.89
+20123456789,burner@yopmail.com,+5491188990011,200.45.12.89
 `;
 
 function maskField(val?: string) {
@@ -476,6 +622,7 @@ interface BulkRowResult {
   emailMasked: string;
   phoneMasked: string;
   ipMasked: string;
+  emailStatus: 'EXISTING' | 'NON_EXISTENT' | 'DISPOSABLE' | 'NONE';
   score: number;
   level: 'BAJO' | 'MEDIO' | 'ALTO' | 'ERROR';
   tipologia: string;
@@ -507,11 +654,11 @@ function BulkLookupView() {
   const downloadResults = () => {
     if (!bulkResults.length) return;
     const csv =
-      'fila,dni_masked,email_masked,phone_masked,ip_masked,score,nivel,tipologia\n' +
+      'fila,dni_masked,email_masked,phone_masked,ip_masked,estado_email,score,nivel,tipologia\n' +
       bulkResults
         .map(
           r =>
-            `${r.row},"${r.dniMasked}","${r.emailMasked}","${r.phoneMasked}","${r.ipMasked}",${r.score},${r.level},"${r.tipologia}"`
+            `${r.row},"${r.dniMasked}","${r.emailMasked}","${r.phoneMasked}","${r.ipMasked}","${r.emailStatus}",${r.score},${r.level},"${r.tipologia}"`
         )
         .join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -600,12 +747,18 @@ function BulkLookupView() {
               ? Array.from(new Set(edges.map(e => e.incidentCategory)))[0]
               : 'Sin antecedentes';
 
+          const emailVerification = res.breakdown.emailVerification;
+          const emailStatus = !item.email
+            ? 'NONE'
+            : emailVerification?.status || 'EXISTING';
+
           results.push({
             row: i + 1,
             dniMasked: maskField(item.dni),
             emailMasked: maskField(item.email),
             phoneMasked: maskField(item.phone),
             ipMasked: maskField(item.ip),
+            emailStatus,
             score: res.breakdown.finalScore,
             level: res.breakdown.riskLevel,
             tipologia: topTipologia,
@@ -617,6 +770,7 @@ function BulkLookupView() {
             emailMasked: maskField(item.email),
             phoneMasked: maskField(item.phone),
             ipMasked: maskField(item.ip),
+            emailStatus: 'NONE',
             score: 0,
             level: 'ERROR',
             tipologia: 'Error en consulta',
@@ -650,7 +804,7 @@ function BulkLookupView() {
             Consulta Masiva por Archivo CSV
           </h4>
           <p className="text-xs text-slate-400 mt-0.5">
-            Podés cargar un archivo con uno o varios campos por fila (DNI, Email, Teléfono, IP) y obtener el score de riesgo individual para cada registro.
+            Podés cargar un archivo con uno o varios campos por fila (DNI, Email, Teléfono, IP). La plataforma valida automáticamente la existencia de cada email y calcula el score individual.
           </p>
         </div>
         <button
@@ -667,7 +821,7 @@ function BulkLookupView() {
         <p className="text-slate-400 font-sans text-[11px] mb-1 font-semibold">Formato admitido (uno o varios campos por fila):</p>
         <p className="text-cyan-400">dni,email,phone,ip</p>
         <p className="text-slate-500">30111222,estafador@gmail.com,+5491122334455,190.191.200.45</p>
-        <p className="text-slate-500">40999888,usuario_sospechoso@hotmail.com,,181.44.120.10</p>
+        <p className="text-slate-500">40999888,usuario_falso@noexiste.com,,181.44.120.10</p>
         <p className="text-slate-500">,,+5491155667788,</p>
       </div>
 
@@ -711,7 +865,7 @@ function BulkLookupView() {
           <div className="flex justify-between text-xs">
             <span className="text-slate-300 flex items-center gap-2">
               <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-cyan-500 border-t-transparent" />
-              Evaluando registros con scoring probabilístico dinámico...
+              Evaluando registros y verificando existencia de correos...
             </span>
             <span className="font-mono text-cyan-400 font-bold">{bulkProgress}%</span>
           </div>
@@ -765,6 +919,7 @@ function BulkLookupView() {
                   <th className="px-4 py-3">#</th>
                   <th className="px-4 py-3">DNI (masked)</th>
                   <th className="px-4 py-3">Email (masked)</th>
+                  <th className="px-4 py-3">Estado Email</th>
                   <th className="px-4 py-3">Teléfono (masked)</th>
                   <th className="px-4 py-3">IP (masked)</th>
                   <th className="px-4 py-3 text-center">Score (0-100)</th>
@@ -787,6 +942,23 @@ function BulkLookupView() {
                     <td className="px-4 py-3 text-slate-500 font-mono">{r.row}</td>
                     <td className="px-4 py-3 font-mono text-slate-300">{r.dniMasked}</td>
                     <td className="px-4 py-3 font-mono text-slate-300">{r.emailMasked}</td>
+                    <td className="px-4 py-3">
+                      {r.emailStatus === 'NON_EXISTENT' ? (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/40 bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-300">
+                          <XCircle className="h-3 w-3" /> Inexistente
+                        </span>
+                      ) : r.emailStatus === 'DISPOSABLE' ? (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-300">
+                          <AlertTriangle className="h-3 w-3" /> Descartable
+                        </span>
+                      ) : r.emailStatus === 'EXISTING' ? (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
+                          <CheckCircle className="h-3 w-3" /> Existente
+                        </span>
+                      ) : (
+                        <span className="text-slate-600 font-mono">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 font-mono text-slate-300">{r.phoneMasked}</td>
                     <td className="px-4 py-3 font-mono text-cyan-400/90">{r.ipMasked}</td>
                     <td
