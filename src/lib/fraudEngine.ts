@@ -9,73 +9,21 @@ import {
 import { normalizeIdentifier, hashData, CONSORTIUM_SALT } from './crypto';
 
 // ─────────────────────────────────────────────────────────────────
-// PESOS BASE POR CATEGORÍA (ΔS) — Modelo Probabilístico Dinámico
+// CONSTANTES DE SCORING
 // ─────────────────────────────────────────────────────────────────
 
-const SEVERITY_WEIGHT: Record<IncidentCategory, number> = {
-  IDENTITY_THEFT: 90,   // Fraude crítico, daño deliberado grave
-  MULE_ACCOUNT:   85,   // Estructura de lavado / movimiento ilícito
-  PHISHING:       70,   // Vector de ataque activo verificado
-  CHARGEBACK:     40,   // Puede ser fraude amistoso o disputa comercial legítima
-  SUSPICIOUS:     20,   // Alerta temprana, anomalía comportamental
+const SEVERITY_BASE: Record<IncidentCategory, number> = {
+  MULE_ACCOUNT: 40,
+  IDENTITY_THEFT: 35,
+  CHARGEBACK: 20,
+  PHISHING: 25,
+  SUSPICIOUS: 15,
 };
 
-const OK_ATTENUATION = -35; // Voto "legítimo" / falso positivo confirmado
-
-// ─────────────────────────────────────────────────────────────────
-// VIDA MEDIA (HALF-LIFE) EN DÍAS POR CATEGORÍA
-// λ = ln(2) / halfLifeDays
-// Fraudes críticos: 90d | Phishing: 60d | Volátiles: 30d
-// ─────────────────────────────────────────────────────────────────
-
-const HALF_LIFE_DAYS: Record<IncidentCategory, number> = {
-  IDENTITY_THEFT: 90,
-  MULE_ACCOUNT:   90,
-  PHISHING:       60,
-  CHARGEBACK:     30,
-  SUSPICIOUS:     30,
-};
-
-/**
- * Peso decaído usando la fórmula de vida media exponencial:
- * Peso Actual = Peso Base × e^(−λ × t)
- * donde λ = ln(2) / halfLifeDays  y  t = días desde el reporte
- */
-function decayedWeight(category: IncidentCategory, isoTimestamp: string): number {
-  const base     = SEVERITY_WEIGHT[category] ?? 20;
-  const halfLife = HALF_LIFE_DAYS[category] ?? 30;
-  const lambda   = Math.LN2 / halfLife;
-  const t        = Math.max(0, (Date.now() - new Date(isoTimestamp).getTime()) / 86_400_000);
-  return base * Math.exp(-lambda * t);
-}
-
-// ─────────────────────────────────────────────────────────────────
-// MULTIPLICADOR DE RED (Consenso Multi-entidad)
-// M_red = 1 + 0.2 × (n_entidades_distintas − 1)
-// Ejemplo: 1 entidad → ×1.0 | 2 → ×1.2 | 4 → ×1.6 | tope ×2.0
-// ─────────────────────────────────────────────────────────────────
-
-function networkMultiplier(distinctEntities: number): number {
-  if (distinctEntities <= 1) return 1.0;
-  return Math.min(2.0, 1 + 0.2 * (distinctEntities - 1));
-}
-
-// ─────────────────────────────────────────────────────────────────
-// CLASIFICACIÓN EN 4 NIVELES ACCIONABLES
-// 0-20  → CONFIABLE  (Verde)   → APROBAR
-// 21-50 → ALERTA     (Amarillo) → 2FA / Step-up
-// 51-75 → ALTO_RIESGO (Naranja) → Revisión Manual
-// 76-100→ CRITICO    (Rojo)    → Bloqueo Automático
-// ─────────────────────────────────────────────────────────────────
-
-export type RiskTier = 'CONFIABLE' | 'ALERTA' | 'ALTO_RIESGO' | 'CRITICO';
-
-function classifyScore(score: number): { tier: RiskTier; level: 'BAJO' | 'MEDIO' | 'ALTO' } {
-  if (score >= 76) return { tier: 'CRITICO',     level: 'ALTO' };
-  if (score >= 51) return { tier: 'ALTO_RIESGO', level: 'MEDIO' };
-  if (score >= 21) return { tier: 'ALERTA',      level: 'MEDIO' };
-  return             { tier: 'CONFIABLE',   level: 'BAJO' };
-}
+const MISMATCH_PENALTY = 45;
+const VELOCITY_PENALTY = 25;
+const VELOCITY_THRESHOLD = 3; // lookups en 60min desde entidades distintas
+const VELOCITY_WINDOW_MS = 60 * 60 * 1000; // 60 minutos
 
 // ─────────────────────────────────────────────────────────────────
 // FUNCIÓN DE HASH (re-exporta usando CONSORTIUM_SALT)
@@ -90,136 +38,167 @@ export async function computeHash(
 }
 
 // ─────────────────────────────────────────────────────────────────
-// EVALUACIÓN PRINCIPAL — Modelo Probabilístico Dinámico
+// FACTOR DE DECAIMIENTO TEMPORAL
+// ─────────────────────────────────────────────────────────────────
+
+function timeDecayFactor(isoTimestamp: string): number {
+  const daysSince =
+    (Date.now() - new Date(isoTimestamp).getTime()) / (1000 * 60 * 60 * 24);
+  return Math.exp(-0.005 * Math.max(0, daysSince));
+}
+
+// ─────────────────────────────────────────────────────────────────
+// EVALUACIÓN PRINCIPAL
 // ─────────────────────────────────────────────────────────────────
 
 export async function evaluateRisk(params: {
   dni?: string;
   email?: string;
   phone?: string;
+  ip?: string;
   fintechId: string;
   fintechs: FintechEntity[];
   identityNodes: IdentityNode[];
   graphEdges: SpecGraphEdge[];
 }): Promise<LookupResult> {
-  const { dni, email, phone, fintechId, fintechs, identityNodes, graphEdges } = params;
+  const { dni, email, phone, ip, fintechId, fintechs, identityNodes, graphEdges } = params;
 
-  // ── Hashes de los identificadores provistos ──────────────────
-  const dniHash   = dni   ? await computeHash('DNI',   dni)   : null;
+  // Hashes de los identificadores provistos
+  const dniHash = dni ? await computeHash('DNI', dni) : null;
   const emailHash = email ? await computeHash('EMAIL', email) : null;
   const phoneHash = phone ? await computeHash('PHONE', phone) : null;
-  const inputHashes = [dniHash, emailHash, phoneHash].filter(Boolean) as string[];
+  const ipHash = ip ? await computeHash('IP', ip) : null;
 
-  // ── Aristas activas que coincidan con los hashes consultados ─
+  const inputHashes = [dniHash, emailHash, phoneHash, ipHash].filter(Boolean) as string[];
+
+  // ── FACTOR 1: Base por Reportes Históricos ───────────────────
+  // Para cada arista activa que involucre alguno de los hashes consultados,
+  // sumar (Severidad_Base * trustWeight * TimeDecayFactor)
+  let historicalReportsScore = 0;
   const matchingEdges: SpecGraphEdge[] = [];
-  const falsePositiveEdges: SpecGraphEdge[] = [];
 
   for (const edge of graphEdges) {
-    const isMatch = inputHashes.includes(edge.sourceHash) || inputHashes.includes(edge.targetHash);
+    if (edge.isFalsePositive) continue;
+    const isMatch =
+      inputHashes.includes(edge.sourceHash) || inputHashes.includes(edge.targetHash);
     if (!isMatch) continue;
-    if (edge.isFalsePositive) {
-      falsePositiveEdges.push(edge);
-    } else {
-      matchingEdges.push(edge);
-    }
-  }
 
-  // ── PASO 1: Impacto decaído de cada reporte de fraude ────────
-  // Σ (Peso Base × Trust Weight × e^(−λ×t))
-  // Trust weight del reporter escala el impacto (entidad de alta
-  // confianza pesa más que una entidad nueva o cuestionada)
-  let totalFraudImpact = 0;
+    matchingEdges.push(edge);
 
-  for (const edge of matchingEdges) {
     const reportingFintech = fintechs.find(f => f.id === edge.reportedByEntityId);
-    const trustWeight      = reportingFintech ? reportingFintech.trustWeight : 0.7;
-    const decayed          = decayedWeight(edge.incidentCategory, edge.timestamp);
-    totalFraudImpact      += decayed * trustWeight;
+    const trustWeight = reportingFintech ? reportingFintech.trustWeight : 0.5;
+    const severityBase = SEVERITY_BASE[edge.incidentCategory] ?? 15;
+    const decay = timeDecayFactor(edge.timestamp);
+
+    historicalReportsScore += severityBase * trustWeight * decay;
   }
 
-  // ── PASO 2: Multiplicador de red (consenso multi-entidad) ────
-  const distinctReporters = new Set(matchingEdges.map(e => e.reportedByEntityId)).size;
-  const Mred = networkMultiplier(distinctReporters);
+  // Clamp parcial (puede ser > 100 si hay muchos reportes)
+  historicalReportsScore = Math.min(100, historicalReportsScore);
 
-  // ── PASO 3: Atenuación por votos "OK" (falsos positivos) ─────
-  // Cada voto OK reduce el score en 35 pts DECAÍDOS
-  // (también aplica decaimiento para que un "OK" viejo no limpie eternamente)
-  let totalOkAttenuation = 0;
-  for (const edge of falsePositiveEdges) {
-    const fpDecay = Math.exp(-Math.LN2 / 30 * Math.max(0,
-      (Date.now() - new Date(edge.timestamp).getTime()) / 86_400_000
-    ));
-    totalOkAttenuation += Math.abs(OK_ATTENUATION) * fpDecay;
-  }
-
-  // ── PASO 4: Score final S = min(100, max(0, Σ(FraudDecayed × M_red) − Σ(OK))) ──
-  const rawScore     = totalFraudImpact * Mred - totalOkAttenuation;
-  const finalScore   = Math.min(100, Math.max(0, Math.round(rawScore)));
-  const { tier, level } = classifyScore(finalScore);
-
-  // ── PASO 5: Identity Mismatch (penalización adicional) ───────
-  // Si DNI + Email/Phone están vinculados a DISTINTOS DNIs en la red
+  // ── FACTOR 2: Penalización por Identity Mismatch ─────────────
+  // Si se envían DNI + Email (o DNI + Teléfono), verificar si en las
+  // GraphEdges ese email/teléfono estuvo vinculado a un DNI distinto.
   let mismatchDetected = false;
-  let mismatchPenalty  = 0;
+  let mismatchPenalty = 0;
 
   if (dniHash && (emailHash || phoneHash)) {
     for (const edge of graphEdges) {
       if (edge.isFalsePositive) continue;
-      const secondaryHash = emailHash || phoneHash;
-      if (!secondaryHash) continue;
-      const secondaryInEdge = edge.sourceHash === secondaryHash || edge.targetHash === secondaryHash;
-      if (secondaryInEdge) {
-        const otherHash = edge.sourceHash === secondaryHash ? edge.targetHash : edge.sourceHash;
-        if (otherHash !== dniHash) {
-          mismatchDetected = true;
-          break;
+
+      // Caso Email-DNI: el email está en una arista con un DNI diferente al consultado
+      if (emailHash) {
+        const emailInEdge =
+          edge.sourceHash === emailHash || edge.targetHash === emailHash;
+        if (emailInEdge) {
+          const otherHash =
+            edge.sourceHash === emailHash ? edge.targetHash : edge.sourceHash;
+          // Si el otro extremo NO es el dniHash consultado, es un mismatch
+          if (otherHash !== dniHash) {
+            mismatchDetected = true;
+            break;
+          }
+        }
+      }
+
+      // Caso Phone-DNI: el teléfono está en una arista con un DNI diferente al consultado
+      if (!mismatchDetected && phoneHash) {
+        const phoneInEdge =
+          edge.sourceHash === phoneHash || edge.targetHash === phoneHash;
+        if (phoneInEdge) {
+          const otherHash =
+            edge.sourceHash === phoneHash ? edge.targetHash : edge.sourceHash;
+          if (otherHash !== dniHash) {
+            mismatchDetected = true;
+            break;
+          }
         }
       }
     }
-    if (mismatchDetected) mismatchPenalty = 30; // penalización moderada, no catastrófica
+    if (mismatchDetected) {
+      mismatchPenalty = MISMATCH_PENALTY;
+    }
   }
 
-  // ── PASO 6: Velocity check (ráfaga de consultas recientes) ───
+  // ── FACTOR 3: Penalización por Velocity ──────────────────────
+  // Si el hash fue consultado >= 3 veces en los últimos 60 min
+  // desde entidades distintas (basado en IdentityNodes).
   let velocityTriggered = false;
-  let velocityPenalty   = 0;
+  let velocityPenalty = 0;
 
   for (const hash of inputHashes) {
     const node = identityNodes.find(n => n.hash === hash);
-    if (node && node.lookupsLastHour >= 3) {
+    if (node && node.lookupsLastHour >= VELOCITY_THRESHOLD) {
       velocityTriggered = true;
       break;
     }
   }
-  if (velocityTriggered) velocityPenalty = 20;
 
-  // Score final incluyendo mismatch y velocity
-  const adjustedScore = Math.min(100, Math.max(0, finalScore + mismatchPenalty + velocityPenalty));
-  const { tier: finalTier, level: finalLevel } = classifyScore(adjustedScore);
+  // También chequear si hay múltiples fintechs distintas que consultaron
+  // este hash en la ventana de 60 minutos (usando timestamps de los edges)
+  if (!velocityTriggered && inputHashes.length > 0) {
+    const recentEdges = graphEdges.filter(e => {
+      if (e.isFalsePositive) return false;
+      const isMatch =
+        inputHashes.includes(e.sourceHash) || inputHashes.includes(e.targetHash);
+      const isRecent =
+        Date.now() - new Date(e.timestamp).getTime() < VELOCITY_WINDOW_MS;
+      return isMatch && isRecent;
+    });
 
-  // ── Indicador de conflicto comunitario ───────────────────────
-  const hasCommunityConflict = matchingEdges.length > 0 && falsePositiveEdges.length > 0;
+    const distinctEntities = new Set(recentEdges.map(e => e.reportedByEntityId));
+    if (distinctEntities.size >= VELOCITY_THRESHOLD) {
+      velocityTriggered = true;
+    }
+  }
+
+  if (velocityTriggered) {
+    velocityPenalty = VELOCITY_PENALTY;
+  }
+
+  // ── SCORE FINAL ───────────────────────────────────────────────
+  const rawScore = historicalReportsScore + mismatchPenalty + velocityPenalty;
+  const finalScore = Math.min(100, Math.max(0, Math.round(rawScore)));
+
+  const riskLevel: 'BAJO' | 'MEDIO' | 'ALTO' =
+    finalScore >= 70 ? 'ALTO' : finalScore >= 30 ? 'MEDIO' : 'BAJO';
 
   const breakdown: ScoreBreakdown = {
-    historicalReportsScore: Math.round(totalFraudImpact),
+    historicalReportsScore: Math.round(historicalReportsScore),
     mismatchPenalty,
     velocityPenalty,
-    finalScore:             adjustedScore,
-    riskLevel:              finalLevel,
-    riskTier:               finalTier,
+    finalScore,
+    riskLevel,
     mismatchDetected,
     velocityTriggered,
     matchingEdges,
-    // Campos extendidos del nuevo modelo
-    networkMultiplier:      Math.round(Mred * 100) / 100,
-    distinctReporters,
-    okAttenuation:          Math.round(totalOkAttenuation),
-    hasCommunityConflict,
-  } as ScoreBreakdown;
+  };
 
   return {
     dniHash,
     emailHash,
     phoneHash,
+    ipHash,
     breakdown,
     timestamp: new Date().toISOString(),
     fintechId,
@@ -227,9 +206,12 @@ export async function evaluateRisk(params: {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// HELPERS DE GRAFO (sin cambios)
+// HELPERS DE GRAFO
 // ─────────────────────────────────────────────────────────────────
 
+/**
+ * Crea o actualiza un IdentityNode cuando se registra un nuevo reporte/lookup.
+ */
 export function upsertIdentityNode(
   nodes: IdentityNode[],
   type: 'DNI' | 'EMAIL' | 'PHONE' | 'IP',
@@ -244,32 +226,39 @@ export function upsertIdentityNode(
       if (n.hash !== hash) return n;
       return {
         ...n,
-        lastSeen:       now,
-        totalLookups:   n.totalLookups + (isLookup ? 1 : 0),
+        lastSeen: now,
+        totalLookups: n.totalLookups + (isLookup ? 1 : 0),
         lookupsLastHour: n.lookupsLastHour + (isLookup ? 1 : 0),
       };
     });
   }
 
-  return [...nodes, {
+  const newNode: IdentityNode = {
     type,
     hash,
-    firstSeen:       now,
-    lastSeen:        now,
-    totalLookups:    isLookup ? 1 : 0,
+    firstSeen: now,
+    lastSeen: now,
+    totalLookups: isLookup ? 1 : 0,
     lookupsLastHour: isLookup ? 1 : 0,
-  }];
+  };
+
+  return [...nodes, newNode];
 }
 
+/**
+ * Crea las aristas del grafo al reportar un fraude.
+ * Genera aristas entre cada par de hashes provistos.
+ */
 export function buildEdgesFromReport(params: {
   dniHash: string | null;
   emailHash: string | null;
   phoneHash: string | null;
+  ipHash?: string | null;
   reportedByEntityId: string;
   incidentCategory: IncidentCategory;
 }): SpecGraphEdge[] {
-  const { dniHash, emailHash, phoneHash, reportedByEntityId, incidentCategory } = params;
-  const hashes = [dniHash, emailHash, phoneHash].filter(Boolean) as string[];
+  const { dniHash, emailHash, phoneHash, ipHash, reportedByEntityId, incidentCategory } = params;
+  const hashes = [dniHash, emailHash, phoneHash, ipHash].filter(Boolean) as string[];
   const edges: SpecGraphEdge[] = [];
   const now = new Date().toISOString();
 
@@ -277,15 +266,16 @@ export function buildEdgesFromReport(params: {
     for (let j = i + 1; j < hashes.length; j++) {
       edges.push({
         id: `edge-${Date.now()}-${i}-${j}-${Math.random().toString(36).slice(2, 6)}`,
-        sourceHash:        hashes[i],
-        targetHash:        hashes[j],
+        sourceHash: hashes[i],
+        targetHash: hashes[j],
         reportedByEntityId,
         incidentCategory,
-        timestamp:         now,
-        isFalsePositive:   false,
+        timestamp: now,
+        isFalsePositive: false,
       });
     }
   }
 
   return edges;
 }
+
