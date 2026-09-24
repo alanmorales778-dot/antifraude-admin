@@ -1419,32 +1419,20 @@ const CATEGORY_TRANSLATIONS: Record<IncidentCategory, { label: string; color: st
 
 function ReportHistoryModule() {
   const { graphEdges, markFalsePositive, activeFintechId, fintechs } = useConsortiumStore();
-  const [selectedEntityFilter, setSelectedEntityFilter] = useState<string>(activeFintechId);
   const [searchTerm, setSearchTerm] = useState('');
 
   const activeFintech = fintechs.find(f => f.id === activeFintechId);
 
-  // Sincronizar filtro con entidad activa por defecto
-  React.useEffect(() => {
-    if (selectedEntityFilter !== 'ALL' && !fintechs.some(f => f.id === selectedEntityFilter)) {
-      setSelectedEntityFilter(activeFintechId);
-    }
-  }, [activeFintechId, fintechs, selectedEntityFilter]);
-
-  const filteredEdges = graphEdges
+  // Filtrar estricta y únicamente los reportes de la propia entidad
+  const myEdges = graphEdges
+    .filter(e => e.reportedByEntityId === activeFintechId)
     .filter(e => {
-      if (selectedEntityFilter !== 'ALL' && e.reportedByEntityId !== selectedEntityFilter) {
-        return false;
-      }
-      if (searchTerm) {
-        const term = searchTerm.toLowerCase();
-        const cat = (e.incidentCategory || '').toLowerCase();
-        const catLabel = (CATEGORY_TRANSLATIONS[e.incidentCategory]?.label || '').toLowerCase();
-        const fields = (e.uploadedFields || '').toLowerCase();
-        const entity = (e.entityName || '').toLowerCase();
-        return cat.includes(term) || catLabel.includes(term) || fields.includes(term) || entity.includes(term);
-      }
-      return true;
+      if (!searchTerm) return true;
+      const term = searchTerm.toLowerCase();
+      const cat = (e.incidentCategory || '').toLowerCase();
+      const catLabel = (CATEGORY_TRANSLATIONS[e.incidentCategory]?.label || '').toLowerCase();
+      const fields = (e.uploadedFields || '').toLowerCase();
+      return cat.includes(term) || catLabel.includes(term) || fields.includes(term);
     })
     .slice()
     .reverse();
@@ -1454,50 +1442,27 @@ function ReportHistoryModule() {
     markFalsePositive(edgeId);
   };
 
-  const getEntityName = (id: string, storedName?: string) => {
-    if (storedName) return storedName;
-    const f = fintechs.find(item => item.id === id);
-    return f ? f.name : id;
-  };
-
   return (
     <div className="glass-panel rounded-2xl p-6 space-y-5">
-      {/* Header con título y controles de filtro */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-4">
+      {/* Header con título privado de la propia entidad */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
         <div>
           <div className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-amber-400" />
-            <h3 className="text-base font-bold text-white">Historial de Reportes por Banco / Fintech</h3>
+            <h3 className="text-base font-bold text-white">Historial de Reportes de mi Entidad</h3>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            Registro detallado y auditable de todo lo que cada entidad financiera subió a la red comunitaria.
+            Registro privado y exclusivo de los reportes subidos por <strong className="text-slate-200">{activeFintech?.name || 'tu entidad'}</strong>.
           </p>
         </div>
 
-        {/* Filtro por entidad */}
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-slate-400 font-medium flex items-center gap-1">
-            <Building className="h-3.5 w-3.5 text-cyan-400" />
-            Ver reportes de:
-          </span>
-          <select
-            value={selectedEntityFilter}
-            onChange={e => setSelectedEntityFilter(e.target.value)}
-            className="rounded-xl border border-white/10 bg-slate-900 px-3 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-400 font-medium"
-          >
-            <option value={activeFintechId}>
-              {activeFintech ? `Mi Entidad (${activeFintech.name})` : 'Mi Entidad'}
-            </option>
-            <option value="ALL">🌐 Todas las entidades del Consorcio</option>
-            {fintechs
-              .filter(f => f.id !== activeFintechId)
-              .map(f => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
-                </option>
-              ))}
-          </select>
-        </div>
+        {activeFintech && (
+          <div className="inline-flex items-center gap-2 rounded-xl bg-cyan-500/10 border border-cyan-500/25 px-3 py-1.5 text-xs font-bold text-cyan-300 self-start sm:self-auto shadow-sm">
+            <Building className="h-3.5 w-3.5" />
+            <span>{activeFintech.name}</span>
+            <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          </div>
+        )}
       </div>
 
       {/* Buscador de registros y contador */}
@@ -1508,25 +1473,22 @@ function ReportHistoryModule() {
             type="text"
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
-            placeholder="Buscar por DNI, email, IP, tipología o banco..."
+            placeholder="Buscar en mis reportes (DNI, email, IP, tipología)..."
             className="w-full rounded-xl border border-white/10 bg-slate-950/60 pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400"
           />
         </div>
 
         <div className="text-xs text-slate-400 font-mono">
-          Mostrando <strong className="text-white">{filteredEdges.length}</strong> registro(s)
-          {selectedEntityFilter !== 'ALL' && activeFintech && (
-            <span> de <strong className="text-cyan-300">{getEntityName(selectedEntityFilter)}</strong></span>
-          )}
+          Mostrando <strong className="text-white">{myEdges.length}</strong> reporte(s) propios
         </div>
       </div>
 
-      {filteredEdges.length === 0 ? (
+      {myEdges.length === 0 ? (
         <div className="rounded-xl border border-white/10 bg-slate-800/30 py-12 text-center space-y-2">
           <Shield className="h-8 w-8 text-slate-600 mx-auto" />
-          <p className="text-sm font-semibold text-slate-400">No hay reportes registrados para el filtro seleccionado.</p>
+          <p className="text-sm font-semibold text-slate-400">No hay reportes registrados por tu entidad.</p>
           <p className="text-xs text-slate-500">
-            Podés cargar nuevos reportes desde «Reportar Fraude» o mediante «Importación CSV».
+            Los reportes que ingreses desde «Reportar Fraude» o «Importación CSV» aparecerán listados aquí.
           </p>
         </div>
       ) : (
@@ -1535,7 +1497,6 @@ function ReportHistoryModule() {
             <thead className="bg-slate-950 border-b border-white/10 text-[11px] uppercase text-slate-400 tracking-wider">
               <tr>
                 <th className="px-4 py-3"># Registro</th>
-                <th className="px-4 py-3">Entidad Emisora</th>
                 <th className="px-4 py-3">Datos e Identificadores Subidos</th>
                 <th className="px-4 py-3">Canal de Carga</th>
                 <th className="px-4 py-3">Categoría de Fraude</th>
@@ -1545,13 +1506,11 @@ function ReportHistoryModule() {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5 text-slate-300">
-              {filteredEdges.map((edge, idx) => {
+              {myEdges.map((edge, idx) => {
                 const catConfig = CATEGORY_TRANSLATIONS[edge.incidentCategory] || {
                   label: edge.incidentCategory,
                   color: 'bg-slate-800 text-slate-300 border-slate-700',
                 };
-                const entityName = getEntityName(edge.reportedByEntityId, edge.entityName);
-                const isMyEntity = edge.reportedByEntityId === activeFintechId;
 
                 return (
                   <tr
@@ -1559,26 +1518,12 @@ function ReportHistoryModule() {
                     className={
                       edge.isFalsePositive
                         ? 'opacity-50 bg-amber-950/10'
-                        : isMyEntity
-                        ? 'bg-cyan-950/10 hover:bg-cyan-950/20 transition'
-                        : 'hover:bg-white/5 transition'
+                        : 'bg-cyan-950/10 hover:bg-cyan-950/20 transition'
                     }
                   >
                     {/* ID Registro */}
                     <td className="px-4 py-3 font-mono text-slate-400 font-bold whitespace-nowrap">
-                      REP-{String(filteredEdges.length - idx).padStart(3, '0')}
-                    </td>
-
-                    {/* Entidad Emisora */}
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-bold border ${
-                        isMyEntity
-                          ? 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300'
-                          : 'bg-slate-800 border-white/10 text-slate-300'
-                      }`}>
-                        <Building className="h-3 w-3 text-cyan-400" />
-                        {entityName}
-                      </span>
+                      REP-{String(myEdges.length - idx).padStart(3, '0')}
                     </td>
 
                     {/* Datos Subidos (Enmascarados) */}
@@ -1590,7 +1535,7 @@ function ReportHistoryModule() {
                         </span>
                       </div>
                       <span className="text-[10px] text-slate-500 block pl-5 mt-0.5">
-                        Protección Zero-Knowledge (Hash Blindado en Red)
+                        Protegido en Red (Hash Blindado Zero-Knowledge)
                       </span>
                     </td>
 
@@ -1644,7 +1589,7 @@ function ReportHistoryModule() {
                         <button
                           onClick={() => handleMarkFP(edge.id)}
                           className="rounded-xl border border-amber-500/30 bg-amber-950/40 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-900/50 hover:text-white active:scale-95 transition"
-                          title="Desactivar y atenuar este reporte si fue resuelto o es un cliente legítimo"
+                          title="Desactivar este reporte si fue resuelto o es un cliente legítimo"
                         >
                           Falso Positivo
                         </button>
