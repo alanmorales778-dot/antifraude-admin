@@ -211,7 +211,7 @@ export default function RiskLookup({
               { id: 'DNI', label: 'DNI / CUIT' },
               { id: 'PHONE', label: 'Teléfono Móvil' },
               { id: 'IP', label: 'Dirección IP' },
-              { id: 'CBU', label: 'CBU / CVU (22 dígitos)' },
+              { id: 'CBU', label: 'CBU / CVU / Alias' },
               { id: 'CARD_BIN', label: 'Tarjeta (BIN 6 + Últimos 4)' },
             ].map(type => (
               <button
@@ -247,8 +247,8 @@ export default function RiskLookup({
                   ? 'ejemplo: +54 9 11 4055-8891'
                   : selectedType === 'IP'
                   ? 'ejemplo: 190.191.200.45'
-                  : selectedType === 'CBU'
-                  ? 'ejemplo: 0000003100010000000001 (22 dígitos)'
+                  : selectedType === 'CBU' || (selectedType as string) === 'CBU_CVU'
+                  ? 'ejemplo: 0000003100010000000019 o alias.banco.mp'
                   : 'ejemplo: 450995******1234'
               }
               className="w-full rounded-2xl border border-white/10 bg-black/40 py-3.5 pl-12 pr-36 text-sm text-white placeholder-slate-500 shadow-inner focus:border-[var(--accent-primary)] focus:outline-none"

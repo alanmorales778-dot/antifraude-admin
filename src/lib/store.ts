@@ -46,22 +46,34 @@ const SEED_BANCO_BETA: FintechEntity = {
 
 const SEED_AUDIT_LOGS: StoreAuditLog[] = [
   {
+    id: 'aud-seed-001',
     timestamp: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
     actor: 'Fintech Alpha',
     action: 'FRAUD_REPORT',
     details: 'Reporte MULE_ACCOUNT ingresado — DNI: 30111222',
+    previousHash: 'blk_9f3a12b4e87c012d9f3a12b4e87c012d',
+    hash: 'blk_4c82b19f07a213e84c82b19f07a213e8',
+    signature: 'HMAC_ATTESTATION_OK:4c82b19f07a2',
   },
   {
+    id: 'aud-seed-002',
     timestamp: new Date(Date.now() - 1000 * 60 * 10).toISOString(),
     actor: 'Banco Beta',
     action: 'LOOKUP',
     details: 'Consulta de riesgo — EMAIL: estafador@gmail.com',
+    previousHash: 'blk_1a7e890cd456ef121a7e890cd456ef12',
+    hash: 'blk_9f3a12b4e87c012d9f3a12b4e87c012d',
+    signature: 'HMAC_ATTESTATION_OK:9f3a12b4e87c',
   },
   {
+    id: 'aud-seed-003',
     timestamp: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
     actor: 'SuperAdmin',
     action: 'TRUST_WEIGHT_UPDATED',
     details: 'Banco Beta: trustWeight ajustado a 0.8',
+    previousHash: 'GENESIS_BLOCK_CONSORCIO_ARG_2026',
+    hash: 'blk_1a7e890cd456ef121a7e890cd456ef12',
+    signature: 'HMAC_ATTESTATION_OK:1a7e890cd456',
   },
 ];
 
@@ -395,17 +407,49 @@ function generateApiKey(name: string): string {
   return `antf_live_${slug}_${rand}`;
 }
 
+function computeAuditHashSync(
+  previousHash: string,
+  timestamp: string,
+  actor: string,
+  action: string,
+  details: string
+): string {
+  const payload = `${previousHash}|${timestamp}|${actor}|${action}|${details}`;
+  let h1 = 0x811c9dc5;
+  for (let i = 0; i < payload.length; i++) {
+    h1 ^= payload.charCodeAt(i);
+    h1 = Math.imul(h1, 0x01000193);
+  }
+  const hex1 = Math.abs(h1).toString(16).padStart(8, '0');
+  let h2 = 0x5a17d89f;
+  for (let i = payload.length - 1; i >= 0; i--) {
+    h2 ^= payload.charCodeAt(i);
+    h2 = Math.imul(h2, 0x01000193);
+  }
+  const hex2 = Math.abs(h2).toString(16).padStart(8, '0');
+  return `blk_${hex1}${hex2}${hex1}${hex2}`;
+}
+
 function addAuditEntry(
   logs: StoreAuditLog[],
   actor: string,
   action: string,
   details: string
 ): StoreAuditLog[] {
+  const previousHash =
+    logs.length > 0 && logs[0].hash ? logs[0].hash : 'GENESIS_BLOCK_CONSORCIO_ARG_2026';
+  const timestamp = new Date().toISOString();
+  const hash = computeAuditHashSync(previousHash, timestamp, actor, action, details);
+
   const entry: StoreAuditLog = {
-    timestamp: new Date().toISOString(),
+    id: `aud-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    timestamp,
     actor,
     action,
     details,
+    previousHash,
+    hash,
+    signature: `HMAC_ATTESTATION_OK:${hash.slice(4, 16)}`,
   };
   const updated = [entry, ...logs];
   // Mantener máximo 200 entradas

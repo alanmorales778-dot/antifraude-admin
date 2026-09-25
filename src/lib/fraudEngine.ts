@@ -31,7 +31,7 @@ const VELOCITY_WINDOW_MS = 60 * 60 * 1000; // 60 minutos
 // ─────────────────────────────────────────────────────────────────
 
 export async function computeHash(
-  type: 'DNI' | 'EMAIL' | 'PHONE' | 'IP' | 'CBU',
+  type: 'DNI' | 'EMAIL' | 'PHONE' | 'IP' | 'CBU' | 'CBU_CVU',
   rawValue: string
 ): Promise<string> {
   const normalized = normalizeIdentifier(type, rawValue);

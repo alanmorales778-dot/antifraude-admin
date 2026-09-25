@@ -118,6 +118,7 @@ export default function RehabilitateModal({
                   <option value="EMAIL">Email</option>
                   <option value="DNI">DNI / CUIT</option>
                   <option value="PHONE">Teléfono</option>
+                  <option value="CBU_CVU">CBU / CVU / Alias</option>
                   <option value="CARD_BIN">Tarjeta BIN</option>
                 </select>
               </div>

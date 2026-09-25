@@ -21,7 +21,7 @@ export interface FintechEntity {
 }
 
 export interface IdentityNode {
-  type: 'DNI' | 'EMAIL' | 'PHONE' | 'IP' | 'CBU';
+  type: 'DNI' | 'EMAIL' | 'PHONE' | 'IP' | 'CBU' | 'CBU_CVU';
   hash: string; // SHA-256 con salt
   firstSeen: string; // ISO
   lastSeen: string; // ISO
@@ -43,10 +43,14 @@ export interface SpecGraphEdge {
 }
 
 export interface StoreAuditLog {
+  id?: string;
   timestamp: string;
   actor: string;
   action: string;
   details: string;
+  previousHash?: string;
+  hash?: string;
+  signature?: string;
 }
 
 export interface ScoreBreakdown {
@@ -88,11 +92,13 @@ export interface LookupResult {
 // TIPOS LEGACY (API server-side / db.ts / risk-engine.ts)
 // ─────────────────────────────────────────────────────────────────
 
-export type IdentifierType = 'EMAIL' | 'DNI' | 'PHONE' | 'IP' | 'CBU' | 'TAX_ID' | 'CARD_BIN';
+export type IdentifierType = 'EMAIL' | 'DNI' | 'PHONE' | 'IP' | 'CBU' | 'CBU_CVU' | 'TAX_ID' | 'CARD_BIN';
 
 export type RiskLevel = 'BAJO' | 'MEDIO' | 'ALTO';
 
-export type Recommendation = 'APROBAR' | 'DESAFIO_2FA' | 'BLOQUEAR';
+export type RiskTier = 'CRITICO' | 'ALTO_RIESGO' | 'ALERTA' | 'CONFIABLE';
+
+export type Recommendation = 'APROBAR' | 'DESAFIO_2FA' | 'BLOQUEAR' | 'REVISION_MANUAL';
 
 export type FraudTypology =
   | 'MULA_DE_DINERO'
@@ -133,6 +139,11 @@ export interface RiskMatrixFactors {
   recencyScore: number;
   recencyWeight: number;
   totalWeightedScore: number;
+  riskTier?: RiskTier;
+  networkMultiplier?: number;
+  fraudImpactDecayed?: number;
+  okAttenuation?: number;
+  halfLifeDays?: number;
 }
 
 export interface FraudEvent {
@@ -177,6 +188,9 @@ export interface AuditLog {
   ipAddress: string;
   timestamp: string;
   actionType?: 'API_CALL' | 'MANUAL_LOOKUP' | 'RULE_MODIFIED' | 'AUTH_FAILED' | 'QUARANTINE_TOGGLED';
+  previousHash?: string;
+  blockHash?: string;
+  signature?: string;
 }
 
 export interface RiskEvaluationResult {
@@ -198,6 +212,7 @@ export interface RiskEvaluationResult {
   timestamp: string;
   riskMatrix: RiskMatrixFactors;
   killSwitchTriggered?: boolean;
+  riskTier?: RiskTier;
 }
 
 export interface WebhookConfig {

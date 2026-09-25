@@ -643,7 +643,7 @@ interface BulkRowResult {
   phoneMasked: string;
   ipMasked: string;
   cbuMasked: string;
-  emailStatus: 'EXISTING' | 'NON_EXISTENT' | 'DISPOSABLE' | 'NONE';
+  emailStatus: 'EXISTING' | 'NON_EXISTENT' | 'DISPOSABLE' | 'INVALID_FORMAT' | 'NONE';
   score: number;
   level: 'BAJO' | 'MEDIO' | 'ALTO' | 'ERROR';
   tipologia: string;

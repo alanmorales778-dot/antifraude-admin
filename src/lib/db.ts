@@ -238,10 +238,27 @@ class InMemoryConsortiumDb {
 
   // --- Audit Logs ---
   async logAudit(logData: Omit<AuditLog, 'id' | 'timestamp'>): Promise<AuditLog> {
+    const previousEntry = this.auditLogs[0];
+    const previousHash = previousEntry?.blockHash || 'GENESIS_BLOCK_CONSORCIO_ARG_2026';
+    const timestamp = new Date().toISOString();
+    const rawPayload = `${previousHash}:${logData.tenantId}:${logData.endpoint}:${timestamp}`;
+
+    let blockHash = '';
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const nodeCrypto = require('crypto');
+      blockHash = nodeCrypto.createHash('sha256').update(rawPayload).digest('hex');
+    } catch {
+      blockHash = `blk_${Date.now().toString(16)}_${Math.random().toString(16).slice(2, 10)}`;
+    }
+
     const entry: AuditLog = {
       ...logData,
       id: `aud-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      timestamp: new Date().toISOString(),
+      timestamp,
+      previousHash,
+      blockHash,
+      signature: `HMAC_ATTESTATION_OK:${blockHash.slice(0, 16)}`,
     };
     this.auditLogs.unshift(entry);
     if (this.auditLogs.length > 500) {

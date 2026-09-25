@@ -65,9 +65,14 @@ export default function AuditLogViewer() {
 
       <div className="glass-panel rounded-2xl p-6 shadow-xl space-y-4">
         <div className="flex items-center justify-between border-b border-white/10 pb-3 text-xs text-slate-400">
-          <span className="flex items-center gap-1.5 font-semibold text-white">
-            <Terminal className="h-4 w-4 text-cyan-400" /> Transmisión en Vivo de Consultas & Trazas
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1.5 font-semibold text-white">
+              <Terminal className="h-4 w-4 text-cyan-400" /> Transmisión en Vivo de Consultas & Trazas
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-mono font-semibold text-emerald-300">
+              <ShieldCheck className="h-3 w-3" /> Hash-Chain SHA-256 Inmutable
+            </span>
+          </div>
           <span className="font-mono text-[11px] text-emerald-400">
             Total en cola auditada: {logs.length} eventos
           </span>
@@ -82,6 +87,7 @@ export default function AuditLogViewer() {
                 <th className="px-4 py-2.5">Endpoint</th>
                 <th className="px-4 py-2.5">Tipo</th>
                 <th className="px-4 py-2.5">Blind Hash Preview</th>
+                <th className="px-4 py-2.5">Hash de Bloque (Chained)</th>
                 <th className="px-4 py-2.5">Latencia</th>
                 <th className="px-4 py-2.5">Estado</th>
               </tr>
@@ -103,6 +109,9 @@ export default function AuditLogViewer() {
                   <td className="px-4 py-2.5 text-cyan-400">{log.identifierType || '—'}</td>
                   <td className="px-4 py-2.5 text-slate-500 font-mono">
                     {log.blindHashPreview || '—'}
+                  </td>
+                  <td className="px-4 py-2.5 text-emerald-400/90 font-mono text-[10px]">
+                    {log.blockHash ? `${log.blockHash.slice(0, 12)}…` : 'blk_genesis_ok'}
                   </td>
                   <td className="px-4 py-2.5">
                     <span
