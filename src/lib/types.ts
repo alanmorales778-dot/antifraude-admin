@@ -150,7 +150,7 @@ export interface LookupResult {
 // TIPOS LEGACY (API server-side / db.ts / risk-engine.ts)
 // ─────────────────────────────────────────────────────────────────
 
-export type IdentifierType = 'EMAIL' | 'DNI' | 'PHONE' | 'IP' | 'CBU' | 'TAX_ID' | 'CARD_BIN' | 'DEVICE' | 'CUIT';
+export type IdentifierType = 'EMAIL' | 'DNI' | 'PHONE' | 'IP' | 'CBU' | 'CBU_CVU' | 'TAX_ID' | 'CARD_BIN' | 'DEVICE' | 'CUIT';
 
 export type RiskLevel = 'BAJO' | 'MEDIO' | 'ALTO';
 
