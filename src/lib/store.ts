@@ -479,7 +479,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
       activeService: 'CONSORTIUM',
 
       // ── Sesiones y Rutas Independientes ────────────────────────
-      currentRoute: 'landing',
+      currentRoute: 'partner-login',
       adminSession: null,
       partnerSession: null,
 

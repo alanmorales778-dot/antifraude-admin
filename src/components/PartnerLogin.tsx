@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState } from 'react';
 import {
@@ -25,12 +25,14 @@ interface PartnerLoginProps {
   onSuccess?: () => void;
   onNavigateAdmin?: () => void;
   onNavigateHome?: () => void;
+  showAdminLink?: boolean;
 }
 
 export default function PartnerLogin({
   onSuccess,
   onNavigateAdmin,
   onNavigateHome,
+  showAdminLink = false,
 }: PartnerLoginProps) {
   const { fintechs, loginPartner, setCurrentRoute } = useConsortiumStore();
 
@@ -82,35 +84,38 @@ export default function PartnerLogin({
   const selectedEntity = fintechs.find(f => f.id === selectedEntityId) || fintechs[0];
 
   return (
-    <div className="min-h-screen bg-[#f7f6f1] text-[#1c222b] font-sans flex flex-col justify-between selection:bg-[#1b3b36] selection:text-white">
+    <div className="min-h-screen bg-[#070d18] text-[#f1f5f9] font-sans flex flex-col justify-between selection:bg-[#1d4ed8] selection:text-white">
       {/* ── Header Institucional B2B ── */}
-      <header className="border-b border-[#e4e0d5] bg-[#fdfcf9]/90 backdrop-blur-sm px-6 py-4">
+      <header className="border-b border-[#17253d] bg-[#0c1628]/95 backdrop-blur-md px-6 py-4 sticky top-0 z-30">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <button
-            onClick={onNavigateHome || (() => setCurrentRoute('landing'))}
-            className="flex items-center gap-3 text-left group"
-          >
-            <div className="w-9 h-9 rounded-lg bg-[#1b3b36] text-[#f7f6f1] flex items-center justify-center font-serif font-bold text-base shadow-sm border border-[#2b544e]">
-              F
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#1d4ed8] to-[#0f2756] text-white flex items-center justify-center font-serif font-bold text-base shadow-[0_0_15px_rgba(29,78,216,0.35)] border border-[#3b82f6]/40">
+              B
             </div>
             <div>
-              <span className="block text-xs font-semibold tracking-wider text-[#1b3b36] uppercase">
+              <span className="block text-xs font-bold tracking-wider text-white uppercase">
                 Portal de Entidades Financieras
               </span>
-              <span className="block text-[11px] text-[#697887] font-mono">
+              <span className="block text-[11px] text-[#60a5fa] font-mono">
                 Bancos · Billeteras Virtuales · Neobancos
               </span>
             </div>
-          </button>
+          </div>
 
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onNavigateAdmin || (() => setCurrentRoute('admin-login'))}
-              className="text-xs font-medium text-[#4a5568] hover:text-[#0f2132] px-3.5 py-1.5 rounded-lg border border-[#d8d5cb] bg-white hover:bg-[#f0ede6] transition-all shadow-2xs"
-            >
-              Acceso Gobernanza (Admin) →
-            </button>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#062c1d] border border-[#0f5132] text-[#34d399] font-mono text-[11px]">
+              <span className="w-2 h-2 rounded-full bg-[#10b981] animate-pulse" />
+              Red Federal Activa
+            </span>
+            {showAdminLink && onNavigateAdmin && (
+              <button
+                type="button"
+                onClick={onNavigateAdmin}
+                className="text-xs font-medium text-[#94a3b8] hover:text-white px-3.5 py-1.5 rounded-lg border border-[#1e365b] bg-[#0c172c] hover:bg-[#162746] transition-all"
+              >
+                Acceso Gobernanza (Admin) →
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -119,61 +124,74 @@ export default function PartnerLogin({
       <main className="flex-1 flex items-center justify-center px-4 py-10">
         <div className="w-full max-w-[500px]">
           {/* Tarjeta de Autenticación */}
-          <div className="bg-white border border-[#dedad0] rounded-2xl shadow-[0_4px_24px_rgba(20,28,38,0.06)] overflow-hidden">
-            {/* Cabecera con Acento Verde Bosque / Institucional */}
-            <div className="bg-[#1b3b36] text-[#f7f6f1] px-8 pt-8 pb-7 border-b border-[#294f49]">
-              <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-[#254d46] border border-[#34665d] text-[11px] font-mono text-[#d1e7e3] uppercase tracking-wider mb-3">
-                <Network className="w-3.5 h-3.5 text-[#63d471]" />
+          <div className="bg-[#0d182e] border border-[#1e365b] rounded-2xl shadow-[0_8px_32px_rgba(3,7,18,0.6)] overflow-hidden">
+            {/* Cabecera con Acento Azul Seguridad */}
+            <div className="bg-gradient-to-b from-[#0f203c] to-[#0a1528] px-8 pt-8 pb-7 border-b border-[#1b3152]">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-[#13233e] border border-[#203c68] text-[11px] font-mono text-[#93c5fd] uppercase tracking-wider mb-3">
+                <Network className="w-3.5 h-3.5 text-[#60a5fa]" />
                 Acceso B2B a Red Federal
               </div>
-              <h1 className="text-xl font-serif font-medium tracking-tight text-white">
+              <h1 className="text-xl font-bold tracking-tight text-white">
                 Ingreso de Entidades Participantes
               </h1>
-              <p className="text-xs text-[#a9c9c3] mt-1.5 leading-relaxed font-sans">
-                Accedé a tu <strong>Internal Risk Workspace</strong> y consultá correlaciones de amenazas en la red interbancaria Zero-Knowledge.
+              <p className="text-xs text-[#94a3b8] mt-2 leading-relaxed">
+                Accedé a tu <strong className="text-white">Internal Risk Workspace</strong> y consultá correlaciones de amenazas en la red interbancaria Zero-Knowledge.
               </p>
             </div>
 
             {/* Formulario */}
-            <form onSubmit={handleSubmit} className="p-8 space-y-4 bg-[#ffffff]">
+            <form onSubmit={handleSubmit} className="p-8 space-y-4 bg-[#0d182e]">
               {errorMsg && (
-                <div className="p-3.5 rounded-xl bg-[#fff5f5] border border-[#fed7d7] text-[#c53030] text-xs flex items-start gap-2.5">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#e53e3e]" />
+                <div className="p-3.5 rounded-xl bg-[#2e0909] border border-[#661616] text-[#fca5a5] text-xs flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#ef4444]" />
                   <span className="leading-snug">{errorMsg}</span>
                 </div>
               )}
 
               {/* Selector de Entidad */}
               <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-[#2d3748] tracking-wide">
-                  Entidad Financiera Registrada
+                <label className="block text-xs font-semibold text-[#cbd5e1] tracking-wide">
+                  Seleccionar Entidad Financiera
                 </label>
                 <div className="relative">
                   <select
                     value={selectedEntityId}
                     onChange={e => handleEntityChange(e.target.value)}
-                    className="w-full px-3.5 py-2.5 pl-10 bg-[#faf9f6] border border-[#dcd7cb] rounded-lg text-xs text-[#1a202c] focus:outline-none focus:border-[#1b3b36] focus:bg-white transition-all shadow-2xs font-medium cursor-pointer"
+                    className="w-full px-3.5 py-2.5 pl-10 bg-[#060c17] border border-[#1e365b] rounded-lg text-xs text-white focus:outline-none focus:border-[#3b82f6] transition-all cursor-pointer font-medium"
                   >
                     {fintechs.map(f => (
-                      <option key={f.id} value={f.id}>
-                        {f.name} {f.status === 'SUSPENDED' ? '(Suspendida)' : `— Trust ${(f.trustWeight * 100).toFixed(0)}%`}
+                      <option key={f.id} value={f.id} className="bg-[#0c1628] text-white">
+                        {f.name} {f.status === 'SUSPENDED' ? '(En Cuarentena)' : ''}
                       </option>
                     ))}
                   </select>
-                  <Building2 className="w-4 h-4 text-[#758a99] absolute left-3.5 top-3 pointer-events-none" />
+                  <Building2 className="w-4 h-4 text-[#64748b] absolute left-3.5 top-3 pointer-events-none" />
                 </div>
               </div>
 
-              {/* Clave API de Entidad */}
+              {/* Estado de la entidad seleccionada */}
+              {selectedEntity && (
+                <div className="p-3 rounded-lg bg-[#060c17] border border-[#17253d] flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${selectedEntity.status === 'ACTIVE' ? 'bg-[#10b981]' : 'bg-[#ef4444]'}`} />
+                    <span className="text-[#cbd5e1] font-medium">{selectedEntity.name}</span>
+                  </div>
+                  <span className="text-[11px] font-mono text-[#60a5fa]">
+                    Trust Weight: {(selectedEntity.trustWeight * 100).toFixed(0)}%
+                  </span>
+                </div>
+              )}
+
+              {/* API Key */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="block text-xs font-semibold text-[#2d3748] tracking-wide">
-                    Clave API de Entidad (Partner API Key)
+                  <label className="block text-xs font-semibold text-[#cbd5e1] tracking-wide">
+                    API Key B2B de la Entidad
                   </label>
                   <button
                     type="button"
                     onClick={() => setShowKey(!showKey)}
-                    className="text-[11px] text-[#718096] hover:text-[#2d3748] transition flex items-center gap-1"
+                    className="text-[11px] text-[#60a5fa] hover:text-[#93c5fd] transition flex items-center gap-1 font-mono"
                   >
                     {showKey ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
                     <span>{showKey ? 'Ocultar' : 'Ver'}</span>
@@ -186,16 +204,16 @@ export default function PartnerLogin({
                     value={apiKey}
                     onChange={e => setApiKey(e.target.value)}
                     placeholder="antf_live_..."
-                    className="w-full px-3.5 py-2.5 pl-10 bg-[#faf9f6] border border-[#dcd7cb] rounded-lg text-xs text-[#1a202c] placeholder-[#a0aec0] focus:outline-none focus:border-[#1b3b36] focus:bg-white transition-all shadow-2xs font-mono"
+                    className="w-full px-3.5 py-2.5 pl-10 bg-[#060c17] border border-[#1e365b] rounded-lg text-xs text-white placeholder-[#475569] focus:outline-none focus:border-[#3b82f6] transition-all font-mono"
                   />
-                  <KeyRound className="w-4 h-4 text-[#758a99] absolute left-3.5 top-3" />
+                  <KeyRound className="w-4 h-4 text-[#64748b] absolute left-3.5 top-3" />
                 </div>
               </div>
 
-              {/* Correo del Analista / Operador */}
+              {/* Correo Operador / Analista */}
               <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-[#2d3748] tracking-wide">
-                  Correo Institucional del Operador
+                <label className="block text-xs font-semibold text-[#cbd5e1] tracking-wide">
+                  Correo del Analista u Operador de Riesgo
                 </label>
                 <div className="relative">
                   <input
@@ -203,48 +221,30 @@ export default function PartnerLogin({
                     required
                     value={operatorEmail}
                     onChange={e => setOperatorEmail(e.target.value)}
-                    placeholder="analista@entidad.com"
-                    className="w-full px-3.5 py-2.5 pl-10 bg-[#faf9f6] border border-[#dcd7cb] rounded-lg text-xs text-[#1a202c] placeholder-[#a0aec0] focus:outline-none focus:border-[#1b3b36] focus:bg-white transition-all shadow-2xs font-mono"
+                    placeholder="analista@banco.com.ar"
+                    className="w-full px-3.5 py-2.5 pl-10 bg-[#060c17] border border-[#1e365b] rounded-lg text-xs text-white placeholder-[#475569] focus:outline-none focus:border-[#3b82f6] transition-all font-mono"
                   />
-                  <Mail className="w-4 h-4 text-[#758a99] absolute left-3.5 top-3" />
+                  <Mail className="w-4 h-4 text-[#64748b] absolute left-3.5 top-3" />
                 </div>
               </div>
 
-              {/* Rol de Operación */}
+              {/* Rol Operativo */}
               <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-[#2d3748] tracking-wide">
-                  Nivel de Autorización en Mesa de Riesgo
+                <label className="block text-xs font-semibold text-[#cbd5e1] tracking-wide">
+                  Nivel de Autorización Operativa
                 </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setOperatorRole('ANALYST_L2')}
-                    className={`px-3 py-2 rounded-lg border text-left text-xs transition-all ${
-                      operatorRole === 'ANALYST_L2'
-                        ? 'border-[#1b3b36] bg-[#f0f6f4] text-[#1b3b36] font-semibold shadow-2xs'
-                        : 'border-[#dcd7cb] bg-[#faf9f6] text-[#4a5568] hover:bg-[#f3f1ea]'
-                    }`}
+                <div className="relative">
+                  <select
+                    value={operatorRole}
+                    onChange={e => setOperatorRole(e.target.value as UserRole)}
+                    className="w-full px-3.5 py-2.5 pl-10 bg-[#060c17] border border-[#1e365b] rounded-lg text-xs text-white focus:outline-none focus:border-[#3b82f6] transition-all cursor-pointer font-medium"
                   >
-                    <span className="block font-semibold">Analista L2 (Senior)</span>
-                    <span className="block text-[10px] text-[#718096] font-normal mt-0.5">
-                      Consultas, reportes y Falsos Positivos
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setOperatorRole('ANALYST_L1')}
-                    className={`px-3 py-2 rounded-lg border text-left text-xs transition-all ${
-                      operatorRole === 'ANALYST_L1'
-                        ? 'border-[#1b3b36] bg-[#f0f6f4] text-[#1b3b36] font-semibold shadow-2xs'
-                        : 'border-[#dcd7cb] bg-[#faf9f6] text-[#4a5568] hover:bg-[#f3f1ea]'
-                    }`}
-                  >
-                    <span className="block font-semibold">Analista L1 (Junior)</span>
-                    <span className="block text-[10px] text-[#718096] font-normal mt-0.5">
-                      Solo consultas individuales y batch
-                    </span>
-                  </button>
+                    <option value="ANALYST_L1" className="bg-[#0c1628]">Analista Nivel 1 (Consultas ZK)</option>
+                    <option value="ANALYST_L2" className="bg-[#0c1628]">Analista Senior Nivel 2 (Reportes + Consultas)</option>
+                    <option value="FRAUD_LEAD" className="bg-[#0c1628]">Líder de Fraude / Head of Risk</option>
+                    <option value="AUDITOR" className="bg-[#0c1628]">Auditor de Cumplimiento (Solo Lectura)</option>
+                  </select>
+                  <Briefcase className="w-4 h-4 text-[#64748b] absolute left-3.5 top-3 pointer-events-none" />
                 </div>
               </div>
 
@@ -253,60 +253,50 @@ export default function PartnerLogin({
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full py-2.5 px-4 rounded-lg bg-[#1b3b36] hover:bg-[#254d46] active:translate-y-[0.5px] text-[#f7f6f1] font-medium text-xs shadow-sm hover:shadow transition-all flex items-center justify-center gap-2 border border-[#1b3b36] disabled:opacity-60"
+                  className="w-full py-2.5 px-4 rounded-lg bg-[#1d4ed8] hover:bg-[#2563eb] active:translate-y-[0.5px] text-white font-semibold text-xs shadow-[0_0_20px_rgba(29,78,216,0.3)] hover:shadow-[0_0_25px_rgba(37,99,235,0.4)] transition-all flex items-center justify-center gap-2 border border-[#3b82f6]/50 disabled:opacity-60"
                 >
                   {isLoading ? (
-                    <span className="animate-pulse">Validando entidad y operador...</span>
+                    <span className="animate-pulse">Validando credenciales B2B...</span>
                   ) : (
                     <>
-                      <span>Ingresar al Workspace de {selectedEntity?.name || 'la Entidad'}</span>
+                      <span>Ingresar al Workspace de la Entidad</span>
                       <ArrowRight className="w-3.5 h-3.5" />
                     </>
                   )}
                 </button>
               </div>
 
-              {/* Garantías B2B */}
-              <div className="pt-3 border-t border-[#eeebe2] grid grid-cols-3 gap-2 text-center text-[10px] text-[#637282]">
-                <div className="p-1.5 rounded bg-[#f7f6f2] border border-[#e8e4dc]">
-                  <span className="block font-bold text-[#1b3b36]">Zero-Knowledge</span>
-                  <span>Sin PII compartida</span>
-                </div>
-                <div className="p-1.5 rounded bg-[#f7f6f2] border border-[#e8e4dc]">
-                  <span className="block font-bold text-[#1b3b36]">RLS Aislado</span>
-                  <span>Espacio privado</span>
-                </div>
-                <div className="p-1.5 rounded bg-[#f7f6f2] border border-[#e8e4dc]">
-                  <span className="block font-bold text-[#1b3b36]">SLA 99.99%</span>
-                  <span>Sub-10ms lookup</span>
-                </div>
+              {/* Certificación BCRA */}
+              <div className="pt-3 border-t border-[#17253d] flex items-center justify-between text-[11px] text-[#64748b]">
+                <span className="flex items-center gap-1.5">
+                  <Lock className="w-3 h-3 text-[#34d399]" />
+                  Aislamiento RLS Dual
+                </span>
+                <span className="text-[#94a3b8]">BCRA Com. A7370</span>
               </div>
             </form>
           </div>
 
-          {/* Banner de Soporte Corporativo */}
-          <div className="mt-5 px-4 text-center">
-            <p className="text-[11px] text-[#717d8a]">
+          {/* Footer Informativo */}
+          <div className="mt-6 px-4 text-center">
+            <p className="text-[11px] text-[#64748b] leading-relaxed">
               ¿Tu entidad no está dada de alta en el Consorcio?{' '}
-              <button
-                onClick={onNavigateAdmin || (() => setCurrentRoute('admin-login'))}
-                className="text-[#1b3b36] font-semibold hover:underline"
-              >
+              <span className="text-[#60a5fa] font-medium">
                 Solicitar adhesión a la Autoridad de Gobernanza
-              </button>
+              </span>
             </p>
           </div>
         </div>
       </main>
 
       {/* ── Footer ── */}
-      <footer className="border-t border-[#e4e0d5] bg-[#fdfcf9] px-6 py-4 text-center text-xs text-[#7d8b9b]">
+      <footer className="border-t border-[#17253d] bg-[#0c1628] px-6 py-4 text-center text-xs text-[#64748b]">
         <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-2">
           <span>© 2026 Red Federal Interbancaria de Prevención de Fraude</span>
           <div className="flex items-center gap-4 text-[11px]">
-            <span>Entorno de Producción Seguro</span>
+            <span>Arquitectura Anti-Fraude v2.4</span>
             <span>•</span>
-            <span>Cifrado SHA-256 HMAC</span>
+            <span>Memoria Cloud Supabase</span>
           </div>
         </div>
       </footer>

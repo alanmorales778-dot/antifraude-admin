@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState } from 'react';
 import {
@@ -22,12 +22,14 @@ interface AdminLoginProps {
   onSuccess?: () => void;
   onNavigatePartner?: () => void;
   onNavigateHome?: () => void;
+  showPartnerLink?: boolean;
 }
 
 export default function AdminLogin({
   onSuccess,
   onNavigatePartner,
   onNavigateHome,
+  showPartnerLink = false,
 }: AdminLoginProps) {
   const { loginAdmin, setCurrentRoute } = useConsortiumStore();
 
@@ -66,72 +68,78 @@ export default function AdminLogin({
   };
 
   return (
-    <div className="min-h-screen bg-[#f5f4ef] text-[#1a202c] font-sans flex flex-col justify-between selection:bg-[#1b3a4b] selection:text-white">
-      {/* ── Top Institutional Bar ── */}
-      <header className="border-b border-[#e2dfd5] bg-[#faf9f5]/90 backdrop-blur-sm px-6 py-4">
+    <div className="min-h-screen bg-[#070d18] text-[#f1f5f9] font-sans flex flex-col justify-between selection:bg-[#1d4ed8] selection:text-white">
+      {/* ── Top Executive Bar ── */}
+      <header className="border-b border-[#17253d] bg-[#0c1628]/95 backdrop-blur-md px-6 py-4 sticky top-0 z-30">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
-              onClick={onNavigateHome || (() => setCurrentRoute('landing'))}
+              onClick={onNavigateHome || (() => setCurrentRoute('admin-portal'))}
               className="flex items-center gap-3 text-left group"
             >
-              <div className="w-9 h-9 rounded-lg bg-[#0f2132] text-[#f7f6f2] flex items-center justify-center font-serif font-bold text-base shadow-sm border border-[#233547]">
-                C
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#1d4ed8] to-[#0f2756] text-white flex items-center justify-center font-serif font-bold text-base shadow-[0_0_15px_rgba(29,78,216,0.35)] border border-[#3b82f6]/40">
+                G
               </div>
               <div>
-                <span className="block text-xs font-semibold tracking-wider text-[#1e2e3e] uppercase">
+                <span className="block text-xs font-bold tracking-wider text-white uppercase">
                   Consorcio Federal Antifraude
                 </span>
-                <span className="block text-[11px] text-[#717d8a] font-mono">
-                  Gobernanza & Auditoría Central
+                <span className="block text-[11px] text-[#60a5fa] font-mono font-medium">
+                  Portal Central de Gobernanza y Auditoría
                 </span>
               </div>
             </button>
           </div>
 
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onNavigatePartner || (() => setCurrentRoute('partner-login'))}
-              className="text-xs font-medium text-[#4a5568] hover:text-[#0f2132] px-3.5 py-1.5 rounded-lg border border-[#d8d5cb] bg-white hover:bg-[#f0ede6] transition-all shadow-2xs"
-            >
-              Acceso Entidades / Bancos →
-            </button>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#062c1d] border border-[#0f5132] text-[#34d399] font-mono text-[11px]">
+              <span className="w-2 h-2 rounded-full bg-[#10b981] animate-pulse" />
+              Entorno Seguro FIPS 140-2
+            </span>
+            {showPartnerLink && onNavigatePartner && (
+              <button
+                type="button"
+                onClick={onNavigatePartner}
+                className="text-xs font-medium text-[#94a3b8] hover:text-white px-3.5 py-1.5 rounded-lg border border-[#1e365b] bg-[#0c172c] hover:bg-[#162746] transition-all"
+              >
+                Acceso Entidades / Bancos →
+              </button>
+            )}
           </div>
         </div>
       </header>
 
       {/* ── Main Authentication Box ── */}
       <main className="flex-1 flex items-center justify-center px-4 py-12">
-        <div className="w-full max-w-[460px]">
+        <div className="w-full max-w-[480px]">
           {/* Card Frame */}
-          <div className="bg-white border border-[#dedad0] rounded-2xl shadow-[0_4px_24px_rgba(20,28,38,0.06)] overflow-hidden">
+          <div className="bg-[#0d182e] border border-[#1e365b] rounded-2xl shadow-[0_8px_32px_rgba(3,7,18,0.6)] overflow-hidden">
             {/* Header Accent */}
-            <div className="bg-[#0f2132] text-[#f5f4ef] px-8 pt-8 pb-7 border-b border-[#223547]">
-              <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-[#1d354a] border border-[#2c4760] text-[11px] font-mono text-[#d6e2ed] uppercase tracking-wider mb-4">
-                <ShieldCheck className="w-3.5 h-3.5 text-[#52b788]" />
+            <div className="bg-gradient-to-b from-[#0f203c] to-[#0a1528] px-8 pt-8 pb-7 border-b border-[#1b3152]">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-[#13233e] border border-[#203c68] text-[11px] font-mono text-[#93c5fd] uppercase tracking-wider mb-4">
+                <ShieldCheck className="w-3.5 h-3.5 text-[#34d399]" />
                 Acceso Reservado SuperAdmin
               </div>
-              <h1 className="text-xl font-serif font-medium tracking-tight text-white">
+              <h1 className="text-xl font-bold tracking-tight text-white">
                 Autenticación de Gobernanza
               </h1>
-              <p className="text-xs text-[#9fb3c8] mt-1.5 leading-relaxed font-sans">
-                Consola para la gestión de entidades participantes, calibración de pesos de confianza y auditoría regulatoria.
+              <p className="text-xs text-[#94a3b8] mt-2 leading-relaxed">
+                Consola reservada para la administración del consorcio, calibración de pesos de confianza de entidades y auditoría regulatoria BCRA.
               </p>
             </div>
 
             {/* Form */}
-            <form onSubmit={handleSubmit} className="p-8 space-y-5 bg-[#ffffff]">
+            <form onSubmit={handleSubmit} className="p-8 space-y-5 bg-[#0d182e]">
               {errorMsg && (
-                <div className="p-3.5 rounded-xl bg-[#fff5f5] border border-[#fed7d7] text-[#c53030] text-xs flex items-start gap-2.5">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#e53e3e]" />
+                <div className="p-3.5 rounded-xl bg-[#2e0909] border border-[#661616] text-[#fca5a5] text-xs flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#ef4444]" />
                   <span className="leading-snug">{errorMsg}</span>
                 </div>
               )}
 
               {/* Email */}
               <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-[#2d3748] tracking-wide">
+                <label className="block text-xs font-semibold text-[#cbd5e1] tracking-wide">
                   Correo Oficial de Gobernanza
                 </label>
                 <div className="relative">
@@ -141,22 +149,22 @@ export default function AdminLogin({
                     value={email}
                     onChange={e => setEmail(e.target.value)}
                     placeholder="gobernanza@consorcio-antifraude.org"
-                    className="w-full px-3.5 py-2.5 pl-10 bg-[#faf9f6] border border-[#dcd7cb] rounded-lg text-xs text-[#1a202c] placeholder-[#a0aec0] focus:outline-none focus:border-[#0f2132] focus:bg-white transition-all shadow-2xs font-mono"
+                    className="w-full px-3.5 py-2.5 pl-10 bg-[#060c17] border border-[#1e365b] rounded-lg text-xs text-white placeholder-[#475569] focus:outline-none focus:border-[#3b82f6] focus:bg-[#081122] transition-all font-mono"
                   />
-                  <Mail className="w-4 h-4 text-[#8a98a8] absolute left-3.5 top-3" />
+                  <Mail className="w-4 h-4 text-[#64748b] absolute left-3.5 top-3" />
                 </div>
               </div>
 
               {/* Master Security Key */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="block text-xs font-semibold text-[#2d3748] tracking-wide">
+                  <label className="block text-xs font-semibold text-[#cbd5e1] tracking-wide">
                     Master Security Key / Token Criptográfico
                   </label>
                   <button
                     type="button"
                     onClick={() => setShowKey(!showKey)}
-                    className="text-[11px] text-[#718096] hover:text-[#2d3748] transition flex items-center gap-1"
+                    className="text-[11px] text-[#60a5fa] hover:text-[#93c5fd] transition flex items-center gap-1 font-mono"
                   >
                     {showKey ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
                     <span>{showKey ? 'Ocultar' : 'Ver'}</span>
@@ -169,19 +177,19 @@ export default function AdminLogin({
                     value={masterKey}
                     onChange={e => setMasterKey(e.target.value)}
                     placeholder="antf_master_..."
-                    className="w-full px-3.5 py-2.5 pl-10 bg-[#faf9f6] border border-[#dcd7cb] rounded-lg text-xs text-[#1a202c] placeholder-[#a0aec0] focus:outline-none focus:border-[#0f2132] focus:bg-white transition-all shadow-2xs font-mono"
+                    className="w-full px-3.5 py-2.5 pl-10 bg-[#060c17] border border-[#1e365b] rounded-lg text-xs text-white placeholder-[#475569] focus:outline-none focus:border-[#3b82f6] focus:bg-[#081122] transition-all font-mono"
                   />
-                  <KeyRound className="w-4 h-4 text-[#8a98a8] absolute left-3.5 top-3" />
+                  <KeyRound className="w-4 h-4 text-[#64748b] absolute left-3.5 top-3" />
                 </div>
               </div>
 
               {/* Hardware / TOTP 2FA */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="block text-xs font-semibold text-[#2d3748] tracking-wide">
+                  <label className="block text-xs font-semibold text-[#cbd5e1] tracking-wide">
                     Código TOTP / Llave 2FA (6 dígitos)
                   </label>
-                  <span className="text-[10px] text-[#4a7c59] font-mono bg-[#edf7ed] px-1.5 py-0.5 rounded border border-[#c8e6c9]">
+                  <span className="text-[10px] text-[#34d399] font-mono bg-[#062c1d] px-2 py-0.5 rounded border border-[#0f5132]">
                     FIPS 140-2
                   </span>
                 </div>
@@ -192,9 +200,9 @@ export default function AdminLogin({
                     value={totpCode}
                     onChange={e => setTotpCode(e.target.value)}
                     placeholder="000000"
-                    className="w-full px-3.5 py-2.5 pl-10 bg-[#faf9f6] border border-[#dcd7cb] rounded-lg text-xs text-[#1a202c] placeholder-[#a0aec0] focus:outline-none focus:border-[#0f2132] focus:bg-white transition-all shadow-2xs font-mono tracking-widest text-center"
+                    className="w-full px-3.5 py-2.5 pl-10 bg-[#060c17] border border-[#1e365b] rounded-lg text-xs text-white placeholder-[#475569] focus:outline-none focus:border-[#3b82f6] focus:bg-[#081122] transition-all font-mono tracking-widest text-center font-bold"
                   />
-                  <Fingerprint className="w-4 h-4 text-[#8a98a8] absolute left-3.5 top-3" />
+                  <Fingerprint className="w-4 h-4 text-[#64748b] absolute left-3.5 top-3" />
                 </div>
               </div>
 
@@ -203,10 +211,10 @@ export default function AdminLogin({
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full py-2.5 px-4 rounded-lg bg-[#0f2132] hover:bg-[#1a334d] active:translate-y-[0.5px] text-[#f5f4ef] font-medium text-xs shadow-sm hover:shadow transition-all flex items-center justify-center gap-2 border border-[#0f2132] disabled:opacity-60"
+                  className="w-full py-2.5 px-4 rounded-lg bg-[#1d4ed8] hover:bg-[#2563eb] active:translate-y-[0.5px] text-white font-semibold text-xs shadow-[0_0_20px_rgba(29,78,216,0.3)] hover:shadow-[0_0_25px_rgba(37,99,235,0.4)] transition-all flex items-center justify-center gap-2 border border-[#3b82f6]/50 disabled:opacity-60"
                 >
                   {isLoading ? (
-                    <span className="animate-pulse">Validando credenciales...</span>
+                    <span className="animate-pulse">Validando credenciales en HSM...</span>
                   ) : (
                     <>
                       <span>Ingresar a Gobernanza Central</span>
@@ -217,12 +225,12 @@ export default function AdminLogin({
               </div>
 
               {/* Demo Helper */}
-              <div className="pt-3 border-t border-[#eeebe2] flex items-center justify-between text-[11px] text-[#718096]">
+              <div className="pt-3 border-t border-[#17253d] flex items-center justify-between text-[11px] text-[#94a3b8]">
                 <span>Ambiente de Certificación v2.4</span>
                 <button
                   type="button"
                   onClick={handleFillDemo}
-                  className="text-[#2b6cb0] hover:text-[#1a4971] font-medium hover:underline"
+                  className="text-[#60a5fa] hover:text-[#93c5fd] font-medium hover:underline"
                 >
                   Autocompletar credenciales demo
                 </button>
@@ -232,7 +240,7 @@ export default function AdminLogin({
 
           {/* Legal / Security Notice */}
           <div className="mt-6 px-4 text-center">
-            <p className="text-[11px] text-[#717d8a] leading-relaxed">
+            <p className="text-[11px] text-[#64748b] leading-relaxed">
               Trazabilidad criptográfica activa. Toda interacción queda registrada en libros de auditoría inmutables según normativa de ciberseguridad interbancaria.
             </p>
           </div>
@@ -240,9 +248,9 @@ export default function AdminLogin({
       </main>
 
       {/* ── Footer ── */}
-      <footer className="border-t border-[#e2dfd5] bg-[#faf9f5] px-6 py-4 text-center text-xs text-[#8a95a5]">
+      <footer className="border-t border-[#17253d] bg-[#0c1628] px-6 py-4 text-center text-xs text-[#64748b]">
         <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-2">
-          <span>© 2026 Consorcio Federal de Prevención de Fraude</span>
+          <span>© 2026 Consorcio Federal de Prevención de Fraude · Consola de Gobernanza</span>
           <div className="flex items-center gap-4 text-[11px]">
             <span>Protocolo Zero-Knowledge SHA-256</span>
             <span>•</span>
