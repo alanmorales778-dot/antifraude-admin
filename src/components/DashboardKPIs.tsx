@@ -1,20 +1,20 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ShieldAlert,
   ShieldCheck,
   Zap,
   TrendingUp,
-  DollarSign,
   Activity,
-  Server,
-  ArrowUpRight,
-  Sparkles,
-  Network,
+  AlertTriangle,
   Lock,
+  Layers,
+  ArrowRight,
+  Sparkles,
 } from 'lucide-react';
 import { Tenant } from '@/lib/types';
+import { useConsortiumStore } from '@/lib/store';
 
 interface DashboardKPIsProps {
   stats: any;
@@ -30,45 +30,109 @@ export default function DashboardKPIs({ stats, tenants, onNavigateTab }: Dashboa
   const maxQuery = Math.max(...queriesData);
   const maxAlert = Math.max(...alertsData);
 
-  const formattedARS = new Intl.NumberFormat('es-AR', {
-    style: 'currency',
-    currency: 'ARS',
-    maximumFractionDigits: 0,
-  }).format(stats?.estimatedMoneySavedARS || 842500000);
+  const store = useConsortiumStore();
+  const graphEdges = store?.graphEdges || [];
+  const auditLogs = store?.auditLogs || [];
 
-  const formattedUSD = new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 0,
-  }).format(stats?.estimatedMoneySavedUSD || 720000);
+  // ── KPI 1: % de Datos Fraudulentos ────────────────────────────
+  // Fórmula: (cantidad de datos reportados como fraude / cantidad de datos totales reportados) * 100
+  const dynamicFraudEdges = graphEdges.filter(e => !e.isFalsePositive && e.incidentCategory !== 'SUSPICIOUS').length;
+  const dynamicTotalEdges = graphEdges.length;
+
+  const baseTotalReported = stats?.totalReportedData || 18450;
+  const baseFraudReported = stats?.fraudReportedData || 2480;
+
+  const totalReportedData = baseTotalReported + dynamicTotalEdges;
+  const fraudReportedData = baseFraudReported + dynamicFraudEdges;
+  const fraudPercentage = totalReportedData > 0
+    ? ((fraudReportedData / totalReportedData) * 100).toFixed(1)
+    : '13.4';
+
+  // ── KPI 2: Consultas Procesadas Hoy (aprobado sin cambios) ─────
+  const totalQueries = stats?.totalQueriesProcessed || (142850 + auditLogs.length);
+
+  // ── KPI 3: Tasa Crítica (Alerta Diaria) ────────────────────────
+  // Marca el % de transacciones detectadas como fraudulentas en el día
+  // Regla estricta de color:
+  // < 30%    -> Verde (Normal / Seguro)
+  // 30% - 60% -> Amarillo (Alerta Moderada)
+  // > 60%    -> Rojo (Alerta Crítica)
+  const [customRate, setCustomRate] = useState<number | null>(null);
+  const baseRate = stats?.dailyCriticalRate ?? 18.4;
+  const criticalRate = customRate !== null ? customRate : baseRate;
+
+  const isGreen = criticalRate < 30;
+  const isYellow = criticalRate >= 30 && criticalRate <= 60;
+  const isRed = criticalRate > 60;
+
+  const alertConfig = isRed
+    ? {
+        textColor: 'text-rose-400',
+        borderColor: 'border-rose-500/50 hover:border-rose-500/80 shadow-[0_0_25px_rgba(244,63,94,0.18)]',
+        bgColor: 'bg-rose-500/10',
+        badgeBg: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
+        tag: 'ALERTA CRÍTICA (> 60%)',
+        statusText: 'Ataque masivo de fraude en el día',
+        recommendation: 'Recomendación: Bloqueo Automático',
+        icon: ShieldAlert,
+        pulse: true,
+      }
+    : isYellow
+    ? {
+        textColor: 'text-amber-400',
+        borderColor: 'border-amber-500/50 hover:border-amber-500/80 shadow-[0_0_20px_rgba(245,158,11,0.15)]',
+        bgColor: 'bg-amber-500/10',
+        badgeBg: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+        tag: 'ALERTA MODERADA (30% - 60%)',
+        statusText: 'Volumen anómalo de fraude en el día',
+        recommendation: 'Recomendación: Desafío 2FA Obligatorio',
+        icon: AlertTriangle,
+        pulse: true,
+      }
+    : {
+        textColor: 'text-emerald-400',
+        borderColor: 'border-emerald-500/40 hover:border-emerald-500/70 shadow-[0_0_15px_rgba(16,185,129,0.1)]',
+        bgColor: 'bg-emerald-500/10',
+        badgeBg: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+        tag: 'ESTADO NOMINAL (< 30%)',
+        statusText: 'Flujo seguro verificado en el día',
+        recommendation: 'Recomendación: Monitoreo Normal',
+        icon: ShieldCheck,
+        pulse: false,
+      };
+
+  const detectedToday = Math.max(1, Math.round((criticalRate / 100) * 140));
 
   return (
     <div className="space-y-6">
-      {/* 4 Main KPI Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {/* KPI 1: Fraudes Evitados */}
-        <div className="glass-panel relative overflow-hidden rounded-2xl p-5 transition hover:border-emerald-500/30">
+      {/* 3 Main KPI Cards */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {/* KPI 1: % de Datos Fraudulentos */}
+        <div className="glass-panel relative overflow-hidden rounded-2xl p-5 transition hover:border-cyan-500/30">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-400">Fraudes Evitados (Mes)</span>
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400">
-              <ShieldCheck className="h-5 w-5" />
+            <span className="text-xs font-medium text-slate-400">% de Datos Fraudulentos</span>
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-400">
+              <ShieldAlert className="h-5 w-5" />
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-bold text-white tracking-tight">
-              {(stats?.fraudAvoidedMonth || 1248).toLocaleString('es-AR')}
+            <div className="text-3xl font-extrabold text-white tracking-tight">
+              {fraudPercentage}%
             </div>
-            <div className="mt-1 flex items-center gap-1.5 text-xs text-emerald-400">
-              <TrendingUp className="h-3.5 w-3.5" />
-              <span>+18.4% vs mes anterior</span>
+            <div className="mt-1 flex items-center gap-1.5 text-xs text-slate-300">
+              <span className="font-mono text-cyan-300 font-semibold">{fraudReportedData.toLocaleString('es-AR')}</span>
+              <span className="text-slate-400">datos fraude de</span>
+              <span className="font-mono text-slate-200">{totalReportedData.toLocaleString('es-AR')}</span>
+              <span className="text-slate-400">reportados</span>
             </div>
           </div>
-          <div className="mt-3 border-t border-white/5 pt-2 text-[11px] text-slate-500">
-            Detección cruzada comunitaria
+          <div className="mt-3 border-t border-white/5 pt-2 flex items-center justify-between text-[11px] text-slate-500">
+            <span>Fórmula: (Fraude / Totales) × 100</span>
+            <span className="text-emerald-400/90 font-medium">+1.8% en base federal</span>
           </div>
         </div>
 
-        {/* KPI 2: Volumen de Consultas Hoy */}
+        {/* KPI 2: Consultas Procesadas Hoy */}
         <div className="glass-panel relative overflow-hidden rounded-2xl p-5 transition hover:border-cyan-500/30">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-400">Consultas Procesadas Hoy</span>
@@ -77,8 +141,8 @@ export default function DashboardKPIs({ stats, tenants, onNavigateTab }: Dashboa
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-bold text-white tracking-tight">
-              {(stats?.totalQueriesProcessed || 142850).toLocaleString('es-AR')}
+            <div className="text-3xl font-extrabold text-white tracking-tight">
+              {totalQueries.toLocaleString('es-AR')}
             </div>
             <div className="mt-1 flex items-center gap-1.5 text-xs text-cyan-400">
               <Zap className="h-3.5 w-3.5" />
@@ -90,32 +154,83 @@ export default function DashboardKPIs({ stats, tenants, onNavigateTab }: Dashboa
           </div>
         </div>
 
-        {/* KPI 3: Consultas de Alto Riesgo */}
+        {/* KPI 3: Tasa Crítica (Alerta Diaria con Color Dinámico: Verde <30%, Amarillo 30-60%, Rojo >60%) */}
         <div
-          onClick={() => onNavigateTab && onNavigateTab('consulta')}
-          className="glass-panel relative overflow-hidden rounded-2xl p-5 transition hover:border-rose-500/40 hover:bg-rose-500/[0.03] cursor-pointer group"
+          className={`glass-panel relative overflow-hidden rounded-2xl p-5 transition-all duration-300 ${alertConfig.bgColor} border ${alertConfig.borderColor} group`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-400 group-hover:text-rose-300 transition">Tasa de Riesgo Crítico</span>
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-500/10 text-rose-400 group-hover:scale-110 transition">
-              <ShieldAlert className="h-5 w-5" />
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-slate-300">Tasa Crítica</span>
+              <span className={`rounded-md border px-2 py-0.5 text-[10px] font-bold ${alertConfig.badgeBg} ${alertConfig.pulse ? 'animate-pulse' : ''}`}>
+                {alertConfig.tag}
+              </span>
+            </div>
+            <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${alertConfig.bgColor} ${alertConfig.textColor}`}>
+              <alertConfig.icon className={`h-5 w-5 ${alertConfig.pulse ? 'animate-bounce' : ''}`} />
             </div>
           </div>
+
           <div className="mt-3">
-            <div className="text-2xl font-bold text-white tracking-tight">
-              2.4% <span className="text-sm font-normal text-slate-400">({(stats?.highRiskCount || 14)} detectadas)</span>
+            <div className="flex items-baseline gap-2">
+              <span className={`text-3xl font-black tracking-tight ${alertConfig.textColor}`}>
+                {criticalRate.toFixed(1)}%
+              </span>
+              <span className="text-xs text-slate-400 font-mono">
+                ({detectedToday} transacciones detectadas hoy)
+              </span>
             </div>
-            <div className="mt-1 flex items-center gap-1.5 text-xs text-rose-400">
-              <span>89.2% de coincidencia multientidad</span>
+            <div className="mt-1 text-xs text-slate-300 font-medium">
+              {alertConfig.statusText}
             </div>
           </div>
-          <div className="mt-3 border-t border-white/5 pt-2 flex items-center justify-between text-[11px] text-slate-500">
-            <span>Recomendación: Bloqueo</span>
-            <span className="text-rose-400/80 group-hover:text-rose-400 font-medium">Ir a consulta ZK →</span>
+
+          {/* Selector interactivo de simulación de umbrales */}
+          <div className="mt-2.5 flex items-center gap-1.5 pt-1 text-[10px]">
+            <span className="text-slate-400 text-[10px]">Simular:</span>
+            <button
+              type="button"
+              onClick={() => setCustomRate(18.4)}
+              className={`px-1.5 py-0.5 rounded border transition font-mono ${
+                isGreen ? 'bg-emerald-500/30 text-emerald-200 border-emerald-400 font-bold' : 'bg-slate-800 text-slate-400 border-white/5 hover:text-white'
+              }`}
+              title="< 30% Verde"
+            >
+              🟢 18%
+            </button>
+            <button
+              type="button"
+              onClick={() => setCustomRate(45.0)}
+              className={`px-1.5 py-0.5 rounded border transition font-mono ${
+                isYellow ? 'bg-amber-500/30 text-amber-200 border-amber-400 font-bold' : 'bg-slate-800 text-slate-400 border-white/5 hover:text-white'
+              }`}
+              title="30% - 60% Amarillo"
+            >
+              🟡 45%
+            </button>
+            <button
+              type="button"
+              onClick={() => setCustomRate(72.5)}
+              className={`px-1.5 py-0.5 rounded border transition font-mono ${
+                isRed ? 'bg-rose-500/30 text-rose-200 border-rose-400 font-bold' : 'bg-slate-800 text-slate-400 border-white/5 hover:text-white'
+              }`}
+              title="> 60% Rojo"
+            >
+              🔴 73%
+            </button>
+          </div>
+
+          <div className="mt-3 border-t border-white/10 pt-2 flex items-center justify-between text-[11px] text-slate-400">
+            <span>{alertConfig.recommendation}</span>
+            <button
+              type="button"
+              onClick={() => onNavigateTab && onNavigateTab('consulta')}
+              className={`${alertConfig.textColor} hover:underline font-bold flex items-center gap-1 transition`}
+            >
+              <span>Ir a consulta ZK</span>
+              <ArrowRight className="h-3 w-3" />
+            </button>
           </div>
         </div>
-
-
       </div>
 
       {/* Main Charts Row */}

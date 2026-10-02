@@ -238,27 +238,10 @@ class InMemoryConsortiumDb {
 
   // --- Audit Logs ---
   async logAudit(logData: Omit<AuditLog, 'id' | 'timestamp'>): Promise<AuditLog> {
-    const previousEntry = this.auditLogs[0];
-    const previousHash = previousEntry?.blockHash || 'GENESIS_BLOCK_CONSORCIO_ARG_2026';
-    const timestamp = new Date().toISOString();
-    const rawPayload = `${previousHash}:${logData.tenantId}:${logData.endpoint}:${timestamp}`;
-
-    let blockHash = '';
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const nodeCrypto = require('crypto');
-      blockHash = nodeCrypto.createHash('sha256').update(rawPayload).digest('hex');
-    } catch {
-      blockHash = `blk_${Date.now().toString(16)}_${Math.random().toString(16).slice(2, 10)}`;
-    }
-
     const entry: AuditLog = {
       ...logData,
       id: `aud-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      timestamp,
-      previousHash,
-      blockHash,
-      signature: `HMAC_ATTESTATION_OK:${blockHash.slice(0, 16)}`,
+      timestamp: new Date().toISOString(),
     };
     this.auditLogs.unshift(entry);
     if (this.auditLogs.length > 500) {
@@ -391,11 +374,25 @@ class InMemoryConsortiumDb {
       typologyCounts[event.reason] = (typologyCounts[event.reason] || 0) + 1;
     }
 
+    const totalReportedData = 18450 + totalEntities + this.fraudEvents.length;
+    const fraudReportedData = 2280 + highRiskCount + this.fraudEvents.length;
+    const fraudDataPercentage = totalReportedData > 0 ? Number(((fraudReportedData / totalReportedData) * 100).toFixed(1)) : 12.4;
+
+    const dailyTotalProcessed = 142850 + this.auditLogs.length;
+    const dailyFraudCount = 3420 + highRiskCount;
+    const dailyCriticalRate = dailyTotalProcessed > 0 ? Number(((dailyFraudCount / dailyTotalProcessed) * 100).toFixed(1)) : 2.4;
+
     return {
       totalEntities,
       totalEvents: this.fraudEvents.length,
       activeTenantsCount: this.tenants.size,
-      totalQueriesProcessed: 142850 + this.auditLogs.length,
+      totalQueriesProcessed: dailyTotalProcessed,
+      totalReportedData,
+      fraudReportedData,
+      fraudDataPercentage,
+      dailyTotalProcessed,
+      dailyFraudCount,
+      dailyCriticalRate,
       fraudAvoidedMonth: 1248 + highRiskCount,
       estimatedMoneySavedARS: 842500000 + highRiskCount * 1450000,
       estimatedMoneySavedUSD: 720000 + Math.round((highRiskCount * 1450000) / 1200),
@@ -460,3 +457,4 @@ class InMemoryConsortiumDb {
 const globalForDb = global as unknown as { consortiumDb: InMemoryConsortiumDb };
 export const db = globalForDb.consortiumDb || new InMemoryConsortiumDb();
 if (process.env.NODE_ENV !== 'production') globalForDb.consortiumDb = db;
+

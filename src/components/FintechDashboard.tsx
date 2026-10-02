@@ -105,29 +105,51 @@ function formatTimeAgo(timestamp: number | string | null): string {
 // GAUGE SVG ANIMADO
 // ─────────────────────────────────────────────────────────────────
 
-function ScoreGauge({ score }: { score: number }) {
-  const radius = 54;
+function ScoreGauge({
+  score,
+  title = 'Score de Riesgo',
+  subtitle = 'Puntaje ponderado (0-100)',
+  badge = { text: 'ESTADO', color: 'bg-slate-800 text-slate-300 border-white/10' },
+  icon: Icon,
+}: {
+  score: number;
+  title?: string;
+  subtitle?: string;
+  badge?: { text: string; color: string };
+  icon?: any;
+}) {
+  const radius = 48;
   const circumference = Math.PI * radius; // semicírculo
-  const offset = circumference - (score / 100) * circumference;
+  const offset = circumference - (Math.min(100, Math.max(0, score)) / 100) * circumference;
   const color = scoreColor(score);
 
   return (
-    <div className="flex flex-col items-center gap-2">
-      <svg width="140" height="80" viewBox="0 0 140 80">
+    <div className="flex flex-col items-center justify-between p-4 rounded-2xl bg-slate-950/70 border border-white/10 shadow-lg min-w-[200px] flex-1">
+      <div className="w-full flex items-center justify-between gap-2 mb-1">
+        <div className="flex items-center gap-1.5">
+          {Icon && <Icon className="h-3.5 w-3.5 text-slate-400" />}
+          <span className="text-xs font-bold text-slate-200">{title}</span>
+        </div>
+        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${badge.color}`}>
+          {badge.text}
+        </span>
+      </div>
+
+      <svg width="130" height="74" viewBox="0 0 130 74" className="my-1">
         {/* Fondo */}
         <path
-          d="M 14 76 A 56 56 0 0 1 126 76"
+          d="M 17 68 A 48 48 0 0 1 113 68"
           fill="none"
           stroke="#1e293b"
-          strokeWidth="12"
+          strokeWidth="11"
           strokeLinecap="round"
         />
         {/* Progreso */}
         <path
-          d="M 14 76 A 56 56 0 0 1 126 76"
+          d="M 17 68 A 48 48 0 0 1 113 68"
           fill="none"
           stroke={color}
-          strokeWidth="12"
+          strokeWidth="11"
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={offset}
@@ -135,8 +157,8 @@ function ScoreGauge({ score }: { score: number }) {
         />
         {/* Score */}
         <text
-          x="70"
-          y="68"
+          x="65"
+          y="62"
           textAnchor="middle"
           fontSize="22"
           fontWeight="bold"
@@ -147,7 +169,10 @@ function ScoreGauge({ score }: { score: number }) {
           {score}
         </text>
       </svg>
-      <span className="text-[11px] font-mono text-slate-500 -mt-1">Score de Riesgo (0-100)</span>
+
+      <span className="text-[10px] text-center text-slate-400 font-mono line-clamp-2">
+        {subtitle}
+      </span>
     </div>
   );
 }
@@ -782,39 +807,144 @@ function SingleLookupView() {
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
-            {/* Gauge */}
-            <ScoreGauge score={result.breakdown.finalScore} />
+          {/* ── SCORE DE RIESGO DIVIDIDO EN 2: ENTIDAD vs CONSORCIO ── */}
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Score 1: Según la Entidad */}
+              {(() => {
+                const internalScore = result.internalRiskScore ?? result.breakdown.internalRiskScore ?? 0;
+                const internalLevel = result.internalRiskLevel ?? result.breakdown.internalRiskLevel ?? (internalScore >= 70 ? 'ALTO' : internalScore >= 30 ? 'MEDIO' : 'BAJO');
+                const internalBadge = internalLevel === 'ALTO'
+                  ? { text: 'ALTO RIESGO PROPIO', color: 'bg-rose-500/20 text-rose-300 border-rose-500/40' }
+                  : internalLevel === 'MEDIO'
+                  ? { text: 'RIESGO MEDIO INTERNO', color: 'bg-amber-500/20 text-amber-300 border-amber-500/40' }
+                  : { text: 'BAJO RIESGO PROPIO', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' };
+
+                return (
+                  <ScoreGauge
+                    score={internalScore}
+                    title="1. Score de la Entidad"
+                    subtitle={`Basado en los reportes y datos cargados por tu entidad (${activeFintech?.name || 'Tu Entidad'}).`}
+                    badge={internalBadge}
+                    icon={Building2}
+                  />
+                );
+              })()}
+
+              {/* Score 2: Del Consorcio Federal */}
+              {(() => {
+                const consortiumScore = result.consortiumRiskScore ?? result.breakdown.consortiumRiskScore ?? result.breakdown.finalScore ?? 0;
+                const consortiumLevel = result.consortiumRiskLevel ?? result.breakdown.consortiumRiskLevel ?? (consortiumScore >= 70 ? 'ALTO' : consortiumScore >= 30 ? 'MEDIO' : 'BAJO');
+                const consortiumBadge = consortiumLevel === 'ALTO'
+                  ? { text: 'ALERTA CONSORCIO', color: 'bg-rose-500/20 text-rose-300 border-rose-500/40' }
+                  : consortiumLevel === 'MEDIO'
+                  ? { text: 'SOSPECHA COMUNITARIA', color: 'bg-amber-500/20 text-amber-300 border-amber-500/40' }
+                  : { text: 'LIMPIO EN CONSORCIO', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' };
+
+                return (
+                  <ScoreGauge
+                    score={consortiumScore}
+                    title="2. Score del Consorcio"
+                    subtitle="Calculado con la inteligencia colectiva y cruces ZK aportados por todo el Consorcio."
+                    badge={consortiumBadge}
+                    icon={Network}
+                  />
+                );
+              })()}
+            </div>
+
+            {/* ── BANNER COMPARATIVO: VALOR AGREGADO DEL CONSORCIO ── */}
+            {(() => {
+              const internalScore = result.internalRiskScore ?? result.breakdown.internalRiskScore ?? 0;
+              const consortiumScore = result.consortiumRiskScore ?? result.breakdown.consortiumRiskScore ?? result.breakdown.finalScore ?? 0;
+
+              if (internalScore < 30 && consortiumScore >= 70) {
+                return (
+                  <div className="rounded-xl border border-rose-500/40 bg-rose-950/40 p-3.5 text-xs text-rose-200 flex items-start gap-3 shadow-lg">
+                    <ShieldAlert className="h-5 w-5 text-rose-400 shrink-0 mt-0.5 animate-pulse" />
+                    <div>
+                      <span className="font-bold text-rose-300 uppercase tracking-wide block">
+                        🛡️ Detección Preventiva del Consorcio Federal
+                      </span>
+                      <p className="mt-0.5 text-rose-200/90 leading-relaxed text-[11px]">
+                        Tu entidad no registraba este identificador como fraude interno (Score Propio: <strong className="font-mono">{internalScore}/100</strong>), pero la Red Federal del Consorcio detectó antecedentes críticos reportados por otras entidades financieras (Score Consorcio: <strong className="font-mono">{consortiumScore}/100</strong>). ¡Transacción sospechosa interceptada gracias a la red comunitaria!
+                      </p>
+                    </div>
+                  </div>
+                );
+              }
+
+              if (internalScore >= 70 && consortiumScore >= 70) {
+                return (
+                  <div className="rounded-xl border border-rose-500/40 bg-rose-950/30 p-3.5 text-xs text-rose-200 flex items-start gap-3 shadow-lg">
+                    <ShieldAlert className="h-5 w-5 text-rose-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-rose-300 uppercase tracking-wide block">
+                        🚨 Coincidencia Confirmada en Ambas Dimensiones
+                      </span>
+                      <p className="mt-0.5 text-rose-200/90 leading-relaxed text-[11px]">
+                        Identificador reportado como fraude tanto internamente por tu entidad como por la red del Consorcio Federal. Consenso absoluto de bloqueo.
+                      </p>
+                    </div>
+                  </div>
+                );
+              }
+
+              if (internalScore >= 70 && consortiumScore < 70) {
+                return (
+                  <div className="rounded-xl border border-indigo-500/40 bg-indigo-950/30 p-3.5 text-xs text-indigo-200 flex items-start gap-3 shadow-lg">
+                    <Building2 className="h-5 w-5 text-indigo-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-indigo-300 uppercase tracking-wide block">
+                        📌 Reporte Exclusivo de tu Entidad
+                      </span>
+                      <p className="mt-0.5 text-indigo-200/90 leading-relaxed text-[11px]">
+                        Tu entidad subió este reporte a su historial interno (Score: <strong className="font-mono">{internalScore}/100</strong>). El hash criptográfico ya fue compartido al Consorcio para blindar a toda la red interbancaria.
+                      </p>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-3 text-xs text-emerald-300 flex items-center gap-2.5">
+                  <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0" />
+                  <span>
+                    Perfil verificado: Sin antecedentes adversos ni en tu entidad ni en la Red Federal del Consorcio.
+                  </span>
+                </div>
+              );
+            })()}
 
             {/* Badge + Controles de Acción */}
-            <div className="flex-1 space-y-3">
-              <div className="flex items-center flex-wrap gap-2.5">
-                {/* Recommendation Badge */}
-                {(() => {
-                  const rec = recommendationBadge(result.breakdown.recommendation);
-                  return (
-                    <span className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-sm font-bold ${rec.class}`}>
-                      <span>{rec.icon}</span>
-                      {rec.text}
-                    </span>
-                  );
-                })()}
+            <div className="flex items-center flex-wrap gap-2.5 pt-1">
+              {/* Recommendation Badge */}
+              {(() => {
+                const rec = recommendationBadge(result.breakdown.recommendation);
+                return (
+                  <span className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-sm font-bold ${rec.class}`}>
+                    <span>{rec.icon}</span>
+                    {rec.text}
+                  </span>
+                );
+              })()}
 
-                {/* Scope Badge */}
-                <span className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-bold ${
-                  result.scope === 'INTERNAL'
-                    ? 'bg-indigo-500/15 border-indigo-500/25 text-indigo-300'
-                    : 'bg-cyan-500/15 border-cyan-500/25 text-cyan-300'
-                }`}>
-                  {result.scope === 'INTERNAL' ? <Building2 className="h-3 w-3" /> : <Network className="h-3 w-3" />}
-                  {result.scope === 'INTERNAL' ? 'INTERNO' : 'CONSORCIO'}
-                </span>
+              {/* Scope Badge */}
+              <span className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-bold ${
+                result.scope === 'INTERNAL'
+                  ? 'bg-indigo-500/15 border-indigo-500/25 text-indigo-300'
+                  : 'bg-cyan-500/15 border-cyan-500/25 text-cyan-300'
+              }`}>
+                {result.scope === 'INTERNAL' ? <Building2 className="h-3 w-3" /> : <Network className="h-3 w-3" />}
+                {result.scope === 'INTERNAL' ? 'VISTA: ESPACIO INTERNO' : 'VISTA: CONSORCIO FEDERAL'}
+              </span>
 
-                {/* Strategy Badge */}
-                <span className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-mono text-slate-400">
-                  {result.breakdown.compositeStrategy === 'MAX_SEVERITY_WEIGHTED' ? '⚖️ Max Severity Weighted' : '🎯 Single Param'}
-                </span>
-              </div>
+              {/* Strategy Badge */}
+              <span className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-mono text-slate-400">
+                {result.breakdown.compositeStrategy === 'MAX_SEVERITY_WEIGHTED' ? '⚖️ Max Severity Weighted' : '🎯 Single Param'}
+              </span>
+            </div>
+          </div>
 
               {okDone && (
                 <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/30 p-2.5 text-xs text-emerald-300 flex items-center gap-2">
@@ -1201,8 +1331,6 @@ function SingleLookupView() {
                   </div>
                 );
               })()}
-            </div>
-          </div>
         </div>
       )}
     </div>

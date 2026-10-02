@@ -258,203 +258,243 @@ export async function evaluateRisk(params: {
 
   const paramCount = inputHashes.length;
 
-  // Filtrar edges por scope si es INTERNAL
-  const scopedEdges = scope === 'INTERNAL'
-    ? graphEdges.filter(e => !e.scope || e.scope === 'INTERNAL' || e.reportedByEntityId === fintechId)
-    : graphEdges;
+  // ─────────────────────────────────────────────────────────────────
+  // EVALUADOR MODULAR POR ÁMBITO (INTERNAL vs CONSORTIUM)
+  // ─────────────────────────────────────────────────────────────────
+  const evaluateScope = (edges: SpecGraphEdge[], isConsortium: boolean) => {
+    let historicalReportsScore = 0;
+    const matchingEdges: SpecGraphEdge[] = [];
+    let timeDecayApplied = false;
+    let worstDecayFactor = 1;
 
-  // ── DIMENSIÓN 1: Severidad Base con Time Decay ────────────────
-  let historicalReportsScore = 0;
-  const matchingEdges: SpecGraphEdge[] = [];
-  let timeDecayApplied = false;
-  let worstDecayFactor = 1;
-
-  for (const edge of scopedEdges) {
-    if (edge.isFalsePositive) continue;
-    const isMatch =
-      inputHashes.includes(edge.sourceHash) || inputHashes.includes(edge.targetHash);
-    if (!isMatch) continue;
-
-    matchingEdges.push(edge);
-
-    const reportingFintech = fintechs.find(f => f.id === edge.reportedByEntityId);
-    const trustWeight = reportingFintech ? reportingFintech.trustWeight : 0.5;
-    const severityBase = SEVERITY_BASE[edge.incidentCategory] ?? 15;
-    const decay = timeDecayFactor(edge.timestamp);
-
-    if (decay < 0.95) timeDecayApplied = true;
-    worstDecayFactor = Math.min(worstDecayFactor, decay);
-
-    // Aplicar decay con piso residual
-    const decayedScore = applyDecayWithFloor(
-      severityBase * trustWeight,
-      edge.timestamp,
-      edge.incidentCategory
-    );
-
-    historicalReportsScore += decayedScore;
-  }
-
-  historicalReportsScore = Math.min(100, historicalReportsScore);
-
-  // ── DIMENSIÓN 2a: Identity Mismatch ───────────────────────────
-  let mismatchDetected = false;
-  let mismatchPenalty = 0;
-
-  if (dniHash && (emailHash || phoneHash || cbuHash)) {
-    for (const edge of scopedEdges) {
+    for (const edge of edges) {
       if (edge.isFalsePositive) continue;
-      if (edge.sourceHash === edge.targetHash) continue;
+      const isMatch =
+        inputHashes.includes(edge.sourceHash) || inputHashes.includes(edge.targetHash);
+      if (!isMatch) continue;
 
-      const checkMismatch = (targetHash: string) => {
-        const inEdge =
-          edge.sourceHash === targetHash || edge.targetHash === targetHash;
-        if (inEdge) {
-          const otherHash =
-            edge.sourceHash === targetHash ? edge.targetHash : edge.sourceHash;
-          if (otherHash !== dniHash) return true;
+      matchingEdges.push(edge);
+
+      const reportingFintech = fintechs.find(f => f.id === edge.reportedByEntityId);
+      const trustWeight = reportingFintech ? reportingFintech.trustWeight : 0.5;
+      const severityBase = SEVERITY_BASE[edge.incidentCategory] ?? 15;
+      const decay = timeDecayFactor(edge.timestamp);
+
+      if (decay < 0.95) timeDecayApplied = true;
+      worstDecayFactor = Math.min(worstDecayFactor, decay);
+
+      const decayedScore = applyDecayWithFloor(
+        severityBase * trustWeight,
+        edge.timestamp,
+        edge.incidentCategory
+      );
+
+      historicalReportsScore += decayedScore;
+    }
+
+    historicalReportsScore = Math.min(100, historicalReportsScore);
+
+    // Mismatch
+    let mismatchDetected = false;
+    let mismatchPenalty = 0;
+
+    if (dniHash && (emailHash || phoneHash || cbuHash)) {
+      for (const edge of edges) {
+        if (edge.isFalsePositive) continue;
+        if (edge.sourceHash === edge.targetHash) continue;
+
+        const checkMismatch = (targetHash: string) => {
+          const inEdge =
+            edge.sourceHash === targetHash || edge.targetHash === targetHash;
+          if (inEdge) {
+            const otherHash =
+              edge.sourceHash === targetHash ? edge.targetHash : edge.sourceHash;
+            if (otherHash !== dniHash) return true;
+          }
+          return false;
+        };
+
+        if (emailHash && checkMismatch(emailHash)) { mismatchDetected = true; break; }
+        if (phoneHash && checkMismatch(phoneHash)) { mismatchDetected = true; break; }
+        if (cbuHash && checkMismatch(cbuHash)) { mismatchDetected = true; break; }
+      }
+      if (mismatchDetected) mismatchPenalty = MISMATCH_PENALTY;
+    }
+
+    // Velocity
+    let velocityTriggered = false;
+    let velocityPenalty = 0;
+
+    for (const hash of inputHashes) {
+      const node = identityNodes.find(n => n.hash === hash);
+      if (node && node.lookupsLastHour >= VELOCITY_THRESHOLD) {
+        velocityTriggered = true;
+        break;
+      }
+    }
+
+    if (!velocityTriggered && inputHashes.length > 0) {
+      const recentEdges = edges.filter(e => {
+        if (e.isFalsePositive) return false;
+        const isMatch =
+          inputHashes.includes(e.sourceHash) || inputHashes.includes(e.targetHash);
+        const isRecent =
+          Date.now() - new Date(e.timestamp).getTime() < VELOCITY_WINDOW_MS;
+        return isMatch && isRecent;
+      });
+
+      const distinctEntities = new Set(recentEdges.map(e => e.reportedByEntityId));
+      if (distinctEntities.size >= VELOCITY_THRESHOLD) {
+        velocityTriggered = true;
+      }
+    }
+
+    if (velocityTriggered) velocityPenalty = VELOCITY_PENALTY;
+
+    // Multi-Entity Multiplier (solo aplica al consorcio)
+    const multiEntity = isConsortium
+      ? detectMultiEntity(inputHashes, edges)
+      : { isMultiEntity: false, distinctEntities: 1, entityNames: [] };
+    let multiEntityMultiplier = 1;
+
+    if (multiEntity.isMultiEntity) {
+      multiEntityMultiplier = 1.5 + (multiEntity.distinctEntities - 2) * 0.25;
+    }
+
+    // Device Farm
+    let deviceFarmDetected = false;
+    let deviceFarmScore = 0;
+
+    if (deviceHash) {
+      const farmLinks = isConsortium
+        ? deviceCUITLinks
+        : deviceCUITLinks.filter(l => l.entityId === fintechId);
+      const farmResult = detectDeviceFarm(deviceHash, farmLinks);
+      if (farmResult.isDeviceFarm) {
+        deviceFarmDetected = true;
+        deviceFarmScore = DEVICE_FARM_CRITICAL_SCORE;
+      }
+    }
+
+    // Email
+    const emailVerification = email ? verifyEmailExistence(email) : null;
+    const emailPenalty = emailVerification ? emailVerification.scorePenalty : 0;
+
+    // Score bruto
+    let rawScore =
+      historicalReportsScore + mismatchPenalty + velocityPenalty + emailPenalty;
+
+    if (multiEntity.isMultiEntity && rawScore > 0) {
+      rawScore = Math.min(MULTI_ENTITY_CRITICAL_SCORE, rawScore * multiEntityMultiplier);
+    }
+
+    if (deviceFarmDetected) {
+      rawScore = Math.max(rawScore, deviceFarmScore);
+    }
+
+    // Critical Override
+    let criticalOverride = false;
+    let criticalOverrideSource: string | undefined;
+    const compositeStrategy = paramCount > 1 ? 'MAX_SEVERITY_WEIGHTED' : 'SINGLE_PARAM';
+
+    if (paramCount > 1) {
+      const individualScores: { type: string; score: number }[] = [];
+
+      const calcIndividualScore = (hash: string | null, type: string) => {
+        if (!hash) return;
+        let score = 0;
+        for (const edge of matchingEdges) {
+          if (edge.sourceHash === hash || edge.targetHash === hash) {
+            const fintech = fintechs.find(f => f.id === edge.reportedByEntityId);
+            const tw = fintech ? fintech.trustWeight : 0.5;
+            score += applyDecayWithFloor(
+              (SEVERITY_BASE[edge.incidentCategory] ?? 15) * tw,
+              edge.timestamp,
+              edge.incidentCategory
+            );
+          }
         }
-        return false;
+        individualScores.push({ type, score: Math.min(100, score) });
       };
 
-      if (emailHash && checkMismatch(emailHash)) { mismatchDetected = true; break; }
-      if (phoneHash && checkMismatch(phoneHash)) { mismatchDetected = true; break; }
-      if (cbuHash && checkMismatch(cbuHash)) { mismatchDetected = true; break; }
-    }
-    if (mismatchDetected) mismatchPenalty = MISMATCH_PENALTY;
-  }
+      calcIndividualScore(dniHash, 'DNI');
+      calcIndividualScore(emailHash, 'EMAIL');
+      calcIndividualScore(phoneHash, 'PHONE');
+      calcIndividualScore(ipHash, 'IP');
+      calcIndividualScore(cbuHash, 'CBU');
+      calcIndividualScore(deviceHash, 'DEVICE');
+      calcIndividualScore(cuitHash, 'CUIT');
 
-  // ── DIMENSIÓN 2b: Velocity ────────────────────────────────────
-  let velocityTriggered = false;
-  let velocityPenalty = 0;
+      const maxIndividual = individualScores.reduce(
+        (max, cur) => (cur.score > max.score ? cur : max),
+        { type: '', score: 0 }
+      );
 
-  for (const hash of inputHashes) {
-    const node = identityNodes.find(n => n.hash === hash);
-    if (node && node.lookupsLastHour >= VELOCITY_THRESHOLD) {
-      velocityTriggered = true;
-      break;
-    }
-  }
-
-  if (!velocityTriggered && inputHashes.length > 0) {
-    const recentEdges = scopedEdges.filter(e => {
-      if (e.isFalsePositive) return false;
-      const isMatch =
-        inputHashes.includes(e.sourceHash) || inputHashes.includes(e.targetHash);
-      const isRecent =
-        Date.now() - new Date(e.timestamp).getTime() < VELOCITY_WINDOW_MS;
-      return isMatch && isRecent;
-    });
-
-    const distinctEntities = new Set(recentEdges.map(e => e.reportedByEntityId));
-    if (distinctEntities.size >= VELOCITY_THRESHOLD) {
-      velocityTriggered = true;
-    }
-  }
-
-  if (velocityTriggered) velocityPenalty = VELOCITY_PENALTY;
-
-  // ── DIMENSIÓN 2c: Multi-Entity Multiplier ─────────────────────
-  const multiEntity = detectMultiEntity(inputHashes, scopedEdges);
-  let multiEntityMultiplier = 1;
-
-  if (multiEntity.isMultiEntity) {
-    multiEntityMultiplier = 1.5 + (multiEntity.distinctEntities - 2) * 0.25;
-  }
-
-  // ── DIMENSIÓN 3: Device Farm Detection ────────────────────────
-  let deviceFarmDetected = false;
-  let deviceFarmScore = 0;
-
-  if (deviceHash) {
-    const farmResult = detectDeviceFarm(deviceHash, deviceCUITLinks);
-    if (farmResult.isDeviceFarm) {
-      deviceFarmDetected = true;
-      deviceFarmScore = DEVICE_FARM_CRITICAL_SCORE;
-    }
-  }
-
-  // ── FACTOR EMAIL ──────────────────────────────────────────────
-  const emailVerification = email ? verifyEmailExistence(email) : null;
-  const emailPenalty = emailVerification ? emailVerification.scorePenalty : 0;
-
-  // ── SCORE COMPUESTO ───────────────────────────────────────────
-  let rawScore =
-    historicalReportsScore + mismatchPenalty + velocityPenalty + emailPenalty;
-
-  // Aplicar multiplicador multi-entidad
-  if (multiEntity.isMultiEntity && rawScore > 0) {
-    rawScore = Math.min(MULTI_ENTITY_CRITICAL_SCORE, rawScore * multiEntityMultiplier);
-  }
-
-  // Aplicar device farm override
-  if (deviceFarmDetected) {
-    rawScore = Math.max(rawScore, deviceFarmScore);
-  }
-
-  // ── DIMENSIÓN 4: Critical Override (Multi-Param) ──────────────
-  let criticalOverride = false;
-  let criticalOverrideSource: string | undefined;
-  const compositeStrategy = paramCount > 1 ? 'MAX_SEVERITY_WEIGHTED' : 'SINGLE_PARAM';
-
-  // Calcular scores individuales para Critical Override
-  if (paramCount > 1) {
-    const individualScores: { type: string; score: number }[] = [];
-
-    const calcIndividualScore = (hash: string | null, type: string) => {
-      if (!hash) return;
-      let score = 0;
-      for (const edge of matchingEdges) {
-        if (edge.sourceHash === hash || edge.targetHash === hash) {
-          const fintech = fintechs.find(f => f.id === edge.reportedByEntityId);
-          const tw = fintech ? fintech.trustWeight : 0.5;
-          score += applyDecayWithFloor(
-            (SEVERITY_BASE[edge.incidentCategory] ?? 15) * tw,
-            edge.timestamp,
-            edge.incidentCategory
-          );
-        }
+      if (maxIndividual.score >= CRITICAL_OVERRIDE_THRESHOLD) {
+        criticalOverride = true;
+        criticalOverrideSource = maxIndividual.type;
+        rawScore = Math.max(rawScore, Math.min(100, maxIndividual.score * 1.05));
       }
-      individualScores.push({ type, score: Math.min(100, score) });
-    };
-
-    calcIndividualScore(dniHash, 'DNI');
-    calcIndividualScore(emailHash, 'EMAIL');
-    calcIndividualScore(phoneHash, 'PHONE');
-    calcIndividualScore(ipHash, 'IP');
-    calcIndividualScore(cbuHash, 'CBU');
-    calcIndividualScore(deviceHash, 'DEVICE');
-    calcIndividualScore(cuitHash, 'CUIT');
-
-    const maxIndividual = individualScores.reduce(
-      (max, cur) => (cur.score > max.score ? cur : max),
-      { type: '', score: 0 }
-    );
-
-    if (maxIndividual.score >= CRITICAL_OVERRIDE_THRESHOLD) {
-      criticalOverride = true;
-      criticalOverrideSource = maxIndividual.type;
-      rawScore = Math.max(rawScore, Math.min(100, maxIndividual.score * 1.05));
     }
-  }
 
-  const finalScore = Math.min(100, Math.max(0, Math.round(rawScore)));
+    const score = Math.min(100, Math.max(0, Math.round(rawScore)));
+    const level: 'BAJO' | 'MEDIO' | 'ALTO' =
+      score >= 70 ? 'ALTO' : score >= 30 ? 'MEDIO' : 'BAJO';
 
-  const riskLevel: 'BAJO' | 'MEDIO' | 'ALTO' =
-    finalScore >= 70 ? 'ALTO' : finalScore >= 30 ? 'MEDIO' : 'BAJO';
+    return {
+      score,
+      level,
+      historicalReportsScore,
+      matchingEdges,
+      timeDecayApplied,
+      worstDecayFactor,
+      mismatchDetected,
+      mismatchPenalty,
+      velocityTriggered,
+      velocityPenalty,
+      multiEntity,
+      multiEntityMultiplier,
+      deviceFarmDetected,
+      deviceFarmScore,
+      emailVerification,
+      emailPenalty,
+      criticalOverride,
+      criticalOverrideSource,
+      compositeStrategy,
+    };
+  };
+
+  // ── 1. SCORE DE LA ENTIDAD (Reportes e Historial Propios de esa Entidad) ──
+  const internalEdges = graphEdges.filter(
+    e => !e.isFalsePositive && (e.reportedByEntityId === fintechId || e.scope === 'INTERNAL')
+  );
+  const internalEval = evaluateScope(internalEdges, false);
+  const internalRiskScore = internalEval.score;
+  const internalRiskLevel = internalEval.level;
+
+  // ── 2. SCORE DEL CONSORCIO (Inteligencia Colectiva y Red Federal) ──────────
+  const consortiumEdges = graphEdges.filter(e => !e.isFalsePositive);
+  const consortiumEval = evaluateScope(consortiumEdges, true);
+  const consortiumRiskScore = consortiumEval.score;
+  const consortiumRiskLevel = consortiumEval.level;
+
+  // Selección del contexto activo según scope
+  const activeEval = scope === 'INTERNAL' ? internalEval : consortiumEval;
+  const finalScore = activeEval.score;
+  const riskLevel = activeEval.level;
 
   const recommendation: 'ALLOW' | 'REVIEW' | 'BLOCK' =
     finalScore >= 70 ? 'BLOCK' : finalScore >= 30 ? 'REVIEW' : 'ALLOW';
 
-  // ── REASON CODES ──────────────────────────────────────────────
+  // Reason codes
   const reasonCodes = buildReasonCodes({
-    matchingEdges,
-    multiEntityDetected: multiEntity.isMultiEntity,
-    deviceFarmDetected,
-    velocityTriggered,
-    mismatchDetected,
-    criticalOverride,
-    timeDecayApplied,
+    matchingEdges: activeEval.matchingEdges,
+    multiEntityDetected: activeEval.multiEntity.isMultiEntity,
+    deviceFarmDetected: activeEval.deviceFarmDetected,
+    velocityTriggered: activeEval.velocityTriggered,
+    mismatchDetected: activeEval.mismatchDetected,
+    criticalOverride: activeEval.criticalOverride,
+    timeDecayApplied: activeEval.timeDecayApplied,
     finalScore,
   });
 
@@ -477,6 +517,7 @@ export async function evaluateRisk(params: {
   };
 
   const identifierDetails: IdentifierMatchDetail[] = [];
+  const scopedEdges = scope === 'INTERNAL' ? internalEdges : consortiumEdges;
 
   const checkIdentifier = (
     type: 'DNI' | 'EMAIL' | 'PHONE' | 'IP' | 'CBU' | 'DEVICE' | 'CUIT',
@@ -490,7 +531,6 @@ export async function evaluateRisk(params: {
     const distinctEntities = new Set(matched.map(e => e.reportedByEntityId)).size;
     const categories = Array.from(new Set(matched.map(e => e.incidentCategory)));
 
-    // Calcular días desde último reporte
     let lastSeenDaysAgo: number | undefined;
     if (matched.length > 0) {
       const latest = matched.reduce((max, e) =>
@@ -501,7 +541,6 @@ export async function evaluateRisk(params: {
       );
     }
 
-    // Score individual con decay
     let decayedScore = 0;
     for (const edge of matched) {
       const fintech = fintechs.find(f => f.id === edge.reportedByEntityId);
@@ -535,34 +574,39 @@ export async function evaluateRisk(params: {
   checkIdentifier('CUIT', cuit, cuitHash);
 
   const breakdown: ScoreBreakdown = {
+    // Score Dual
+    internalRiskScore,
+    internalRiskLevel,
+    consortiumRiskScore,
+    consortiumRiskLevel,
     // Dimensión 1
-    historicalReportsScore: Math.round(historicalReportsScore),
+    historicalReportsScore: Math.round(activeEval.historicalReportsScore),
     // Dimensión 2
-    mismatchPenalty,
-    velocityPenalty,
-    multiEntityMultiplier,
+    mismatchPenalty: activeEval.mismatchPenalty,
+    velocityPenalty: activeEval.velocityPenalty,
+    multiEntityMultiplier: activeEval.multiEntityMultiplier,
     // Dimensión 3 - Time Decay
-    timeDecayApplied,
-    timeDecayFactor: worstDecayFactor,
+    timeDecayApplied: activeEval.timeDecayApplied,
+    timeDecayFactor: activeEval.worstDecayFactor,
     // Dimensión 4 - Device Farm
-    deviceFarmDetected,
-    deviceFarmScore,
+    deviceFarmDetected: activeEval.deviceFarmDetected,
+    deviceFarmScore: activeEval.deviceFarmScore,
     // Email
-    emailPenalty,
-    emailVerification,
+    emailPenalty: activeEval.emailPenalty,
+    emailVerification: activeEval.emailVerification,
     // Score Final
     finalScore,
     riskLevel,
     recommendation,
-    criticalOverride,
-    criticalOverrideSource,
+    criticalOverride: activeEval.criticalOverride,
+    criticalOverrideSource: activeEval.criticalOverrideSource,
     // Explicabilidad
     reasonCodes,
-    compositeStrategy,
+    compositeStrategy: activeEval.compositeStrategy,
     // Desglose
-    mismatchDetected,
-    velocityTriggered,
-    matchingEdges,
+    mismatchDetected: activeEval.mismatchDetected,
+    velocityTriggered: activeEval.velocityTriggered,
+    matchingEdges: activeEval.matchingEdges,
     identifierDetails,
   };
 
@@ -574,6 +618,10 @@ export async function evaluateRisk(params: {
     cbuHash,
     deviceHash,
     cuitHash,
+    internalRiskScore,
+    internalRiskLevel,
+    consortiumRiskScore,
+    consortiumRiskLevel,
     breakdown,
     timestamp: new Date().toISOString(),
     fintechId,

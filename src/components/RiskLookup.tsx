@@ -211,7 +211,7 @@ export default function RiskLookup({
               { id: 'DNI', label: 'DNI / CUIT' },
               { id: 'PHONE', label: 'Teléfono Móvil' },
               { id: 'IP', label: 'Dirección IP' },
-              { id: 'CBU', label: 'CBU / CVU / Alias' },
+              { id: 'CBU', label: 'CBU / CVU (22 dígitos)' },
               { id: 'CARD_BIN', label: 'Tarjeta (BIN 6 + Últimos 4)' },
             ].map(type => (
               <button
@@ -247,8 +247,8 @@ export default function RiskLookup({
                   ? 'ejemplo: +54 9 11 4055-8891'
                   : selectedType === 'IP'
                   ? 'ejemplo: 190.191.200.45'
-                  : selectedType === 'CBU' || (selectedType as string) === 'CBU_CVU'
-                  ? 'ejemplo: 0000003100010000000019 o alias.banco.mp'
+                  : selectedType === 'CBU'
+                  ? 'ejemplo: 0000003100010000000001 (22 dígitos)'
                   : 'ejemplo: 450995******1234'
               }
               className="w-full rounded-2xl border border-white/10 bg-black/40 py-3.5 pl-12 pr-36 text-sm text-white placeholder-slate-500 shadow-inner focus:border-[var(--accent-primary)] focus:outline-none"
@@ -338,14 +338,24 @@ export default function RiskLookup({
         <div className="glass-panel overflow-hidden rounded-2xl p-6 border-l-4 border-l-[var(--accent-primary)] shadow-2xl">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-5">
             <div className="flex items-center gap-3">
-              <div
-                className={`flex h-16 w-16 items-center justify-center rounded-2xl border ${getScoreColor(
-                  result.riskScore
-                )}`}
-              >
-                <div className="text-center">
-                  <span className="text-2xl font-black">{result.riskScore}</span>
-                  <span className="block text-[9px] font-medium uppercase opacity-75">Score</span>
+              {/* Dual Risk Score: Entidad vs Consorcio */}
+              <div className="flex items-center gap-2">
+                <div
+                  className={`flex h-16 w-20 flex-col items-center justify-center rounded-2xl border ${getScoreColor(
+                    result.internalRiskScore ?? 0
+                  )}`}
+                >
+                  <span className="text-xl font-black">{result.internalRiskScore ?? 0}</span>
+                  <span className="block text-[8px] font-semibold uppercase opacity-80">Entidad</span>
+                </div>
+
+                <div
+                  className={`flex h-16 w-20 flex-col items-center justify-center rounded-2xl border ${getScoreColor(
+                    result.consortiumRiskScore ?? result.riskScore
+                  )}`}
+                >
+                  <span className="text-xl font-black">{result.consortiumRiskScore ?? result.riskScore}</span>
+                  <span className="block text-[8px] font-semibold uppercase opacity-80">Consorcio</span>
                 </div>
               </div>
 

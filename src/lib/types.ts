@@ -90,6 +90,12 @@ export interface IdentifierMatchDetail {
 }
 
 export interface ScoreBreakdown {
+  // ── Score Dual: Entidad vs Consorcio ──
+  internalRiskScore: number;
+  internalRiskLevel: 'BAJO' | 'MEDIO' | 'ALTO';
+  consortiumRiskScore: number;
+  consortiumRiskLevel: 'BAJO' | 'MEDIO' | 'ALTO';
+
   // ── Dimensión 1: Severidad Base ──
   historicalReportsScore: number;
   // ── Dimensión 2: Multi-Entity / Velocity ──
@@ -140,6 +146,10 @@ export interface LookupResult {
   cbuHash?: string | null;
   deviceHash?: string | null;
   cuitHash?: string | null;
+  internalRiskScore: number;
+  internalRiskLevel: 'BAJO' | 'MEDIO' | 'ALTO';
+  consortiumRiskScore: number;
+  consortiumRiskLevel: 'BAJO' | 'MEDIO' | 'ALTO';
   breakdown: ScoreBreakdown;
   timestamp: string;
   fintechId: string;
@@ -247,6 +257,10 @@ export interface RiskEvaluationResult {
   blindHash: string;
   identifierType: IdentifierType;
   riskScore: number;
+  internalRiskScore?: number;
+  internalRiskLevel?: RiskLevel;
+  consortiumRiskScore?: number;
+  consortiumRiskLevel?: RiskLevel;
   riskLevel: RiskLevel;
   recommendation: Recommendation;
   networkMatches: number;

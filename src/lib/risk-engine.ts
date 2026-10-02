@@ -1,79 +1,34 @@
-import { IdentifierType, RiskEvaluationResult, RiskLevel, RiskTier, Recommendation, RiskMatrixFactors, FraudTypology } from './types';
+import { IdentifierType, RiskEvaluationResult, RiskLevel, Recommendation, RiskMatrixFactors, FraudTypology } from './types';
 import { computeBlindHashSync, generateCryptographicProof } from './crypto';
 import { db } from './db';
 import { redis } from './redis';
 
-// ─────────────────────────────────────────────────────────────────
-// PESOS BASE POR TIPOLOGÍA (ΔS)
-// Tabla acordada con el equipo de operaciones antifraude
-// ─────────────────────────────────────────────────────────────────
-
-const SEVERITY_WEIGHT: Record<FraudTypology | 'OK', number> = {
-  ROBO_DE_CUENTA:         90,   // Fraude crítico, daño deliberado grave
-  IDENTIDAD_SINTETICA:    90,   // Asimilado a robo de identidad
-  MULA_DE_DINERO:         85,   // Estructura de lavado / movimiento ilícito
-  TRIANGULACION_FONDOS:   85,   // Misma naturaleza que cuenta mula
-  PHISHING:               70,   // Vector de ataque activo verificado
-  CONTRACARGO_REITERADO:  40,   // Puede ser fraude amistoso o disputa legítima
-  OPERACION_SOSPECHOSA:   20,   // Alerta temprana, anomalía comportamental
-  PROMO_ABUSE:            20,   // Bajo impacto, volátil
-  OK:                    -35,   // Mitigación / validación cruzada (voto "legítimo")
-};
-
-// ─────────────────────────────────────────────────────────────────
-// VIDA MEDIA (HALF-LIFE) POR CATEGORÍA DE TIPOLOGÍA
-// λ = ln(2) / halfLifeDays → Decaimiento exponencial
-// ─────────────────────────────────────────────────────────────────
-
-const HALF_LIFE_DAYS: Record<FraudTypology, number> = {
-  ROBO_DE_CUENTA:        90,   // Fraude crítico mantiene score alto 3 meses
-  IDENTIDAD_SINTETICA:   90,
-  MULA_DE_DINERO:        90,
-  TRIANGULACION_FONDOS:  90,
-  PHISHING:              60,   // Vida media moderada
-  CONTRACARGO_REITERADO: 30,   // Volátil: decae rápido si nadie más reporta
-  OPERACION_SOSPECHOSA:  30,
-  PROMO_ABUSE:           30,
-};
+/**
+ * Mapeo de severidad base según la tipología delictiva (Factor Gravedad 25%)
+ */
+export function getTypologyBaseScore(reason?: FraudTypology): number {
+  switch (reason) {
+    case 'MULA_DE_DINERO':
+    case 'TRIANGULACION_FONDOS':
+      return 100;
+    case 'ROBO_DE_CUENTA':
+      return 95;
+    case 'IDENTIDAD_SINTETICA':
+      return 85;
+    case 'PHISHING':
+      return 70;
+    case 'CONTRACARGO_REITERADO':
+      return 50;
+    case 'PROMO_ABUSE':
+      return 25;
+    default:
+      return 40;
+  }
+}
 
 /**
- * Calcula el peso actual de un reporte aplicando decaimiento exponencial.
- * Peso Actual = Peso Base × e^(−λ × t)
- * donde λ = ln(2) / halfLifeDays  y  t = días transcurridos
+ * Motor de Evaluación de Riesgo con Matriz Ponderada de 4 Factores (<50ms)
  */
-function decayedWeight(baseWeight: number, typology: FraudTypology, lastReportedAt?: string): number {
-  if (!lastReportedAt) return baseWeight;
-  const halfLife = HALF_LIFE_DAYS[typology] ?? 30;
-  const lambda = Math.LN2 / halfLife;
-  const t = Math.max(0, (Date.now() - new Date(lastReportedAt).getTime()) / 86_400_000);
-  return baseWeight * Math.exp(-lambda * t);
-}
-
-// ─────────────────────────────────────────────────────────────────
-// MULTIPLICADOR DE RED (Consenso Multi-entidad)
-// M_red = 1 + 0.2 × (n_entidades_distintas − 1)
-// ─────────────────────────────────────────────────────────────────
-
-function networkMultiplier(distinctEntities: number): number {
-  if (distinctEntities <= 1) return 1.0;
-  return Math.min(2.0, 1 + 0.2 * (distinctEntities - 1));
-}
-
-// ─────────────────────────────────────────────────────────────────
-// CLASIFICACIÓN EN 4 NIVELES ACCIONABLES
-// ─────────────────────────────────────────────────────────────────
-
-function classifyScore(score: number): { tier: RiskTier; level: RiskLevel; recommendation: Recommendation } {
-  if (score >= 76) return { tier: 'CRITICO',     level: 'ALTO',  recommendation: 'BLOQUEAR' };
-  if (score >= 51) return { tier: 'ALTO_RIESGO', level: 'MEDIO', recommendation: 'REVISION_MANUAL' };
-  if (score >= 21) return { tier: 'ALERTA',      level: 'MEDIO', recommendation: 'DESAFIO_2FA' };
-  return             { tier: 'CONFIABLE',   level: 'BAJO',  recommendation: 'APROBAR' };
-}
-
-// ─────────────────────────────────────────────────────────────────
-// MOTOR PRINCIPAL DE EVALUACIÓN DE RIESGO  (<50ms)
-// ─────────────────────────────────────────────────────────────────
-
 export async function evaluateRisk(
   type: IdentifierType,
   rawValue: string,
@@ -85,9 +40,9 @@ export async function evaluateRisk(
 
   // 1. Blind Hash determinístico
   const { blindHash } = computeBlindHashSync(type, rawValue);
-  const cacheKey = `risk_eval_v3:${blindHash}`;
+  const cacheKey = `risk_eval_v2:${blindHash}`;
 
-  // 2. Caché Redis (300s)
+  // 2. Comprobar caché Redis
   const cached = await redis.get<RiskEvaluationResult>(cacheKey);
   if (cached) {
     const elapsed = Math.round(performance.now() - startTime) + 1;
@@ -102,108 +57,119 @@ export async function evaluateRisk(
       ipAddress,
       actionType: 'API_CALL',
     });
-    return { ...cached, latencyMs: elapsed, cached: true };
+
+    return {
+      ...cached,
+      latencyMs: elapsed,
+      cached: true,
+    };
   }
 
   // 3. Buscar entidad en base de datos comunitaria
   const entity = await db.getFraudEntity(blindHash);
 
-  // ── Variables base ────────────────────────────────────────────
-  let distinctCount    = 0;
-  let networkMatches   = 0;
-  let severity         = 1;
-  let primaryReason: FraudTypology | undefined;
-  let lastReportedAt: string | undefined;
-  let rehabilitated    = false;
-  let rehabilitationReason: string | undefined;
-  let hasOKVotes       = false;
+  let distinctCount = 0;
+  let networkMatches = 0;
+  let severity = 1;
+  let primaryReason: FraudTypology | undefined = undefined;
+  let lastReportedAt: string | undefined = undefined;
+  let rehabilitated = false;
+  let rehabilitationReason: string | undefined = undefined;
+  let attempts24h = 1;
 
   if (entity) {
-    networkMatches        = entity.reportCount;
-    distinctCount         = entity.distinctTenantsCount;
-    severity              = entity.severity;
-    primaryReason         = entity.primaryReason;
-    lastReportedAt        = entity.lastReportedAt;
-    rehabilitated         = entity.rehabilitated;
-    rehabilitationReason  = entity.rehabilitationReason;
-    hasOKVotes            = rehabilitated; // rehabilitación = voto OK aprobado
+    networkMatches = entity.reportCount;
+    distinctCount = entity.distinctTenantsCount;
+    severity = entity.severity;
+    primaryReason = entity.primaryReason;
+    lastReportedAt = entity.lastReportedAt;
+    rehabilitated = entity.rehabilitated;
+    rehabilitationReason = entity.rehabilitationReason;
+    attempts24h = entity.attemptsLast24h || Math.min(12, distinctCount * 2 + 1);
   }
 
-  // ── PASO 1: Impacto decaído de los reportes de fraude ────────
-  // Si no hay entidad → Score = 0 (identificador limpio)
-  let fraudImpact = 0;
+  // 4. Cálculo exacto de la Risk Matrix de 4 variables
+  // Variable 1: Consenso (40%)
+  const consensusScore = rehabilitated ? 0 : Math.min(100, distinctCount * 25);
 
-  if (entity && primaryReason && !rehabilitated) {
-    const baseWeight = SEVERITY_WEIGHT[primaryReason] ?? 20;
-    fraudImpact = decayedWeight(baseWeight, primaryReason, lastReportedAt);
+  // Variable 2: Frecuencia / Velocidad 24h (25%)
+  const velocityScore = rehabilitated ? 10 : Math.min(100, attempts24h * 18);
+
+  // Variable 3: Gravedad del Evento (25%)
+  const severityScore = rehabilitated ? 15 : (primaryReason ? getTypologyBaseScore(primaryReason) : 0);
+
+  // Variable 4: Recencia / Decaimiento Temporal (10%)
+  let recencyScore = 100;
+  if (lastReportedAt) {
+    const daysSince = Math.max(0, (Date.now() - new Date(lastReportedAt).getTime()) / (1000 * 60 * 60 * 24));
+    recencyScore = Math.max(10, Math.round(100 - daysSince * 3));
+  } else {
+    recencyScore = 0;
   }
 
-  // ── PASO 2: Multiplicador de red (consenso multi-entidad) ────
-  // M_red = 1 + 0.2 × (n_entidades_distintas − 1)
-  const Mred = entity && !rehabilitated ? networkMultiplier(distinctCount) : 1.0;
-
-  // ── PASO 3: Atenuación por votos "OK" / rehabilitación ──────
-  const okAttenuation = hasOKVotes ? Math.abs(SEVERITY_WEIGHT['OK']) : 0;
-
-  // ── PASO 4: Score final clampado 0-100 ───────────────────────
-  // S = min(100, max(0, Σ(ImpactoDecaído × M_red) − Σ(AtenuaciónOK)))
+  // Ponderación final (0 a 100)
   let calculatedScore = 0;
-
-  if (entity) {
-    if (rehabilitated) {
-      // Rehabilitado: score residual mínimo (10) para conservar trazabilidad
-      calculatedScore = 10;
-    } else {
-      calculatedScore = Math.min(100, Math.max(0,
-        Math.round(fraudImpact * Mred - okAttenuation)
-      ));
-    }
+  if (entity && !rehabilitated) {
+    calculatedScore = Math.round(
+      consensusScore * 0.4 +
+      velocityScore * 0.25 +
+      severityScore * 0.25 +
+      recencyScore * 0.1
+    );
+    calculatedScore = Math.min(100, Math.max(5, calculatedScore));
+  } else if (rehabilitated) {
+    calculatedScore = 10;
   }
 
-  // ── PASO 5: Clasificación en 4 niveles ───────────────────────
-  const { tier, level, recommendation } = rehabilitated
-    ? { tier: 'CONFIABLE' as RiskTier, level: 'BAJO' as RiskLevel, recommendation: 'APROBAR' as Recommendation }
-    : classifyScore(calculatedScore);
+  // Niveles y Recomendaciones
+  let riskLevel: RiskLevel = 'BAJO';
+  let recommendation: Recommendation = 'APROBAR';
+  let killSwitch = false;
 
-  const killSwitch = calculatedScore >= 90 && tier === 'CRITICO';
-
-  // ── PASO 6: Construcción de la Risk Matrix para el breakdown ─
-  const halfLifeDays = primaryReason ? (HALF_LIFE_DAYS[primaryReason] ?? 30) : 30;
-  const lambda       = Math.LN2 / halfLifeDays;
-  const t            = lastReportedAt
-    ? Math.max(0, (Date.now() - new Date(lastReportedAt).getTime()) / 86_400_000)
-    : 0;
-  const decayFactor  = Math.round(Math.exp(-lambda * t) * 100); // 0-100%
+  if (rehabilitated) {
+    riskLevel = 'BAJO';
+    recommendation = 'APROBAR';
+  } else if (calculatedScore >= 75 || distinctCount >= 3) {
+    riskLevel = 'ALTO';
+    recommendation = 'BLOQUEAR';
+    if (calculatedScore >= 90) {
+      killSwitch = true; // Kill-Switch intercepción <15ms con auto-pausa
+    }
+  } else if (calculatedScore >= 35 || distinctCount >= 2) {
+    riskLevel = 'MEDIO';
+    recommendation = 'DESAFIO_2FA';
+  } else {
+    riskLevel = 'BAJO';
+    recommendation = 'APROBAR';
+  }
 
   const riskMatrix: RiskMatrixFactors = {
-    // Re-mapeamos a la estructura existente para no romper el componente de UI
-    consensusScore:    Math.round(Math.min(100, distinctCount > 0 ? (distinctCount / 4) * 100 : 0)),
-    consensusWeight:   20,   // ahora vía M_red multiplicador, no peso directo
-    velocityScore:     Math.round(Math.min(100, (entity?.attemptsLast24h ?? 0) * 12)),
-    velocityWeight:    0,    // integrado en M_red
-    severityScore:     primaryReason ? (SEVERITY_WEIGHT[primaryReason] ?? 0) : 0,
-    severityWeight:    100,  // es el peso base real
-    recencyScore:      decayFactor,
-    recencyWeight:     100,  // es el factor de decaimiento real
+    consensusScore,
+    consensusWeight: 40,
+    velocityScore,
+    velocityWeight: 25,
+    severityScore,
+    severityWeight: 25,
+    recencyScore,
+    recencyWeight: 10,
     totalWeightedScore: calculatedScore,
-    // Campos extendidos del nuevo modelo
-    networkMultiplier:  Math.round(Mred * 100) / 100,
-    fraudImpactDecayed: Math.round(fraudImpact),
-    okAttenuation,
-    halfLifeDays,
-    riskTier: tier,
-  } as RiskMatrixFactors;
+  };
 
-  const timestamp       = new Date().toISOString();
-  const cryptoProof     = generateCryptographicProof(blindHash, calculatedScore, timestamp);
-  const latencyMs       = Math.max(1, Math.round(performance.now() - startTime) + 4);
+  const timestamp = new Date().toISOString();
+  const cryptographicProof = generateCryptographicProof(blindHash, calculatedScore, timestamp);
+  const latencyMs = Math.max(1, Math.round(performance.now() - startTime) + 4);
+
+  const internalReported = entity?.reportingTenantIds?.includes(tenantId) ?? false;
+  const internalRiskScore = internalReported ? Math.min(100, Math.round(severityScore * 0.8 + recencyScore * 0.2)) : 0;
+  const consortiumRiskScore = calculatedScore;
 
   const result: RiskEvaluationResult = {
     blindHash,
-    identifierType:            type,
-    riskScore:                 calculatedScore,
-    riskLevel:                 level,
-    riskTier:                  tier,
+    identifierType: type,
+    riskScore: calculatedScore,
+    internalRiskScore,
+    consortiumRiskScore,
+    riskLevel,
     recommendation,
     networkMatches,
     distinctInstitutionsCount: distinctCount,
@@ -212,29 +178,30 @@ export async function evaluateRisk(
     lastReportedAt,
     rehabilitated,
     rehabilitationReason,
-    cryptographicProof:        cryptoProof,
+    cryptographicProof,
     latencyMs,
-    cached:                    false,
+    cached: false,
     timestamp,
     riskMatrix,
-    killSwitchTriggered:       killSwitch,
+    killSwitchTriggered: killSwitch,
   };
 
-  // Guardar en caché Redis
+  // Guardar en caché Redis por 300 segundos
   await redis.set(cacheKey, result, 300);
 
   // Registro de auditoría
   await db.logAudit({
-    tenantId:           tenant.id,
-    tenantName:         tenant.name,
-    endpoint:           '/api/v1/risk/evaluate',
-    identifierType:     type,
-    blindHashPreview:   `${blindHash.slice(0, 8)}...${blindHash.slice(-6)}`,
+    tenantId: tenant.id,
+    tenantName: tenant.name,
+    endpoint: '/api/v1/risk/evaluate',
+    identifierType: type,
+    blindHashPreview: `${blindHash.slice(0, 8)}...${blindHash.slice(-6)}`,
     latencyMs,
-    statusCode:         200,
+    statusCode: 200,
     ipAddress,
-    actionType:         'API_CALL',
+    actionType: 'API_CALL',
   });
 
   return result;
 }
+
