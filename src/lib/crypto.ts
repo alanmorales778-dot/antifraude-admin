@@ -9,7 +9,7 @@ export const CONSORTIUM_SALT =
  * sin importar cómo el banco envíe el dato (mayúsculas, espacios, alias gmail).
  */
 export function normalizeIdentifier(
-  type: IdentifierType | 'DNI' | 'EMAIL' | 'PHONE' | 'IP',
+  type: IdentifierType | 'DNI' | 'EMAIL' | 'PHONE' | 'IP' | 'DEVICE' | 'CUIT',
   rawValue: string
 ): string {
   if (!rawValue) return '';
@@ -63,15 +63,6 @@ export function normalizeIdentifier(
       return digits;
     }
 
-    case 'CBU_CVU': {
-      // Si es un alias bancario o de billetera virtual (letras o puntos)
-      if (/[a-zA-Z]/.test(trimmed)) {
-        return trimmed.toLowerCase();
-      }
-      // Si es numérico (CBU o CVU bancario de 22 dígitos)
-      return trimmed.replace(/\D/g, '');
-    }
-
     case 'IP':
       return trimmed;
 
@@ -79,44 +70,17 @@ export function normalizeIdentifier(
       // CBU / CVU argentino: 22 dígitos numéricos sin espacios ni guiones
       return trimmed.replace(/\D/g, '');
 
+    case 'CUIT':
+      // CUIT argentino: 11 dígitos numéricos sin guiones ni espacios
+      return trimmed.replace(/[.\-\s]/g, '');
+
+    case 'DEVICE':
+      // Device fingerprint: lowercase, trim
+      return trimmed.toLowerCase();
+
     default:
       return trimmed.toLowerCase();
   }
-}
-
-/**
- * Valida un CBU/CVU bancario argentino de 22 dígitos aplicando el algoritmo
- * ponderado Módulo 10 del Banco Central de la República Argentina (BCRA).
- */
-export function validateCbuChecksum(cbu: string): { valid: boolean; reason?: string } {
-  const digits = cbu.replace(/\D/g, '');
-  if (digits.length !== 22) {
-    return { valid: false, reason: 'El CBU/CVU debe tener exactamente 22 dígitos numéricos.' };
-  }
-
-  // Ponderaciones bloque 1 (8 dígitos: 7 datos + 1 verificador)
-  const w1 = [7, 1, 3, 9, 7, 1, 3];
-  let sum1 = 0;
-  for (let i = 0; i < 7; i++) {
-    sum1 += parseInt(digits[i], 10) * w1[i];
-  }
-  const check1 = (10 - (sum1 % 10)) % 10;
-  if (check1 !== parseInt(digits[7], 10)) {
-    return { valid: false, reason: 'Dígito verificador de entidad/sucursal inválido (Bloque 1).' };
-  }
-
-  // Ponderaciones bloque 2 (14 dígitos: 13 datos + 1 verificador)
-  const w2 = [3, 9, 7, 1, 3, 9, 7, 1, 3, 9, 7, 1, 3];
-  let sum2 = 0;
-  for (let i = 0; i < 13; i++) {
-    sum2 += parseInt(digits[8 + i], 10) * w2[i];
-  }
-  const check2 = (10 - (sum2 % 10)) % 10;
-  if (check2 !== parseInt(digits[21], 10)) {
-    return { valid: false, reason: 'Dígito verificador de cuenta inválido (Bloque 2).' };
-  }
-
-  return { valid: true };
 }
 
 /**
@@ -138,7 +102,7 @@ export async function hashData(data: string, salt: string): Promise<string> {
  * 2. Salt global del Consorcio (ciego final)
  */
 export async function computeBlindHash(
-  type: IdentifierType | 'DNI' | 'EMAIL' | 'PHONE' | 'IP',
+  type: IdentifierType | 'DNI' | 'EMAIL' | 'PHONE' | 'IP' | 'DEVICE' | 'CUIT',
   rawValue: string,
   customTenantSalt?: string
 ): Promise<{

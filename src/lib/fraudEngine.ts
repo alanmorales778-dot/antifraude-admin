@@ -5,33 +5,65 @@ import {
   ScoreBreakdown,
   LookupResult,
   IncidentCategory,
+  IdentifierMatchDetail,
+  ReasonCode,
+  ServiceScope,
+  DeviceCUITLink,
 } from './types';
 import { normalizeIdentifier, hashData, CONSORTIUM_SALT } from './crypto';
 import { verifyEmailExistence } from './emailVerifier';
 
 // ─────────────────────────────────────────────────────────────────
-// CONSTANTES DE SCORING
+// CONSTANTES DE SCORING v2 — 4 DIMENSIONES
 // ─────────────────────────────────────────────────────────────────
 
+/** Dimensión 1: Pesos base por categoría de incidente */
 const SEVERITY_BASE: Record<IncidentCategory, number> = {
-  MULE_ACCOUNT: 40,
-  IDENTITY_THEFT: 35,
-  CHARGEBACK: 20,
-  PHISHING: 25,
-  SUSPICIOUS: 15,
+  FRAUD_CONFIRMED: 95,
+  MULE_ACCOUNT: 90,
+  ACCOUNT_TAKEOVER: 80,
+  IDENTITY_THEFT: 75,
+  PHISHING: 55,
+  CHARGEBACK: 50,
+  SUSPICIOUS: 40,
 };
 
+/** Pisos mínimos residuales para categorías severas (nunca decae a 0) */
+const DECAY_FLOOR: Record<IncidentCategory, number> = {
+  FRAUD_CONFIRMED: 45,
+  MULE_ACCOUNT: 40,
+  ACCOUNT_TAKEOVER: 25,
+  IDENTITY_THEFT: 20,
+  PHISHING: 10,
+  CHARGEBACK: 10,
+  SUSPICIOUS: 0,
+};
+
+/** Dimensión 2: Velocity & Multi-Entity */
 const MISMATCH_PENALTY = 45;
 const VELOCITY_PENALTY = 25;
-const VELOCITY_THRESHOLD = 3; // lookups en 60min desde entidades distintas
-const VELOCITY_WINDOW_MS = 60 * 60 * 1000; // 60 minutos
+const VELOCITY_THRESHOLD = 3;
+const VELOCITY_WINDOW_MS = 60 * 60 * 1000;
+
+/** Multi-entity: ≥2 entidades distintas en <7 días → multiplicador */
+const MULTI_ENTITY_THRESHOLD = 2;
+const MULTI_ENTITY_WINDOW_DAYS = 7;
+const MULTI_ENTITY_CRITICAL_SCORE = 97;
+
+/** Dimensión 3: Device Farm Detection */
+const DEVICE_FARM_CUIT_THRESHOLD = 3;
+const DEVICE_FARM_WINDOW_DAYS = 14;
+const DEVICE_FARM_CRITICAL_SCORE = 95;
+
+/** Dimensión 4: Critical Override threshold */
+const CRITICAL_OVERRIDE_THRESHOLD = 85;
 
 // ─────────────────────────────────────────────────────────────────
 // FUNCIÓN DE HASH (re-exporta usando CONSORTIUM_SALT)
 // ─────────────────────────────────────────────────────────────────
 
 export async function computeHash(
-  type: 'DNI' | 'EMAIL' | 'PHONE' | 'IP' | 'CBU' | 'CBU_CVU',
+  type: 'DNI' | 'EMAIL' | 'PHONE' | 'IP' | 'CBU' | 'DEVICE' | 'CUIT',
   rawValue: string
 ): Promise<string> {
   const normalized = normalizeIdentifier(type, rawValue);
@@ -39,17 +71,155 @@ export async function computeHash(
 }
 
 // ─────────────────────────────────────────────────────────────────
-// FACTOR DE DECAIMIENTO TEMPORAL
+// FACTOR DE DECAIMIENTO TEMPORAL v2
 // ─────────────────────────────────────────────────────────────────
 
+/**
+ * Curva de decaimiento con pisos residuales:
+ * - 0-30 días: decay mínimo (factor ~0.86-1.0)
+ * - 30-60 días: decay moderado (factor ~0.74-0.86)
+ * - 60-90 días: decay significativo (factor ~0.64-0.74)
+ * - 90-180 días: decay fuerte (factor ~0.41-0.64)
+ * - >180 días: floor residual
+ */
 function timeDecayFactor(isoTimestamp: string): number {
   const daysSince =
     (Date.now() - new Date(isoTimestamp).getTime()) / (1000 * 60 * 60 * 24);
+  // Exponential decay con constante calibrada para ventana de 180 días
   return Math.exp(-0.005 * Math.max(0, daysSince));
 }
 
+/**
+ * Aplica decaimiento con piso residual según la categoría.
+ */
+function applyDecayWithFloor(
+  baseScore: number,
+  isoTimestamp: string,
+  category: IncidentCategory
+): number {
+  const factor = timeDecayFactor(isoTimestamp);
+  const decayed = baseScore * factor;
+  const floor = DECAY_FLOOR[category] ?? 0;
+  return Math.max(decayed, floor);
+}
+
 // ─────────────────────────────────────────────────────────────────
-// EVALUACIÓN PRINCIPAL
+// DEVICE FARM DETECTION
+// ─────────────────────────────────────────────────────────────────
+
+export function detectDeviceFarm(
+  deviceHash: string,
+  deviceCUITLinks: DeviceCUITLink[]
+): { isDeviceFarm: boolean; linkedCUITs: number; linkedCUITHashes: string[] } {
+  const windowMs = DEVICE_FARM_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+
+  const recentLinks = deviceCUITLinks.filter(
+    link =>
+      link.tokenDevice === deviceHash &&
+      now - new Date(link.timestamp).getTime() < windowMs
+  );
+
+  const distinctCUITs = Array.from(new Set(recentLinks.map(l => l.tokenCuit)));
+
+  return {
+    isDeviceFarm: distinctCUITs.length >= DEVICE_FARM_CUIT_THRESHOLD,
+    linkedCUITs: distinctCUITs.length,
+    linkedCUITHashes: distinctCUITs,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────
+// MULTI-ENTITY DETECTION
+// ─────────────────────────────────────────────────────────────────
+
+function detectMultiEntity(
+  inputHashes: string[],
+  graphEdges: SpecGraphEdge[]
+): { isMultiEntity: boolean; distinctEntities: number; entityNames: string[] } {
+  const windowMs = MULTI_ENTITY_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+
+  const recentEdges = graphEdges.filter(e => {
+    if (e.isFalsePositive) return false;
+    const isMatch =
+      inputHashes.includes(e.sourceHash) || inputHashes.includes(e.targetHash);
+    const isRecent = now - new Date(e.timestamp).getTime() < windowMs;
+    return isMatch && isRecent;
+  });
+
+  const entityMap = new Map<string, string>();
+  recentEdges.forEach(e => {
+    entityMap.set(e.reportedByEntityId, e.entityName || e.reportedByEntityId);
+  });
+
+  return {
+    isMultiEntity: entityMap.size >= MULTI_ENTITY_THRESHOLD,
+    distinctEntities: entityMap.size,
+    entityNames: Array.from(entityMap.values()),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────
+// REASON CODES ENGINE
+// ─────────────────────────────────────────────────────────────────
+
+function buildReasonCodes(params: {
+  matchingEdges: SpecGraphEdge[];
+  multiEntityDetected: boolean;
+  deviceFarmDetected: boolean;
+  velocityTriggered: boolean;
+  mismatchDetected: boolean;
+  criticalOverride: boolean;
+  timeDecayApplied: boolean;
+  finalScore: number;
+}): ReasonCode[] {
+  const codes: ReasonCode[] = [];
+
+  if (params.finalScore === 0 && params.matchingEdges.length === 0) {
+    codes.push('CLEAN_RECORD');
+    return codes;
+  }
+
+  // Categorías presentes
+  const categories = new Set(params.matchingEdges.map(e => e.incidentCategory));
+
+  if (categories.has('FRAUD_CONFIRMED')) codes.push('FRAUD_CONFIRMED_HIT');
+  if (categories.has('MULE_ACCOUNT')) codes.push('MULE_ACCOUNT_RECENT');
+  if (categories.has('ACCOUNT_TAKEOVER')) codes.push('ACCOUNT_TAKEOVER_FLAG');
+  if (categories.has('PHISHING')) codes.push('PHISHING_ORIGIN');
+  if (categories.has('CHARGEBACK')) codes.push('CHARGEBACK_HISTORY');
+
+  if (params.deviceFarmDetected) codes.push('MULTI_IDENTITY_DEVICE_FARM');
+  if (params.multiEntityDetected) codes.push('MULTI_BANK_HIT');
+  if (params.velocityTriggered) codes.push('VELOCITY_SPIKE');
+  if (params.mismatchDetected) codes.push('IDENTITY_MISMATCH');
+  if (params.criticalOverride) codes.push('CRITICAL_OVERRIDE');
+  if (params.timeDecayApplied) codes.push('AGED_INCIDENT_DECAYED');
+
+  // Priorizar por severidad
+  const priority: Record<ReasonCode, number> = {
+    MULTI_IDENTITY_DEVICE_FARM: 100,
+    CRITICAL_OVERRIDE: 95,
+    FRAUD_CONFIRMED_HIT: 90,
+    MULE_ACCOUNT_RECENT: 85,
+    MULTI_BANK_HIT: 80,
+    ACCOUNT_TAKEOVER_FLAG: 75,
+    VELOCITY_SPIKE: 70,
+    IDENTITY_MISMATCH: 65,
+    DEVICE_LINKED_FRAUD: 60,
+    PHISHING_ORIGIN: 55,
+    CHARGEBACK_HISTORY: 50,
+    INTERNAL_RECURRENCE: 45,
+    AGED_INCIDENT_DECAYED: 20,
+    CLEAN_RECORD: 0,
+  };
+
+  return codes.sort((a, b) => (priority[b] || 0) - (priority[a] || 0));
+}
+
+// ─────────────────────────────────────────────────────────────────
+// EVALUACIÓN PRINCIPAL v2
 // ─────────────────────────────────────────────────────────────────
 
 export async function evaluateRisk(params: {
@@ -58,12 +228,21 @@ export async function evaluateRisk(params: {
   phone?: string;
   ip?: string;
   cbu?: string;
+  device?: string;
+  cuit?: string;
   fintechId: string;
   fintechs: FintechEntity[];
   identityNodes: IdentityNode[];
   graphEdges: SpecGraphEdge[];
+  deviceCUITLinks?: DeviceCUITLink[];
+  scope?: ServiceScope;
 }): Promise<LookupResult> {
-  const { dni, email, phone, ip, cbu, fintechId, fintechs, identityNodes, graphEdges } = params;
+  const {
+    dni, email, phone, ip, cbu, device, cuit,
+    fintechId, fintechs, identityNodes, graphEdges,
+    deviceCUITLinks = [],
+    scope = 'CONSORTIUM',
+  } = params;
 
   // Hashes de los identificadores provistos
   const dniHash = dni ? await computeHash('DNI', dni) : null;
@@ -71,16 +250,26 @@ export async function evaluateRisk(params: {
   const phoneHash = phone ? await computeHash('PHONE', phone) : null;
   const ipHash = ip ? await computeHash('IP', ip) : null;
   const cbuHash = cbu ? await computeHash('CBU', cbu) : null;
+  const deviceHash = device ? await computeHash('DEVICE', device) : null;
+  const cuitHash = cuit ? await computeHash('CUIT', cuit) : null;
 
-  const inputHashes = [dniHash, emailHash, phoneHash, ipHash, cbuHash].filter(Boolean) as string[];
+  const inputHashes = [dniHash, emailHash, phoneHash, ipHash, cbuHash, deviceHash, cuitHash]
+    .filter(Boolean) as string[];
 
-  // ── FACTOR 1: Base por Reportes Históricos ───────────────────
-  // Para cada arista activa que involucre alguno de los hashes consultados,
-  // sumar (Severidad_Base * trustWeight * TimeDecayFactor)
+  const paramCount = inputHashes.length;
+
+  // Filtrar edges por scope si es INTERNAL
+  const scopedEdges = scope === 'INTERNAL'
+    ? graphEdges.filter(e => !e.scope || e.scope === 'INTERNAL' || e.reportedByEntityId === fintechId)
+    : graphEdges;
+
+  // ── DIMENSIÓN 1: Severidad Base con Time Decay ────────────────
   let historicalReportsScore = 0;
   const matchingEdges: SpecGraphEdge[] = [];
+  let timeDecayApplied = false;
+  let worstDecayFactor = 1;
 
-  for (const edge of graphEdges) {
+  for (const edge of scopedEdges) {
     if (edge.isFalsePositive) continue;
     const isMatch =
       inputHashes.includes(edge.sourceHash) || inputHashes.includes(edge.targetHash);
@@ -93,73 +282,49 @@ export async function evaluateRisk(params: {
     const severityBase = SEVERITY_BASE[edge.incidentCategory] ?? 15;
     const decay = timeDecayFactor(edge.timestamp);
 
-    historicalReportsScore += severityBase * trustWeight * decay;
+    if (decay < 0.95) timeDecayApplied = true;
+    worstDecayFactor = Math.min(worstDecayFactor, decay);
+
+    // Aplicar decay con piso residual
+    const decayedScore = applyDecayWithFloor(
+      severityBase * trustWeight,
+      edge.timestamp,
+      edge.incidentCategory
+    );
+
+    historicalReportsScore += decayedScore;
   }
 
-  // Clamp parcial (puede ser > 100 si hay muchos reportes)
   historicalReportsScore = Math.min(100, historicalReportsScore);
 
-  // ── FACTOR 2: Penalización por Identity Mismatch ─────────────
-  // Si se envían DNI + Email (o DNI + Teléfono), verificar si en las
-  // GraphEdges ese email/teléfono estuvo vinculado a un DNI distinto.
+  // ── DIMENSIÓN 2a: Identity Mismatch ───────────────────────────
   let mismatchDetected = false;
   let mismatchPenalty = 0;
 
   if (dniHash && (emailHash || phoneHash || cbuHash)) {
-    for (const edge of graphEdges) {
+    for (const edge of scopedEdges) {
       if (edge.isFalsePositive) continue;
+      if (edge.sourceHash === edge.targetHash) continue;
 
-      // Caso Email-DNI: el email está en una arista con un DNI diferente al consultado
-      if (emailHash) {
-        const emailInEdge =
-          edge.sourceHash === emailHash || edge.targetHash === emailHash;
-        if (emailInEdge) {
+      const checkMismatch = (targetHash: string) => {
+        const inEdge =
+          edge.sourceHash === targetHash || edge.targetHash === targetHash;
+        if (inEdge) {
           const otherHash =
-            edge.sourceHash === emailHash ? edge.targetHash : edge.sourceHash;
-          // Si el otro extremo NO es el dniHash consultado, es un mismatch
-          if (otherHash !== dniHash) {
-            mismatchDetected = true;
-            break;
-          }
+            edge.sourceHash === targetHash ? edge.targetHash : edge.sourceHash;
+          if (otherHash !== dniHash) return true;
         }
-      }
+        return false;
+      };
 
-      // Caso Phone-DNI: el teléfono está en una arista con un DNI diferente al consultado
-      if (!mismatchDetected && phoneHash) {
-        const phoneInEdge =
-          edge.sourceHash === phoneHash || edge.targetHash === phoneHash;
-        if (phoneInEdge) {
-          const otherHash =
-            edge.sourceHash === phoneHash ? edge.targetHash : edge.sourceHash;
-          if (otherHash !== dniHash) {
-            mismatchDetected = true;
-            break;
-          }
-        }
-      }
-
-      // Caso CBU-DNI: el CBU está en una arista con un DNI diferente (Mula/suplantación)
-      if (!mismatchDetected && cbuHash) {
-        const cbuInEdge =
-          edge.sourceHash === cbuHash || edge.targetHash === cbuHash;
-        if (cbuInEdge) {
-          const otherHash =
-            edge.sourceHash === cbuHash ? edge.targetHash : edge.sourceHash;
-          if (otherHash !== dniHash) {
-            mismatchDetected = true;
-            break;
-          }
-        }
-      }
+      if (emailHash && checkMismatch(emailHash)) { mismatchDetected = true; break; }
+      if (phoneHash && checkMismatch(phoneHash)) { mismatchDetected = true; break; }
+      if (cbuHash && checkMismatch(cbuHash)) { mismatchDetected = true; break; }
     }
-    if (mismatchDetected) {
-      mismatchPenalty = MISMATCH_PENALTY;
-    }
+    if (mismatchDetected) mismatchPenalty = MISMATCH_PENALTY;
   }
 
-  // ── FACTOR 3: Penalización por Velocity ──────────────────────
-  // Si el hash fue consultado >= 3 veces en los últimos 60 min
-  // desde entidades distintas (basado en IdentityNodes).
+  // ── DIMENSIÓN 2b: Velocity ────────────────────────────────────
   let velocityTriggered = false;
   let velocityPenalty = 0;
 
@@ -171,10 +336,8 @@ export async function evaluateRisk(params: {
     }
   }
 
-  // También chequear si hay múltiples fintechs distintas que consultaron
-  // este hash en la ventana de 60 minutos (usando timestamps de los edges)
   if (!velocityTriggered && inputHashes.length > 0) {
-    const recentEdges = graphEdges.filter(e => {
+    const recentEdges = scopedEdges.filter(e => {
       if (e.isFalsePositive) return false;
       const isMatch =
         inputHashes.includes(e.sourceHash) || inputHashes.includes(e.targetHash);
@@ -189,33 +352,218 @@ export async function evaluateRisk(params: {
     }
   }
 
-  if (velocityTriggered) {
-    velocityPenalty = VELOCITY_PENALTY;
+  if (velocityTriggered) velocityPenalty = VELOCITY_PENALTY;
+
+  // ── DIMENSIÓN 2c: Multi-Entity Multiplier ─────────────────────
+  const multiEntity = detectMultiEntity(inputHashes, scopedEdges);
+  let multiEntityMultiplier = 1;
+
+  if (multiEntity.isMultiEntity) {
+    multiEntityMultiplier = 1.5 + (multiEntity.distinctEntities - 2) * 0.25;
   }
 
-  // ── FACTOR 4: Verificación de Existencia de Email ─────────────
+  // ── DIMENSIÓN 3: Device Farm Detection ────────────────────────
+  let deviceFarmDetected = false;
+  let deviceFarmScore = 0;
+
+  if (deviceHash) {
+    const farmResult = detectDeviceFarm(deviceHash, deviceCUITLinks);
+    if (farmResult.isDeviceFarm) {
+      deviceFarmDetected = true;
+      deviceFarmScore = DEVICE_FARM_CRITICAL_SCORE;
+    }
+  }
+
+  // ── FACTOR EMAIL ──────────────────────────────────────────────
   const emailVerification = email ? verifyEmailExistence(email) : null;
   const emailPenalty = emailVerification ? emailVerification.scorePenalty : 0;
 
-  // ── SCORE FINAL ───────────────────────────────────────────────
-  const rawScore =
+  // ── SCORE COMPUESTO ───────────────────────────────────────────
+  let rawScore =
     historicalReportsScore + mismatchPenalty + velocityPenalty + emailPenalty;
+
+  // Aplicar multiplicador multi-entidad
+  if (multiEntity.isMultiEntity && rawScore > 0) {
+    rawScore = Math.min(MULTI_ENTITY_CRITICAL_SCORE, rawScore * multiEntityMultiplier);
+  }
+
+  // Aplicar device farm override
+  if (deviceFarmDetected) {
+    rawScore = Math.max(rawScore, deviceFarmScore);
+  }
+
+  // ── DIMENSIÓN 4: Critical Override (Multi-Param) ──────────────
+  let criticalOverride = false;
+  let criticalOverrideSource: string | undefined;
+  const compositeStrategy = paramCount > 1 ? 'MAX_SEVERITY_WEIGHTED' : 'SINGLE_PARAM';
+
+  // Calcular scores individuales para Critical Override
+  if (paramCount > 1) {
+    const individualScores: { type: string; score: number }[] = [];
+
+    const calcIndividualScore = (hash: string | null, type: string) => {
+      if (!hash) return;
+      let score = 0;
+      for (const edge of matchingEdges) {
+        if (edge.sourceHash === hash || edge.targetHash === hash) {
+          const fintech = fintechs.find(f => f.id === edge.reportedByEntityId);
+          const tw = fintech ? fintech.trustWeight : 0.5;
+          score += applyDecayWithFloor(
+            (SEVERITY_BASE[edge.incidentCategory] ?? 15) * tw,
+            edge.timestamp,
+            edge.incidentCategory
+          );
+        }
+      }
+      individualScores.push({ type, score: Math.min(100, score) });
+    };
+
+    calcIndividualScore(dniHash, 'DNI');
+    calcIndividualScore(emailHash, 'EMAIL');
+    calcIndividualScore(phoneHash, 'PHONE');
+    calcIndividualScore(ipHash, 'IP');
+    calcIndividualScore(cbuHash, 'CBU');
+    calcIndividualScore(deviceHash, 'DEVICE');
+    calcIndividualScore(cuitHash, 'CUIT');
+
+    const maxIndividual = individualScores.reduce(
+      (max, cur) => (cur.score > max.score ? cur : max),
+      { type: '', score: 0 }
+    );
+
+    if (maxIndividual.score >= CRITICAL_OVERRIDE_THRESHOLD) {
+      criticalOverride = true;
+      criticalOverrideSource = maxIndividual.type;
+      rawScore = Math.max(rawScore, Math.min(100, maxIndividual.score * 1.05));
+    }
+  }
+
   const finalScore = Math.min(100, Math.max(0, Math.round(rawScore)));
 
   const riskLevel: 'BAJO' | 'MEDIO' | 'ALTO' =
     finalScore >= 70 ? 'ALTO' : finalScore >= 30 ? 'MEDIO' : 'BAJO';
 
+  const recommendation: 'ALLOW' | 'REVIEW' | 'BLOCK' =
+    finalScore >= 70 ? 'BLOCK' : finalScore >= 30 ? 'REVIEW' : 'ALLOW';
+
+  // ── REASON CODES ──────────────────────────────────────────────
+  const reasonCodes = buildReasonCodes({
+    matchingEdges,
+    multiEntityDetected: multiEntity.isMultiEntity,
+    deviceFarmDetected,
+    velocityTriggered,
+    mismatchDetected,
+    criticalOverride,
+    timeDecayApplied,
+    finalScore,
+  });
+
+  // ── DESGLOSE DATO POR DATO ────────────────────────────────────
+  const maskValue = (type: string, val: string) => {
+    if (type === 'DNI') return `${val.slice(0, 2)}***${val.slice(-3)}`;
+    if (type === 'EMAIL') {
+      const [u, d] = val.split('@');
+      return `${u.slice(0, 3)}***@${d || '?'}`;
+    }
+    if (type === 'PHONE') return `${val.slice(0, 4)}***${val.slice(-3)}`;
+    if (type === 'IP') {
+      const parts = val.split('.');
+      return parts.length === 4 ? `${parts[0]}.${parts[1]}.***.${parts[3]}` : val;
+    }
+    if (type === 'CBU') return `${val.slice(0, 4)}***${val.slice(-4)}`;
+    if (type === 'CUIT') return `${val.slice(0, 2)}-***-${val.slice(-1)}`;
+    if (type === 'DEVICE') return `${val.slice(0, 8)}...${val.slice(-6)}`;
+    return val;
+  };
+
+  const identifierDetails: IdentifierMatchDetail[] = [];
+
+  const checkIdentifier = (
+    type: 'DNI' | 'EMAIL' | 'PHONE' | 'IP' | 'CBU' | 'DEVICE' | 'CUIT',
+    rawVal?: string,
+    hash?: string | null
+  ) => {
+    if (!rawVal || !hash) return;
+    const matched = scopedEdges.filter(
+      e => !e.isFalsePositive && (e.sourceHash === hash || e.targetHash === hash)
+    );
+    const distinctEntities = new Set(matched.map(e => e.reportedByEntityId)).size;
+    const categories = Array.from(new Set(matched.map(e => e.incidentCategory)));
+
+    // Calcular días desde último reporte
+    let lastSeenDaysAgo: number | undefined;
+    if (matched.length > 0) {
+      const latest = matched.reduce((max, e) =>
+        new Date(e.timestamp).getTime() > new Date(max.timestamp).getTime() ? e : max
+      );
+      lastSeenDaysAgo = Math.floor(
+        (Date.now() - new Date(latest.timestamp).getTime()) / (1000 * 60 * 60 * 24)
+      );
+    }
+
+    // Score individual con decay
+    let decayedScore = 0;
+    for (const edge of matched) {
+      const fintech = fintechs.find(f => f.id === edge.reportedByEntityId);
+      const tw = fintech ? fintech.trustWeight : 0.5;
+      decayedScore += applyDecayWithFloor(
+        (SEVERITY_BASE[edge.incidentCategory] ?? 15) * tw,
+        edge.timestamp,
+        edge.incidentCategory
+      );
+    }
+
+    identifierDetails.push({
+      type,
+      valueMasked: maskValue(type, rawVal),
+      matched: matched.length > 0,
+      reportsCount: matched.length,
+      distinctEntitiesCount: distinctEntities,
+      categories,
+      scope,
+      lastSeenDaysAgo,
+      decayedScore: Math.min(100, Math.round(decayedScore)),
+    });
+  };
+
+  checkIdentifier('DNI', dni, dniHash);
+  checkIdentifier('EMAIL', email, emailHash);
+  checkIdentifier('PHONE', phone, phoneHash);
+  checkIdentifier('IP', ip, ipHash);
+  checkIdentifier('CBU', cbu, cbuHash);
+  checkIdentifier('DEVICE', device, deviceHash);
+  checkIdentifier('CUIT', cuit, cuitHash);
+
   const breakdown: ScoreBreakdown = {
+    // Dimensión 1
     historicalReportsScore: Math.round(historicalReportsScore),
+    // Dimensión 2
     mismatchPenalty,
     velocityPenalty,
+    multiEntityMultiplier,
+    // Dimensión 3 - Time Decay
+    timeDecayApplied,
+    timeDecayFactor: worstDecayFactor,
+    // Dimensión 4 - Device Farm
+    deviceFarmDetected,
+    deviceFarmScore,
+    // Email
     emailPenalty,
     emailVerification,
+    // Score Final
     finalScore,
     riskLevel,
+    recommendation,
+    criticalOverride,
+    criticalOverrideSource,
+    // Explicabilidad
+    reasonCodes,
+    compositeStrategy,
+    // Desglose
     mismatchDetected,
     velocityTriggered,
     matchingEdges,
+    identifierDetails,
   };
 
   return {
@@ -224,9 +572,12 @@ export async function evaluateRisk(params: {
     phoneHash,
     ipHash,
     cbuHash,
+    deviceHash,
+    cuitHash,
     breakdown,
     timestamp: new Date().toISOString(),
     fintechId,
+    scope,
   };
 }
 
@@ -239,7 +590,7 @@ export async function evaluateRisk(params: {
  */
 export function upsertIdentityNode(
   nodes: IdentityNode[],
-  type: 'DNI' | 'EMAIL' | 'PHONE' | 'IP' | 'CBU',
+  type: 'DNI' | 'EMAIL' | 'PHONE' | 'IP' | 'CBU' | 'DEVICE' | 'CUIT',
   hash: string,
   isLookup: boolean
 ): IdentityNode[] {
@@ -280,11 +631,14 @@ export function buildEdgesFromReport(params: {
   phoneHash: string | null;
   ipHash?: string | null;
   cbuHash?: string | null;
+  deviceHash?: string | null;
+  cuitHash?: string | null;
   reportedByEntityId: string;
   incidentCategory: IncidentCategory;
   uploadedFields?: string;
   uploadMethod?: 'MANUAL' | 'CSV_BULK' | 'API';
   entityName?: string;
+  scope?: ServiceScope;
 }): SpecGraphEdge[] {
   const {
     dniHash,
@@ -292,15 +646,39 @@ export function buildEdgesFromReport(params: {
     phoneHash,
     ipHash,
     cbuHash,
+    deviceHash,
+    cuitHash,
     reportedByEntityId,
     incidentCategory,
     uploadedFields,
     uploadMethod = 'MANUAL',
     entityName,
+    scope = 'CONSORTIUM',
   } = params;
-  const hashes = [dniHash, emailHash, phoneHash, ipHash, cbuHash].filter(Boolean) as string[];
+  const hashes = [dniHash, emailHash, phoneHash, ipHash, cbuHash, deviceHash, cuitHash]
+    .filter(Boolean) as string[];
   const edges: SpecGraphEdge[] = [];
   const now = new Date().toISOString();
+
+  // Si solo se proveyó un identificador (ej: solo DNI o solo CBU),
+  // se genera una arista unitaria/self-edge para que quede indexado en el grafo
+  // y compute para el score de riesgo en futuras consultas.
+  if (hashes.length === 1) {
+    edges.push({
+      id: `edge-${Date.now()}-0-0-${Math.random().toString(36).slice(2, 6)}`,
+      sourceHash: hashes[0],
+      targetHash: hashes[0],
+      reportedByEntityId,
+      incidentCategory,
+      timestamp: now,
+      isFalsePositive: false,
+      uploadedFields,
+      uploadMethod,
+      entityName,
+      scope,
+    });
+    return edges;
+  }
 
   for (let i = 0; i < hashes.length; i++) {
     for (let j = i + 1; j < hashes.length; j++) {
@@ -315,10 +693,10 @@ export function buildEdgesFromReport(params: {
         uploadedFields,
         uploadMethod,
         entityName,
+        scope,
       });
     }
   }
 
   return edges;
 }
-

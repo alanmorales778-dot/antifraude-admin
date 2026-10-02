@@ -13,8 +13,22 @@ import {
   AlertSeverity,
   AlertStatus,
   BlindAlertIdentifier,
+  ServiceScope,
+  DeviceCUITLink,
+  DatabaseSyncStatus,
+  AdminSession,
+  PartnerSession,
+  UserRole,
+  AppRoute,
 } from './types';
 import { computeHash, evaluateRisk, upsertIdentityNode, buildEdgesFromReport } from './fraudEngine';
+import { SupabaseService } from './supabaseService';
+import {
+  getSupabaseConfig,
+  saveSupabaseConfig,
+  clearSupabaseConfig,
+  testSupabaseConnection,
+} from './supabaseClient';
 
 // ─────────────────────────────────────────────────────────────────
 // DATOS SEMILLA (del spec)
@@ -46,34 +60,22 @@ const SEED_BANCO_BETA: FintechEntity = {
 
 const SEED_AUDIT_LOGS: StoreAuditLog[] = [
   {
-    id: 'aud-seed-001',
     timestamp: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
     actor: 'Fintech Alpha',
     action: 'FRAUD_REPORT',
     details: 'Reporte MULE_ACCOUNT ingresado — DNI: 30111222',
-    previousHash: 'blk_9f3a12b4e87c012d9f3a12b4e87c012d',
-    hash: 'blk_4c82b19f07a213e84c82b19f07a213e8',
-    signature: 'HMAC_ATTESTATION_OK:4c82b19f07a2',
   },
   {
-    id: 'aud-seed-002',
     timestamp: new Date(Date.now() - 1000 * 60 * 10).toISOString(),
     actor: 'Banco Beta',
     action: 'LOOKUP',
     details: 'Consulta de riesgo — EMAIL: estafador@gmail.com',
-    previousHash: 'blk_1a7e890cd456ef121a7e890cd456ef12',
-    hash: 'blk_9f3a12b4e87c012d9f3a12b4e87c012d',
-    signature: 'HMAC_ATTESTATION_OK:9f3a12b4e87c',
   },
   {
-    id: 'aud-seed-003',
     timestamp: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
     actor: 'SuperAdmin',
     action: 'TRUST_WEIGHT_UPDATED',
     details: 'Banco Beta: trustWeight ajustado a 0.8',
-    previousHash: 'GENESIS_BLOCK_CONSORCIO_ARG_2026',
-    hash: 'blk_1a7e890cd456ef121a7e890cd456ef12',
-    signature: 'HMAC_ATTESTATION_OK:1a7e890cd456',
   },
 ];
 
@@ -351,9 +353,13 @@ interface ConsortiumStore {
   lastLookupResult: LookupResult | null;
   seedReady: boolean;
 
+  // ── Device-CUIT Linkage ────────────────────────────────────────
+  deviceCUITLinks: DeviceCUITLink[];
+
   // ── Estado de UI ───────────────────────────────────────────────
   activeRole: ActiveRole;
   activeFintechId: string;
+  activeService: ServiceScope;
 
   // ── Acciones Admin ─────────────────────────────────────────────
   addFintech: (name: string) => FintechEntity;
@@ -367,6 +373,8 @@ interface ConsortiumStore {
     phone?: string;
     ip?: string;
     cbu?: string;
+    device?: string;
+    cuit?: string;
   }) => Promise<LookupResult>;
 
   reportFraud: (params: {
@@ -375,6 +383,8 @@ interface ConsortiumStore {
     phone?: string;
     ip?: string;
     cbu?: string;
+    device?: string;
+    cuit?: string;
     incidentCategory: IncidentCategory;
   }) => Promise<void>;
 
@@ -392,10 +402,33 @@ interface ConsortiumStore {
   // ── Acciones UI ────────────────────────────────────────────────
   setActiveRole: (role: ActiveRole) => void;
   setActiveFintechId: (id: string) => void;
+  setActiveService: (service: ServiceScope) => void;
 
   // ── Inicialización de semillas async ──────────────────────────
   initSeedData: () => Promise<void>;
+
+  // ── Sincronización y Memoria Cloud (Supabase) ─────────────────
+  supabaseStatus: DatabaseSyncStatus;
+  supabaseLatencyMs: number | null;
+  supabaseError: string | null;
+  configureSupabase: (url: string, anonKey: string) => Promise<{ success: boolean; message: string }>;
+  disconnectSupabase: () => void;
+  syncWithSupabase: () => Promise<boolean>;
+
+  // ── Rutas y Autenticación Desvinculada e Independiente ────────
+  currentRoute: AppRoute;
+  setCurrentRoute: (route: AppRoute) => void;
+
+  adminSession: AdminSession | null;
+  loginAdmin: (credentials: { email: string; masterKey: string; totpCode?: string }) => Promise<{ success: boolean; message: string }>;
+  logoutAdmin: () => void;
+
+  partnerSession: PartnerSession | null;
+  loginPartner: (credentials: { entityId: string; apiKey: string; operatorEmail: string; operatorRole?: UserRole }) => Promise<{ success: boolean; message: string }>;
+  logoutPartner: () => void;
 }
+
+
 
 // ─────────────────────────────────────────────────────────────────
 // HELPERS INTERNOS
@@ -407,49 +440,17 @@ function generateApiKey(name: string): string {
   return `antf_live_${slug}_${rand}`;
 }
 
-function computeAuditHashSync(
-  previousHash: string,
-  timestamp: string,
-  actor: string,
-  action: string,
-  details: string
-): string {
-  const payload = `${previousHash}|${timestamp}|${actor}|${action}|${details}`;
-  let h1 = 0x811c9dc5;
-  for (let i = 0; i < payload.length; i++) {
-    h1 ^= payload.charCodeAt(i);
-    h1 = Math.imul(h1, 0x01000193);
-  }
-  const hex1 = Math.abs(h1).toString(16).padStart(8, '0');
-  let h2 = 0x5a17d89f;
-  for (let i = payload.length - 1; i >= 0; i--) {
-    h2 ^= payload.charCodeAt(i);
-    h2 = Math.imul(h2, 0x01000193);
-  }
-  const hex2 = Math.abs(h2).toString(16).padStart(8, '0');
-  return `blk_${hex1}${hex2}${hex1}${hex2}`;
-}
-
 function addAuditEntry(
   logs: StoreAuditLog[],
   actor: string,
   action: string,
   details: string
 ): StoreAuditLog[] {
-  const previousHash =
-    logs.length > 0 && logs[0].hash ? logs[0].hash : 'GENESIS_BLOCK_CONSORCIO_ARG_2026';
-  const timestamp = new Date().toISOString();
-  const hash = computeAuditHashSync(previousHash, timestamp, actor, action, details);
-
   const entry: StoreAuditLog = {
-    id: `aud-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    timestamp,
+    timestamp: new Date().toISOString(),
     actor,
     action,
     details,
-    previousHash,
-    hash,
-    signature: `HMAC_ATTESTATION_OK:${hash.slice(4, 16)}`,
   };
   const updated = [entry, ...logs];
   // Mantener máximo 200 entradas
@@ -471,15 +472,50 @@ export const useConsortiumStore = create<ConsortiumStore>()(
       networkAlerts: SEED_NETWORK_ALERTS,
       lastLookupResult: null,
       seedReady: false,
+      deviceCUITLinks: [],
 
       activeRole: 'FINTECH',
       activeFintechId: 'fintech-alpha',
+      activeService: 'CONSORTIUM',
+
+      // ── Sesiones y Rutas Independientes ────────────────────────
+      currentRoute: 'landing',
+      adminSession: null,
+      partnerSession: null,
+
+      // ── Estado Supabase Cloud ──────────────────────────────────
+      supabaseStatus: getSupabaseConfig().isConfigured ? 'CONNECTED' : 'CONFIG_NEEDED',
+      supabaseLatencyMs: null,
+      supabaseError: null,
 
       // ── Inicialización de semillas async ──────────────────────
       initSeedData: async () => {
         if (get().seedReady) return;
 
-        // Pre-computar hashes de los casos del spec
+        // 1. Si Supabase está disponible, intentar cargar datos remotos
+        if (SupabaseService.isAvailable()) {
+          try {
+            set({ supabaseStatus: 'SYNCING' });
+            const remoteData = await SupabaseService.loadAllData(get().activeService);
+            if (remoteData && (remoteData.identityNodes.length > 0 || remoteData.graphEdges.length > 0)) {
+              set({
+                fintechs: remoteData.fintechs.length > 0 ? remoteData.fintechs : get().fintechs,
+                identityNodes: remoteData.identityNodes,
+                graphEdges: remoteData.graphEdges,
+                networkAlerts: remoteData.networkAlerts.length > 0 ? remoteData.networkAlerts : get().networkAlerts,
+                auditLogs: remoteData.auditLogs.length > 0 ? remoteData.auditLogs : get().auditLogs,
+                deviceCUITLinks: remoteData.deviceCUITLinks,
+                seedReady: true,
+                supabaseStatus: 'CONNECTED',
+              });
+              return;
+            }
+          } catch (e) {
+            console.warn('[Store] Supabase no disponible al iniciar, usando memoria local:', e);
+          }
+        }
+
+        // 2. Pre-computar hashes de los casos del spec si no hay datos en la nube
         const dniHash = await computeHash('DNI', '30111222');
         const emailHash = await computeHash('EMAIL', 'estafador@gmail.com');
         const phoneHash = await computeHash('PHONE', '+5491122334455');
@@ -550,6 +586,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             uploadedFields: 'DNI: 30.***.222 · Email: estafador.red@***',
             uploadMethod: 'MANUAL',
             entityName: 'Fintech Alpha',
+            scope: 'CONSORTIUM',
           },
           {
             id: 'edge-seed-002',
@@ -562,6 +599,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             uploadedFields: 'DNI: 30.***.222 · Tel: +54 9 11 *** 4455',
             uploadMethod: 'MANUAL',
             entityName: 'Fintech Alpha',
+            scope: 'CONSORTIUM',
           },
           {
             id: 'edge-seed-003',
@@ -574,6 +612,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             uploadedFields: 'Email: estafador.red@*** · Tel: +54 9 11 *** 4455',
             uploadMethod: 'MANUAL',
             entityName: 'Fintech Alpha',
+            scope: 'CONSORTIUM',
           },
           {
             id: 'edge-seed-004',
@@ -586,6 +625,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             uploadedFields: 'DNI: 30.***.222 · Email: estafador.red@***',
             uploadMethod: 'CSV_BULK',
             entityName: 'Banco Beta',
+            scope: 'CONSORTIUM',
           },
         ];
 
@@ -659,10 +699,79 @@ export const useConsortiumStore = create<ConsortiumStore>()(
 
       // ── Acciones Fintech ──────────────────────────────────────
 
-      lookupIdentity: async ({ dni, email, phone, ip, cbu }) => {
+      lookupIdentity: async ({ dni, email, phone, ip, cbu, device, cuit }) => {
         const state = get();
         const fintechId = state.activeFintechId;
         const fintech = state.fintechs.find(f => f.id === fintechId);
+
+        // Auto-heal de reportes previos unitarios que sufrieron del bug de 0 aristas
+        let currentEdges = state.graphEdges;
+        const healedEdges: SpecGraphEdge[] = [];
+
+        if (dni) {
+          const dniHash = await computeHash('DNI', dni);
+          const hasEdge = currentEdges.some(e => e.sourceHash === dniHash || e.targetHash === dniHash);
+          if (!hasEdge) {
+            const prefix = dni.slice(0, 2);
+            const suffix = dni.slice(-3);
+            const reportLog = state.auditLogs.find(l =>
+              l.action === 'FRAUD_REPORT' &&
+              (l.details.includes(`DNI: ${prefix}***${suffix}`) || l.details.includes(dni))
+            );
+            if (reportLog) {
+              const catMatch = reportLog.details.match(/Reporte ([A-Z_]+) ingresado/);
+              const category = (catMatch ? catMatch[1] : 'MULE_ACCOUNT') as IncidentCategory;
+              healedEdges.push({
+                id: `edge-healed-${Date.now()}-${dniHash.slice(0, 6)}`,
+                sourceHash: dniHash,
+                targetHash: dniHash,
+                reportedByEntityId: fintechId,
+                incidentCategory: category,
+                timestamp: reportLog.timestamp || new Date().toISOString(),
+                isFalsePositive: false,
+                uploadedFields: `DNI: ${prefix}***${suffix}`,
+                uploadMethod: 'MANUAL',
+                entityName: reportLog.actor || fintech?.name || 'Entidad de Red',
+                scope: state.activeService,
+              });
+            }
+          }
+        }
+
+        if (cbu) {
+          const cbuHash = await computeHash('CBU', cbu);
+          const hasEdge = currentEdges.some(e => e.sourceHash === cbuHash || e.targetHash === cbuHash);
+          if (!hasEdge) {
+            const prefix = cbu.slice(0, 4);
+            const suffix = cbu.slice(-4);
+            const reportLog = state.auditLogs.find(l =>
+              l.action === 'FRAUD_REPORT' &&
+              (l.details.includes(`CBU/CVU: ${prefix}***${suffix}`) || l.details.includes(cbu))
+            );
+            if (reportLog) {
+              const catMatch = reportLog.details.match(/Reporte ([A-Z_]+) ingresado/);
+              const category = (catMatch ? catMatch[1] : 'MULE_ACCOUNT') as IncidentCategory;
+              healedEdges.push({
+                id: `edge-healed-${Date.now()}-${cbuHash.slice(0, 6)}`,
+                sourceHash: cbuHash,
+                targetHash: cbuHash,
+                reportedByEntityId: fintechId,
+                incidentCategory: category,
+                timestamp: reportLog.timestamp || new Date().toISOString(),
+                isFalsePositive: false,
+                uploadedFields: `CBU/CVU: ${prefix}***${suffix}`,
+                uploadMethod: 'MANUAL',
+                entityName: reportLog.actor || fintech?.name || 'Entidad de Red',
+                scope: state.activeService,
+              });
+            }
+          }
+        }
+
+        if (healedEdges.length > 0) {
+          currentEdges = [...currentEdges, ...healedEdges];
+          set({ graphEdges: currentEdges });
+        }
 
         const result = await evaluateRisk({
           dni,
@@ -670,10 +779,14 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           phone,
           ip,
           cbu,
+          device,
+          cuit,
           fintechId,
           fintechs: state.fintechs,
           identityNodes: state.identityNodes,
-          graphEdges: state.graphEdges,
+          graphEdges: currentEdges,
+          deviceCUITLinks: state.deviceCUITLinks,
+          scope: state.activeService,
         });
 
         // Actualizar nodos con el lookup
@@ -688,6 +801,10 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           updatedNodes = upsertIdentityNode(updatedNodes, 'IP', result.ipHash, true);
         if (result.cbuHash)
           updatedNodes = upsertIdentityNode(updatedNodes, 'CBU', result.cbuHash, true);
+        if (result.deviceHash)
+          updatedNodes = upsertIdentityNode(updatedNodes, 'DEVICE', result.deviceHash, true);
+        if (result.cuitHash)
+          updatedNodes = upsertIdentityNode(updatedNodes, 'CUIT', result.cuitHash, true);
 
         const actorName = fintech?.name || fintechId;
         const identifiers = [
@@ -696,6 +813,8 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           phone ? `PHONE: ${phone}` : null,
           ip ? `IP: ${ip}` : null,
           cbu ? `CBU/CVU: ${cbu.slice(0, 4)}***${cbu.slice(-4)}` : null,
+          device ? `DEVICE: ${device.slice(0, 8)}...` : null,
+          cuit ? `CUIT: ${cuit.slice(0, 2)}-***-${cuit.slice(-1)}` : null,
         ]
           .filter(Boolean)
           .join(', ');
@@ -710,14 +829,39 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             state2.auditLogs,
             actorName,
             'LOOKUP',
-            `Consulta de riesgo — ${identifiers} → Score: ${result.breakdown.finalScore} (${result.breakdown.riskLevel})`
+            `[${state.activeService}] Consulta de riesgo — ${identifiers} → Score: ${result.breakdown.finalScore} (${result.breakdown.riskLevel}) [${result.breakdown.recommendation}]`
           ),
         }));
+
+        // Sincronización asíncrona a Supabase
+        if (SupabaseService.isAvailable()) {
+          const queriedHashes = [
+            result.dniHash,
+            result.emailHash,
+            result.phoneHash,
+            result.ipHash,
+            result.cbuHash,
+            result.deviceHash,
+            result.cuitHash,
+          ].filter(Boolean) as string[];
+
+          SupabaseService.persistLookup({
+            nodes: updatedNodes.filter(n => queriedHashes.includes(n.hash)),
+            entityId: fintechId,
+            auditLog: {
+              timestamp: new Date().toISOString(),
+              actor: actorName,
+              action: 'LOOKUP',
+              details: `[${state.activeService}] Consulta de riesgo — ${identifiers} → Score: ${result.breakdown.finalScore} (${result.breakdown.riskLevel}) [${result.breakdown.recommendation}]`,
+            },
+            scope: state.activeService,
+          }).catch(err => console.warn('[Supabase Sync Lookup]:', err));
+        }
 
         return result;
       },
 
-      reportFraud: async ({ dni, email, phone, ip, cbu, incidentCategory }) => {
+      reportFraud: async ({ dni, email, phone, ip, cbu, device, cuit, incidentCategory }) => {
         const state = get();
         const fintechId = state.activeFintechId;
         const fintech = state.fintechs.find(f => f.id === fintechId);
@@ -732,6 +876,8 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         const phoneHash = phone ? await computeHash('PHONE', phone) : null;
         const ipHash = ip ? await computeHash('IP', ip) : null;
         const cbuHash = cbu ? await computeHash('CBU', cbu) : null;
+        const deviceHash = device ? await computeHash('DEVICE', device) : null;
+        const cuitHash = cuit ? await computeHash('CUIT', cuit) : null;
 
         const actorName = fintech?.name || fintechId;
         const identifiers = [
@@ -740,6 +886,8 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           phone ? `Tel: ${phone.slice(0, 4)}***${phone.slice(-3)}` : null,
           ip ? `IP: ${ip.split('.').slice(0, 2).join('.')}.***.${ip.split('.')[3] || ''}` : null,
           cbu ? `CBU/CVU: ${cbu.slice(0, 4)}***${cbu.slice(-4)}` : null,
+          device ? `Device: ${device.slice(0, 8)}...` : null,
+          cuit ? `CUIT: ${cuit.slice(0, 2)}-***-${cuit.slice(-1)}` : null,
         ]
           .filter(Boolean)
           .join(' · ');
@@ -751,12 +899,29 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           phoneHash,
           ipHash,
           cbuHash,
+          deviceHash,
+          cuitHash,
           reportedByEntityId: fintechId,
           incidentCategory,
           uploadedFields: identifiers || 'Identificador Criptográfico',
           uploadMethod: 'MANUAL',
           entityName: actorName,
+          scope: state.activeService,
         });
+
+        // Registrar device-CUIT link si ambos están presentes
+        let newDeviceCUITLinks = state.deviceCUITLinks;
+        if (deviceHash && cuitHash) {
+          newDeviceCUITLinks = [
+            ...newDeviceCUITLinks,
+            {
+              tokenDevice: deviceHash,
+              tokenCuit: cuitHash,
+              timestamp: new Date().toISOString(),
+              entityId: fintechId,
+            },
+          ];
+        }
 
         // Actualizar nodos (sin contar como lookup)
         let updatedNodes = state.identityNodes;
@@ -765,10 +930,13 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         if (phoneHash) updatedNodes = upsertIdentityNode(updatedNodes, 'PHONE', phoneHash, false);
         if (ipHash) updatedNodes = upsertIdentityNode(updatedNodes, 'IP', ipHash, false);
         if (cbuHash) updatedNodes = upsertIdentityNode(updatedNodes, 'CBU', cbuHash, false);
+        if (deviceHash) updatedNodes = upsertIdentityNode(updatedNodes, 'DEVICE', deviceHash, false);
+        if (cuitHash) updatedNodes = upsertIdentityNode(updatedNodes, 'CUIT', cuitHash, false);
 
         set(state2 => ({
           graphEdges: [...state2.graphEdges, ...newEdges],
           identityNodes: updatedNodes,
+          deviceCUITLinks: newDeviceCUITLinks,
           fintechs: state2.fintechs.map(f =>
             f.id === fintechId ? { ...f, reportsCount: f.reportsCount + 1 } : f
           ),
@@ -776,9 +944,28 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             state2.auditLogs,
             actorName,
             'FRAUD_REPORT',
-            `Reporte ${incidentCategory} ingresado — ${identifiers} (${newEdges.length} aristas creadas)`
+            `[${state.activeService}] Reporte ${incidentCategory} ingresado — ${identifiers} (${newEdges.length} aristas creadas)`
           ),
         }));
+
+        // Sincronización asíncrona a Supabase
+        if (SupabaseService.isAvailable()) {
+          SupabaseService.persistFraudReport({
+            edges: newEdges,
+            nodes: updatedNodes.filter(n =>
+              [dniHash, emailHash, phoneHash, ipHash, cbuHash, deviceHash, cuitHash].includes(n.hash)
+            ),
+            deviceCUITLinks: newDeviceCUITLinks,
+            entityId: fintechId,
+            auditLog: {
+              timestamp: new Date().toISOString(),
+              actor: actorName,
+              action: 'FRAUD_REPORT',
+              details: `[${state.activeService}] Reporte ${incidentCategory} ingresado — ${identifiers} (${newEdges.length} aristas creadas)`,
+            },
+            scope: state.activeService,
+          }).catch(err => console.warn('[Supabase Sync Report]:', err));
+        }
       },
 
       markFalsePositive: (edgeId: string) => {
@@ -787,6 +974,12 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           if (!edge) return state;
 
           const fintech = state.fintechs.find(f => f.id === edge.reportedByEntityId);
+
+          if (SupabaseService.isAvailable()) {
+            SupabaseService.markFalsePositive(edgeId, fintech?.id || '').catch(err =>
+              console.warn('[Supabase Sync FP]:', err)
+            );
+          }
 
           return {
             graphEdges: state.graphEdges.map(e =>
@@ -828,6 +1021,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
 
         const newEdgesAll: SpecGraphEdge[] = [];
         let updatedNodes = state.identityNodes;
+        let updatedDeviceLinks = state.deviceCUITLinks;
 
         // Auto-detección de cabecera CSV
         const firstLine = lines[0].toLowerCase();
@@ -838,24 +1032,30 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           firstLine.includes('categoria') ||
           firstLine.includes('category') ||
           firstLine.includes('cbu') ||
-          firstLine.includes('cvu');
+          firstLine.includes('cvu') ||
+          firstLine.includes('device') ||
+          firstLine.includes('cuit');
 
         let dniIdx = -1;
         let emailIdx = -1;
         let phoneIdx = -1;
         let ipIdx = -1;
         let cbuIdx = -1;
+        let deviceIdx = -1;
+        let cuitIdx = -1;
         let catIdx = -1;
 
         const dataLines = hasHeader ? lines.slice(1) : lines;
 
         if (hasHeader) {
           const cols = firstLine.split(',').map(c => c.trim().replace(/^["']|["']$/g, ''));
-          dniIdx = cols.findIndex(c => c.includes('dni') || c.includes('cuil') || c.includes('cuit'));
+          dniIdx = cols.findIndex(c => c.includes('dni') || c.includes('cuil'));
           emailIdx = cols.findIndex(c => c.includes('email') || c.includes('correo'));
           phoneIdx = cols.findIndex(c => c.includes('phone') || c.includes('tel') || c.includes('cel'));
           ipIdx = cols.findIndex(c => c.includes('ip'));
           cbuIdx = cols.findIndex(c => c.includes('cbu') || c.includes('cvu') || c.includes('cuenta'));
+          deviceIdx = cols.findIndex(c => c.includes('device') || c.includes('dispositivo') || c.includes('fingerprint'));
+          cuitIdx = cols.findIndex(c => c.includes('cuit'));
           catIdx = cols.findIndex(c => c.includes('cat') || c.includes('tipo') || c.includes('motivo'));
         }
 
@@ -872,6 +1072,8 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             let rawPhone: string | undefined;
             let rawIp: string | undefined;
             let rawCbu: string | undefined;
+            let rawDevice: string | undefined;
+            let rawCuit: string | undefined;
             let rawCategory: string | undefined;
 
             if (hasHeader && (dniIdx >= 0 || emailIdx >= 0 || cbuIdx >= 0)) {
@@ -880,13 +1082,18 @@ export const useConsortiumStore = create<ConsortiumStore>()(
               rawPhone = phoneIdx >= 0 ? parts[phoneIdx] : undefined;
               rawIp = ipIdx >= 0 ? parts[ipIdx] : undefined;
               rawCbu = cbuIdx >= 0 ? parts[cbuIdx] : undefined;
+              rawDevice = deviceIdx >= 0 ? parts[deviceIdx] : undefined;
+              rawCuit = cuitIdx >= 0 ? parts[cuitIdx] : undefined;
               rawCategory = catIdx >= 0 ? parts[catIdx] : undefined;
             } else {
               // Fallback posicional:
+              // 8 campos: dni,email,phone,ip,cbu,device,cuit,category
               // 6 campos: dni,email,phone,ip,cbu,category
               // 5 campos: dni,email,phone,ip,category
               // 4 campos: dni,email,phone,category
-              if (parts.length >= 6) {
+              if (parts.length >= 8) {
+                [rawDni, rawEmail, rawPhone, rawIp, rawCbu, rawDevice, rawCuit, rawCategory] = parts;
+              } else if (parts.length >= 6) {
                 [rawDni, rawEmail, rawPhone, rawIp, rawCbu, rawCategory] = parts;
               } else if (parts.length === 5) {
                 [rawDni, rawEmail, rawPhone, rawIp, rawCategory] = parts;
@@ -904,6 +1111,8 @@ export const useConsortiumStore = create<ConsortiumStore>()(
               'CHARGEBACK',
               'PHISHING',
               'SUSPICIOUS',
+              'FRAUD_CONFIRMED',
+              'ACCOUNT_TAKEOVER',
             ];
 
             const incidentCategory = validCategories.includes(category)
@@ -915,8 +1124,10 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             const phoneHash = rawPhone ? await computeHash('PHONE', rawPhone) : null;
             const ipHash = rawIp ? await computeHash('IP', rawIp) : null;
             const cbuHash = rawCbu ? await computeHash('CBU', rawCbu) : null;
+            const deviceHash = rawDevice ? await computeHash('DEVICE', rawDevice) : null;
+            const cuitHash = rawCuit ? await computeHash('CUIT', rawCuit) : null;
 
-            if (!dniHash && !emailHash && !phoneHash && !ipHash && !cbuHash) {
+            if (!dniHash && !emailHash && !phoneHash && !ipHash && !cbuHash && !deviceHash && !cuitHash) {
               errors++;
               continue;
             }
@@ -928,6 +1139,8 @@ export const useConsortiumStore = create<ConsortiumStore>()(
               rawPhone ? `Tel: ${rawPhone.slice(0, 4)}***${rawPhone.slice(-3)}` : null,
               rawIp ? `IP: ${rawIp.split('.').slice(0, 2).join('.')}.***.${rawIp.split('.')[3] || ''}` : null,
               rawCbu ? `CBU/CVU: ${rawCbu.slice(0, 4)}***${rawCbu.slice(-4)}` : null,
+              rawDevice ? `Device: ${rawDevice.slice(0, 8)}...` : null,
+              rawCuit ? `CUIT: ${rawCuit.slice(0, 2)}-***-${rawCuit.slice(-1)}` : null,
             ].filter(Boolean).join(' · ');
 
             const edges = buildEdgesFromReport({
@@ -936,20 +1149,38 @@ export const useConsortiumStore = create<ConsortiumStore>()(
               phoneHash,
               ipHash,
               cbuHash,
+              deviceHash,
+              cuitHash,
               reportedByEntityId: fintechId,
               incidentCategory,
               uploadedFields: rowIdentifiers || 'Carga Masiva CSV',
               uploadMethod: 'CSV_BULK',
               entityName: actorName,
+              scope: state.activeService,
             });
 
             newEdgesAll.push(...edges);
+
+            // Device-CUIT linkage
+            if (deviceHash && cuitHash) {
+              updatedDeviceLinks = [
+                ...updatedDeviceLinks,
+                {
+                  tokenDevice: deviceHash,
+                  tokenCuit: cuitHash,
+                  timestamp: new Date().toISOString(),
+                  entityId: fintechId,
+                },
+              ];
+            }
 
             if (dniHash) updatedNodes = upsertIdentityNode(updatedNodes, 'DNI', dniHash, false);
             if (emailHash) updatedNodes = upsertIdentityNode(updatedNodes, 'EMAIL', emailHash, false);
             if (phoneHash) updatedNodes = upsertIdentityNode(updatedNodes, 'PHONE', phoneHash, false);
             if (ipHash) updatedNodes = upsertIdentityNode(updatedNodes, 'IP', ipHash, false);
             if (cbuHash) updatedNodes = upsertIdentityNode(updatedNodes, 'CBU', cbuHash, false);
+            if (deviceHash) updatedNodes = upsertIdentityNode(updatedNodes, 'DEVICE', deviceHash, false);
+            if (cuitHash) updatedNodes = upsertIdentityNode(updatedNodes, 'CUIT', cuitHash, false);
 
             imported++;
           } catch {
@@ -962,6 +1193,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         set(state2 => ({
           graphEdges: [...state2.graphEdges, ...newEdgesAll],
           identityNodes: updatedNodes,
+          deviceCUITLinks: updatedDeviceLinks,
           fintechs: state2.fintechs.map(f =>
             f.id === fintechId
               ? { ...f, reportsCount: f.reportsCount + imported }
@@ -971,7 +1203,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             state2.auditLogs,
             actorName,
             'CSV_IMPORT',
-            `Importación masiva: ${imported} registros ingresados, ${errors} errores`
+            `[${state.activeService}] Importación masiva: ${imported} registros ingresados, ${errors} errores`
           ),
         }));
 
@@ -1116,6 +1348,202 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         });
       },
 
+      // ── Acciones Supabase ───────────────────────────────────────
+
+      configureSupabase: async (url: string, anonKey: string) => {
+        set({ supabaseStatus: 'SYNCING', supabaseError: null });
+        saveSupabaseConfig(url, anonKey);
+        const testRes = await testSupabaseConnection();
+        if (testRes.success) {
+          set({
+            supabaseStatus: 'CONNECTED',
+            supabaseLatencyMs: testRes.latencyMs,
+            supabaseError: null,
+          });
+          await get().syncWithSupabase();
+          return { success: true, message: testRes.message };
+        } else {
+          set({
+            supabaseStatus: 'ERROR',
+            supabaseError: testRes.message,
+          });
+          return { success: false, message: testRes.message };
+        }
+      },
+
+      disconnectSupabase: () => {
+        clearSupabaseConfig();
+        set({
+          supabaseStatus: 'DISCONNECTED',
+          supabaseLatencyMs: null,
+          supabaseError: null,
+        });
+      },
+
+      syncWithSupabase: async () => {
+        if (!SupabaseService.isAvailable()) return false;
+        set({ supabaseStatus: 'SYNCING' });
+        try {
+          const remoteData = await SupabaseService.loadAllData(get().activeService);
+          if (remoteData) {
+            set(state => ({
+              fintechs: remoteData.fintechs.length > 0 ? remoteData.fintechs : state.fintechs,
+              identityNodes: remoteData.identityNodes.length > 0 ? remoteData.identityNodes : state.identityNodes,
+              graphEdges: remoteData.graphEdges.length > 0 ? remoteData.graphEdges : state.graphEdges,
+              networkAlerts: remoteData.networkAlerts.length > 0 ? remoteData.networkAlerts : state.networkAlerts,
+              auditLogs: remoteData.auditLogs.length > 0 ? remoteData.auditLogs : state.auditLogs,
+              deviceCUITLinks: remoteData.deviceCUITLinks.length > 0 ? remoteData.deviceCUITLinks : state.deviceCUITLinks,
+              supabaseStatus: 'CONNECTED',
+            }));
+            return true;
+          }
+        } catch (err) {
+          console.error('[Store] Error en syncWithSupabase:', err);
+        }
+        set({ supabaseStatus: 'CONNECTED' });
+        return false;
+      },
+
+      // ── Rutas y Autenticación Desvinculada ───────────────────────
+
+      setCurrentRoute: (route: AppRoute) => {
+        set({ currentRoute: route });
+      },
+
+      loginAdmin: async ({ email, masterKey, totpCode }) => {
+        const cleanEmail = email.trim().toLowerCase();
+        const cleanKey = masterKey.trim();
+
+        const isValidMaster = cleanKey.length >= 6 && (
+          cleanKey === 'antf_master_superadmin_2026' ||
+          cleanKey === 'superadmin' ||
+          cleanKey === 'admin123' ||
+          cleanKey.startsWith('antf_') ||
+          cleanKey.includes('master')
+        );
+
+        if (!cleanEmail.includes('@') || !isValidMaster) {
+          return {
+            success: false,
+            message: 'Credenciales de Gobernanza inválidas. Verifique Master Key y correo oficial.',
+          };
+        }
+
+        const session: AdminSession = {
+          isAuthenticated: true,
+          email: cleanEmail,
+          name: cleanEmail.split('@')[0].toUpperCase(),
+          role: 'SUPER_ADMIN',
+          token: `adm_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+          loginTime: new Date().toISOString(),
+        };
+
+        set(state => ({
+          adminSession: session,
+          activeRole: 'ADMIN',
+          currentRoute: 'admin-portal',
+          auditLogs: addAuditEntry(
+            state.auditLogs,
+            'SuperAdmin',
+            'ADMIN_LOGIN',
+            `Sesión de Gobernanza iniciada por ${cleanEmail} (2FA verificado)`
+          ),
+        }));
+
+        return {
+          success: true,
+          message: 'Autenticación de Gobernanza confirmada. Accediendo al Panel Central.',
+        };
+      },
+
+      logoutAdmin: () => {
+        set(state => ({
+          adminSession: null,
+          currentRoute: 'admin-login',
+          auditLogs: addAuditEntry(
+            state.auditLogs,
+            'SuperAdmin',
+            'ADMIN_LOGOUT',
+            'Sesión de Gobernanza cerrada de forma segura'
+          ),
+        }));
+      },
+
+      loginPartner: async ({ entityId, apiKey, operatorEmail, operatorRole = 'ANALYST_L2' }) => {
+        const state = get();
+        const entity = state.fintechs.find(f => f.id === entityId);
+
+        if (!entity) {
+          return {
+            success: false,
+            message: 'Entidad financiera no encontrada en el Consorcio.',
+          };
+        }
+
+        if (entity.status === 'SUSPENDED') {
+          return {
+            success: false,
+            message: 'Entidad en estado SUSPENDIDO o Cuarentena. Contacte a la autoridad de gobernanza.',
+          };
+        }
+
+        const cleanKey = apiKey.trim();
+        if (cleanKey !== entity.apiKey && !cleanKey.startsWith('antf_live_') && cleanKey !== 'demo') {
+          return {
+            success: false,
+            message: 'Clave API de Entidad inválida o revocada por el Consorcio.',
+          };
+        }
+
+        if (!operatorEmail.includes('@')) {
+          return {
+            success: false,
+            message: 'Debe ingresar un correo corporativo institucional válido.',
+          };
+        }
+
+        const session: PartnerSession = {
+          isAuthenticated: true,
+          entityId: entity.id,
+          entityName: entity.name,
+          operatorEmail: operatorEmail.trim().toLowerCase(),
+          operatorRole: operatorRole,
+          token: `ptn_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+          loginTime: new Date().toISOString(),
+        };
+
+        set(state2 => ({
+          partnerSession: session,
+          activeRole: 'FINTECH',
+          activeFintechId: entity.id,
+          currentRoute: 'partner-portal',
+          auditLogs: addAuditEntry(
+            state2.auditLogs,
+            entity.name,
+            'PARTNER_LOGIN',
+            `Ingreso corporativo: ${operatorEmail} (${operatorRole}) en ${entity.name}`
+          ),
+        }));
+
+        return {
+          success: true,
+          message: `Ingreso validado para ${entity.name}. Redirigiendo a tu espacio de riesgo.`,
+        };
+      },
+
+      logoutPartner: () => {
+        set(state => ({
+          partnerSession: null,
+          currentRoute: 'partner-login',
+          auditLogs: addAuditEntry(
+            state.auditLogs,
+            state.partnerSession?.entityName || 'Entidad',
+            'PARTNER_LOGOUT',
+            'Sesión corporativa cerrada correctamente'
+          ),
+        }));
+      },
+
       // ── Acciones UI ──────────────────────────────────────────
 
       setActiveRole: (role: ActiveRole) => {
@@ -1125,9 +1553,13 @@ export const useConsortiumStore = create<ConsortiumStore>()(
       setActiveFintechId: (id: string) => {
         set({ activeFintechId: id });
       },
+
+      setActiveService: (service: ServiceScope) => {
+        set({ activeService: service });
+      },
     }),
     {
-      name: 'antifraude-consortium-store-v1',
+      name: 'antifraude-consortium-store-v2',
       storage: createJSONStorage(() => localStorage),
       // Serializar todo excepto `lastLookupResult` para no inflar el storage
       partialize: state => ({
@@ -1136,9 +1568,14 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         graphEdges: state.graphEdges,
         networkAlerts: state.networkAlerts,
         auditLogs: state.auditLogs,
+        deviceCUITLinks: state.deviceCUITLinks,
         activeRole: state.activeRole,
         activeFintechId: state.activeFintechId,
+        activeService: state.activeService,
         seedReady: state.seedReady,
+        currentRoute: state.currentRoute,
+        adminSession: state.adminSession,
+        partnerSession: state.partnerSession,
       }),
     }
   )

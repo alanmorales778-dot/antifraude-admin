@@ -7,7 +7,27 @@ export type IncidentCategory =
   | 'IDENTITY_THEFT'
   | 'CHARGEBACK'
   | 'PHISHING'
-  | 'SUSPICIOUS';
+  | 'SUSPICIOUS'
+  | 'FRAUD_CONFIRMED'
+  | 'ACCOUNT_TAKEOVER';
+
+export type ReasonCode =
+  | 'CLEAN_RECORD'
+  | 'MULE_ACCOUNT_RECENT'
+  | 'FRAUD_CONFIRMED_HIT'
+  | 'MULTI_BANK_HIT'
+  | 'MULTI_IDENTITY_DEVICE_FARM'
+  | 'AGED_INCIDENT_DECAYED'
+  | 'CRITICAL_OVERRIDE'
+  | 'VELOCITY_SPIKE'
+  | 'IDENTITY_MISMATCH'
+  | 'ACCOUNT_TAKEOVER_FLAG'
+  | 'PHISHING_ORIGIN'
+  | 'CHARGEBACK_HISTORY'
+  | 'DEVICE_LINKED_FRAUD'
+  | 'INTERNAL_RECURRENCE';
+
+export type ServiceScope = 'INTERNAL' | 'CONSORTIUM';
 
 export interface FintechEntity {
   id: string;
@@ -21,7 +41,7 @@ export interface FintechEntity {
 }
 
 export interface IdentityNode {
-  type: 'DNI' | 'EMAIL' | 'PHONE' | 'IP' | 'CBU' | 'CBU_CVU';
+  type: 'DNI' | 'EMAIL' | 'PHONE' | 'IP' | 'CBU' | 'DEVICE' | 'CUIT';
   hash: string; // SHA-256 con salt
   firstSeen: string; // ISO
   lastSeen: string; // ISO
@@ -40,23 +60,49 @@ export interface SpecGraphEdge {
   uploadedFields?: string;
   uploadMethod?: 'MANUAL' | 'CSV_BULK' | 'API';
   entityName?: string;
+  scope?: ServiceScope; // Internal vs Consortium
 }
 
 export interface StoreAuditLog {
-  id?: string;
   timestamp: string;
   actor: string;
   action: string;
   details: string;
-  previousHash?: string;
-  hash?: string;
-  signature?: string;
+}
+
+export interface DeviceCUITLink {
+  tokenDevice: string;
+  tokenCuit: string;
+  timestamp: string;
+  entityId: string;
+}
+
+export interface IdentifierMatchDetail {
+  type: 'DNI' | 'EMAIL' | 'PHONE' | 'IP' | 'CBU' | 'DEVICE' | 'CUIT';
+  valueMasked: string;
+  matched: boolean;
+  reportsCount: number;
+  distinctEntitiesCount: number;
+  categories: IncidentCategory[];
+  scope?: ServiceScope;
+  lastSeenDaysAgo?: number;
+  decayedScore?: number;
 }
 
 export interface ScoreBreakdown {
+  // ── Dimensión 1: Severidad Base ──
   historicalReportsScore: number;
+  // ── Dimensión 2: Multi-Entity / Velocity ──
   mismatchPenalty: number;
   velocityPenalty: number;
+  multiEntityMultiplier: number;
+  // ── Dimensión 3: Decaimiento Temporal ──
+  timeDecayApplied: boolean;
+  timeDecayFactor: number;
+  // ── Dimensión 4: Device Farm ──
+  deviceFarmDetected: boolean;
+  deviceFarmScore: number;
+  // ── Email ──
   emailPenalty?: number;
   emailVerification?: {
     email: string;
@@ -70,11 +116,20 @@ export interface ScoreBreakdown {
     alertTitle?: string;
     alertMessage?: string;
   } | null;
+  // ── Score Final ──
   finalScore: number;
   riskLevel: 'BAJO' | 'MEDIO' | 'ALTO';
+  recommendation: 'ALLOW' | 'REVIEW' | 'BLOCK';
+  criticalOverride: boolean;
+  criticalOverrideSource?: string;
+  // ── Explicabilidad ──
+  reasonCodes: ReasonCode[];
+  compositeStrategy: 'SINGLE_PARAM' | 'MAX_SEVERITY_WEIGHTED';
+  // ── Desglose ──
   mismatchDetected: boolean;
   velocityTriggered: boolean;
   matchingEdges: SpecGraphEdge[];
+  identifierDetails?: IdentifierMatchDetail[];
 }
 
 export interface LookupResult {
@@ -83,22 +138,23 @@ export interface LookupResult {
   phoneHash: string | null;
   ipHash?: string | null;
   cbuHash?: string | null;
+  deviceHash?: string | null;
+  cuitHash?: string | null;
   breakdown: ScoreBreakdown;
   timestamp: string;
   fintechId: string;
+  scope: ServiceScope;
 }
 
 // ─────────────────────────────────────────────────────────────────
 // TIPOS LEGACY (API server-side / db.ts / risk-engine.ts)
 // ─────────────────────────────────────────────────────────────────
 
-export type IdentifierType = 'EMAIL' | 'DNI' | 'PHONE' | 'IP' | 'CBU' | 'CBU_CVU' | 'TAX_ID' | 'CARD_BIN';
+export type IdentifierType = 'EMAIL' | 'DNI' | 'PHONE' | 'IP' | 'CBU' | 'TAX_ID' | 'CARD_BIN' | 'DEVICE' | 'CUIT';
 
 export type RiskLevel = 'BAJO' | 'MEDIO' | 'ALTO';
 
-export type RiskTier = 'CRITICO' | 'ALTO_RIESGO' | 'ALERTA' | 'CONFIABLE';
-
-export type Recommendation = 'APROBAR' | 'DESAFIO_2FA' | 'BLOQUEAR' | 'REVISION_MANUAL';
+export type Recommendation = 'APROBAR' | 'DESAFIO_2FA' | 'BLOQUEAR';
 
 export type FraudTypology =
   | 'MULA_DE_DINERO'
@@ -108,7 +164,9 @@ export type FraudTypology =
   | 'PHISHING'
   | 'PROMO_ABUSE'
   | 'TRIANGULACION_FONDOS'
-  | 'OPERACION_SOSPECHOSA';
+  | 'OPERACION_SOSPECHOSA'
+  | 'FRAUDE_CONFIRMADO'
+  | 'TAKEOVER_CUENTA';
 
 export type UserRole = 'ANALYST_L1' | 'ANALYST_L2' | 'TENANT_ADMIN' | 'SUPER_ADMIN' | 'SUPERADMIN';
 
@@ -139,11 +197,6 @@ export interface RiskMatrixFactors {
   recencyScore: number;
   recencyWeight: number;
   totalWeightedScore: number;
-  riskTier?: RiskTier;
-  networkMultiplier?: number;
-  fraudImpactDecayed?: number;
-  okAttenuation?: number;
-  halfLifeDays?: number;
 }
 
 export interface FraudEvent {
@@ -188,9 +241,6 @@ export interface AuditLog {
   ipAddress: string;
   timestamp: string;
   actionType?: 'API_CALL' | 'MANUAL_LOOKUP' | 'RULE_MODIFIED' | 'AUTH_FAILED' | 'QUARANTINE_TOGGLED';
-  previousHash?: string;
-  blockHash?: string;
-  signature?: string;
 }
 
 export interface RiskEvaluationResult {
@@ -212,7 +262,6 @@ export interface RiskEvaluationResult {
   timestamp: string;
   riskMatrix: RiskMatrixFactors;
   killSwitchTriggered?: boolean;
-  riskTier?: RiskTier;
 }
 
 export interface WebhookConfig {
@@ -295,7 +344,7 @@ export type AlertStatus =
   | 'DISMISSED_FP';
 
 export interface BlindAlertIdentifier {
-  type: 'DNI' | 'EMAIL' | 'PHONE' | 'IP' | 'DEVICE';
+  type: 'DNI' | 'EMAIL' | 'PHONE' | 'IP' | 'DEVICE' | 'CUIT';
   hash: string;
   maskedPreview: string;
   lookupsCount24h: number;
@@ -338,4 +387,32 @@ export interface NetworkAlert {
     notes?: string;
   };
 }
+
+export type DatabaseSyncStatus = 'CONNECTED' | 'DISCONNECTED' | 'CONFIG_NEEDED' | 'SYNCING' | 'ERROR';
+
+export interface AdminSession {
+  isAuthenticated: boolean;
+  email: string;
+  name: string;
+  role: 'SUPER_ADMIN';
+  token: string;
+  loginTime: string;
+}
+
+export interface PartnerSession {
+  isAuthenticated: boolean;
+  entityId: string;
+  entityName: string;
+  operatorEmail: string;
+  operatorRole: UserRole;
+  token: string;
+  loginTime: string;
+}
+
+export type AppRoute =
+  | 'landing'
+  | 'admin-login'
+  | 'admin-portal'
+  | 'partner-login'
+  | 'partner-portal';
 

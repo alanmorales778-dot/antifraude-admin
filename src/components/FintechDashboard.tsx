@@ -22,9 +22,20 @@ import {
   Globe,
   Mail,
   Send,
+  Layers,
+  Phone,
+  CreditCard,
+  Sparkles,
+  Filter,
+  Fingerprint,
+  Hash,
+  Network,
+  Building2,
+  Timer,
+  Gauge,
 } from 'lucide-react';
 import { useConsortiumStore } from '@/lib/store';
-import { LookupResult, IncidentCategory } from '@/lib/types';
+import { LookupResult, IncidentCategory, ReasonCode } from '@/lib/types';
 import { simulateSendVerificationEmail } from '@/lib/emailVerifier';
 
 // ─────────────────────────────────────────────────────────────────
@@ -32,12 +43,37 @@ import { simulateSendVerificationEmail } from '@/lib/emailVerifier';
 // ─────────────────────────────────────────────────────────────────
 
 const CATEGORIES: { value: IncidentCategory; label: string; color: string }[] = [
+  { value: 'FRAUD_CONFIRMED', label: 'Fraude Confirmado', color: 'text-red-400' },
   { value: 'MULE_ACCOUNT', label: 'Cuenta Mula', color: 'text-rose-400' },
+  { value: 'ACCOUNT_TAKEOVER', label: 'Account Takeover', color: 'text-purple-400' },
   { value: 'IDENTITY_THEFT', label: 'Robo de Identidad', color: 'text-orange-400' },
   { value: 'CHARGEBACK', label: 'Contracargo', color: 'text-amber-400' },
   { value: 'PHISHING', label: 'Phishing', color: 'text-yellow-400' },
   { value: 'SUSPICIOUS', label: 'Actividad Sospechosa', color: 'text-slate-400' },
 ];
+
+const REASON_CODE_LABELS: Record<ReasonCode, { label: string; icon: string; color: string }> = {
+  CLEAN_RECORD: { label: 'Sin Antecedentes', icon: '✅', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' },
+  MULE_ACCOUNT_RECENT: { label: 'Cuenta Mula Reciente', icon: '🏦', color: 'bg-rose-500/20 text-rose-300 border-rose-500/30' },
+  FRAUD_CONFIRMED_HIT: { label: 'Fraude Confirmado', icon: '🚨', color: 'bg-red-500/20 text-red-300 border-red-500/30' },
+  MULTI_BANK_HIT: { label: 'Multi-Entidad', icon: '🏛️', color: 'bg-purple-500/20 text-purple-300 border-purple-500/30' },
+  MULTI_IDENTITY_DEVICE_FARM: { label: 'Granja de Dispositivos', icon: '📱', color: 'bg-red-600/20 text-red-200 border-red-500/30' },
+  AGED_INCIDENT_DECAYED: { label: 'Incidente Envejecido', icon: '⏳', color: 'bg-slate-500/20 text-slate-300 border-slate-500/30' },
+  CRITICAL_OVERRIDE: { label: 'Override Crítico', icon: '⚡', color: 'bg-rose-600/20 text-rose-200 border-rose-500/40' },
+  VELOCITY_SPIKE: { label: 'Pico de Velocidad', icon: '⚡', color: 'bg-amber-500/20 text-amber-300 border-amber-500/30' },
+  IDENTITY_MISMATCH: { label: 'Discrepancia de Identidad', icon: '🔀', color: 'bg-orange-500/20 text-orange-300 border-orange-500/30' },
+  ACCOUNT_TAKEOVER_FLAG: { label: 'Account Takeover', icon: '🔓', color: 'bg-purple-500/20 text-purple-300 border-purple-500/30' },
+  PHISHING_ORIGIN: { label: 'Origen Phishing', icon: '🎣', color: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30' },
+  CHARGEBACK_HISTORY: { label: 'Historial Contracargos', icon: '💳', color: 'bg-amber-500/20 text-amber-300 border-amber-500/30' },
+  DEVICE_LINKED_FRAUD: { label: 'Device Vinculado a Fraude', icon: '📱', color: 'bg-rose-500/20 text-rose-300 border-rose-500/30' },
+  INTERNAL_RECURRENCE: { label: 'Recurrencia Interna', icon: '🔁', color: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' },
+};
+
+function recommendationBadge(rec: 'ALLOW' | 'REVIEW' | 'BLOCK') {
+  if (rec === 'BLOCK') return { text: 'BLOQUEAR', class: 'bg-rose-500/20 border-rose-500/40 text-rose-300', icon: '🛑' };
+  if (rec === 'REVIEW') return { text: 'REVISIÓN MANUAL', class: 'bg-amber-500/20 border-amber-500/40 text-amber-300', icon: '⚠️' };
+  return { text: 'APROBAR', class: 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300', icon: '✅' };
+}
 
 function riskBadgeClass(level: 'BAJO' | 'MEDIO' | 'ALTO') {
   if (level === 'ALTO') return 'bg-rose-500/20 border-rose-500/40 text-rose-300';
@@ -121,17 +157,31 @@ function ScoreGauge({ score }: { score: number }) {
 // ─────────────────────────────────────────────────────────────────
 
 function SingleLookupView() {
-  const { lookupIdentity, markFalsePositive, activeFintechId, fintechs, lastLookupResult } = useConsortiumStore();
+  const { lookupIdentity, markFalsePositive, activeFintechId, fintechs, lastLookupResult, activeService } = useConsortiumStore();
+
+  // Selector de Modo: 'single' (Dato por Dato) | 'set' (Conjunto de Datos)
+  const [searchMode, setSearchMode] = useState<'single' | 'set'>('single');
+
+  // Modo Dato por Dato
+  const [singleType, setSingleType] = useState<'DNI' | 'EMAIL' | 'PHONE' | 'CBU' | 'IP' | 'DEVICE' | 'CUIT'>('DNI');
+  const [singleValue, setSingleValue] = useState('30111222');
+
+  // Modo Conjunto de Datos
   const [dni, setDni] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [ip, setIp] = useState('');
   const [cbu, setCbu] = useState('');
+  const [device, setDevice] = useState('');
+  const [cuit, setCuit] = useState('');
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState<LookupResult | null>(lastLookupResult);
   const [okLoading, setOkLoading] = useState(false);
   const [okDone, setOkDone] = useState(false);
+
+  const isInternal = activeService === 'INTERNAL';
 
   // Estado para la prueba de envío / verificación de correo
   const [emailPingLoading, setEmailPingLoading] = useState(false);
@@ -144,24 +194,47 @@ function SingleLookupView() {
 
   const activeFintech = fintechs.find(f => f.id === activeFintechId);
 
+  // Ejecución de Consulta
   const handleLookup = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!dni.trim() && !email.trim() && !phone.trim() && !ip.trim() && !cbu.trim()) {
-      setError('Ingresá al menos un identificador (DNI, Email, Teléfono, IP o CBU/CVU) para consultar.');
-      return;
-    }
     setError('');
     setOkDone(false);
     setEmailPingResult(null);
-    setLoading(true);
-    try {
-      const res = await lookupIdentity({
+
+    let queryParams: { dni?: string; email?: string; phone?: string; ip?: string; cbu?: string; device?: string; cuit?: string } = {};
+
+    if (searchMode === 'single') {
+      const val = singleValue.trim();
+      if (!val) {
+        setError(`Por favor ingresá el valor de ${singleType === 'DNI' ? 'DNI' : singleType === 'CBU' ? 'CBU/CVU' : singleType} para consultar.`);
+        return;
+      }
+      if (singleType === 'DNI') queryParams.dni = val;
+      if (singleType === 'EMAIL') queryParams.email = val;
+      if (singleType === 'PHONE') queryParams.phone = val;
+      if (singleType === 'CBU') queryParams.cbu = val;
+      if (singleType === 'IP') queryParams.ip = val;
+      if (singleType === 'DEVICE') queryParams.device = val;
+      if (singleType === 'CUIT') queryParams.cuit = val;
+    } else {
+      if (!dni.trim() && !email.trim() && !phone.trim() && !ip.trim() && !cbu.trim() && !device.trim() && !cuit.trim()) {
+        setError('Ingresá al menos un identificador (o varios combinados) para evaluar el conjunto.');
+        return;
+      }
+      queryParams = {
         dni: dni.trim() || undefined,
         email: email.trim() || undefined,
         phone: phone.trim() || undefined,
         ip: ip.trim() || undefined,
         cbu: cbu.trim() || undefined,
-      });
+        device: device.trim() || undefined,
+        cuit: cuit.trim() || undefined,
+      };
+    }
+
+    setLoading(true);
+    try {
+      const res = await lookupIdentity(queryParams);
       setResult(res);
     } catch (err) {
       setError('Error al evaluar el riesgo en la red federada.');
@@ -175,7 +248,7 @@ function SingleLookupView() {
   const handleMarkOK = async () => {
     if (!result) return;
     const activeEdges = (result.breakdown.matchingEdges || []).filter(e => !e.isFalsePositive);
-    
+
     if (activeEdges.length === 0) {
       setOkLoading(true);
       setTimeout(() => {
@@ -185,8 +258,8 @@ function SingleLookupView() {
       return;
     }
 
-    if (!confirm(`¿Confirmar voto OK para este identificador? Esto atenuará el score comunitario (−35 pts por reporte).`)) return;
-    
+    if (!confirm('¿Confirmar voto OK para este identificador? Esto atenuará el score comunitario (−35 pts por reporte).')) return;
+
     setOkLoading(true);
     for (const edge of activeEdges) {
       markFalsePositive(edge.id);
@@ -196,20 +269,34 @@ function SingleLookupView() {
 
     // Re-evaluar automáticamente para mostrar el score reducido en vivo
     setTimeout(async () => {
-      const refreshed = await lookupIdentity({
-        dni: dni.trim() || undefined,
-        email: email.trim() || undefined,
-        phone: phone.trim() || undefined,
-        ip: ip.trim() || undefined,
-        cbu: cbu.trim() || undefined,
-      });
+      let queryParams: { dni?: string; email?: string; phone?: string; ip?: string; cbu?: string } = {};
+      if (searchMode === 'single') {
+        const val = singleValue.trim();
+        if (singleType === 'DNI') queryParams.dni = val;
+        if (singleType === 'EMAIL') queryParams.email = val;
+        if (singleType === 'PHONE') queryParams.phone = val;
+        if (singleType === 'CBU') queryParams.cbu = val;
+        if (singleType === 'IP') queryParams.ip = val;
+      } else {
+        queryParams = {
+          dni: dni.trim() || undefined,
+          email: email.trim() || undefined,
+          phone: phone.trim() || undefined,
+          ip: ip.trim() || undefined,
+          cbu: cbu.trim() || undefined,
+        };
+      }
+      const refreshed = await lookupIdentity(queryParams);
       setResult(refreshed);
     }, 250);
   };
 
   // Función para enviar correo de verificación / probar rebote
   const handleSendEmailVerification = async () => {
-    const targetEmail = email.trim() || result?.breakdown.emailVerification?.email;
+    const targetEmail =
+      searchMode === 'single' && singleType === 'EMAIL'
+        ? singleValue.trim()
+        : email.trim() || result?.breakdown.emailVerification?.email;
     if (!targetEmail) return;
     setEmailPingLoading(true);
     setEmailPingResult(null);
@@ -219,108 +306,482 @@ function SingleLookupView() {
   };
 
   return (
-    <div className="space-y-5">
-      <form onSubmit={handleLookup} className="space-y-4">
-        {/* DNI, Email, Teléfono, IP y CBU/CVU */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              DNI / CUIL
-            </label>
-            <input
-              type="text"
-              value={dni}
-              onChange={e => setDni(e.target.value)}
-              placeholder="Ej: 30111222"
-              className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-cyan-500/50 focus:outline-none focus:ring-1 focus:ring-cyan-500/30 transition font-mono"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Email
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="Ej: estafador@gmail.com"
-              className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-cyan-500/50 focus:outline-none focus:ring-1 focus:ring-cyan-500/30 transition"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Teléfono Móvil
-            </label>
-            <input
-              type="text"
-              value={phone}
-              onChange={e => setPhone(e.target.value)}
-              placeholder="Ej: +5491122334455"
-              className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-cyan-500/50 focus:outline-none focus:ring-1 focus:ring-cyan-500/30 transition font-mono"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1.5">
-              <Globe className="h-3.5 w-3.5 text-cyan-400" /> Dirección IP
-            </label>
-            <input
-              type="text"
-              value={ip}
-              onChange={e => setIp(e.target.value)}
-              placeholder="Ej: 190.191.200.45"
-              className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-cyan-500/50 focus:outline-none focus:ring-1 focus:ring-cyan-500/30 transition font-mono"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1.5">
-              <Building className="h-3.5 w-3.5 text-cyan-400" /> CBU / CVU (22 d)
-            </label>
-            <input
-              type="text"
-              value={cbu}
-              onChange={e => setCbu(e.target.value.replace(/\D/g, '').slice(0, 22))}
-              placeholder="Ej: 0000003100010000000001"
-              maxLength={22}
-              className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-cyan-500/50 focus:outline-none focus:ring-1 focus:ring-cyan-500/30 transition font-mono"
-            />
-          </div>
-        </div>
-
-        <p className="text-[11px] text-slate-400">
-          💡 Podés consultar <strong>1 solo campo</strong> o <strong>varios campos combinados</strong> (DNI, Email, Teléfono, IP, CBU/CVU). La plataforma valida automáticamente la <strong>existencia del email</strong>, detecta cruces de titularidad con CBU y consulta la red federada con Zero-Knowledge.
-        </p>
-
-        {error && (
-          <p className="text-xs text-rose-400 flex items-center gap-1.5 bg-rose-950/30 border border-rose-500/30 rounded-xl p-2.5">
-            <XCircle className="h-4 w-4 shrink-0" />
-            {error}
-          </p>
-        )}
-
-        <div className="flex items-center gap-3">
+    <div className="space-y-6">
+      {/* ── SELECTOR DE MODALIDAD: DATO POR DATO vs CONJUNTO DE DATOS ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/90 p-2.5 rounded-2xl border border-white/10 shadow-lg">
+        <div className="flex items-center gap-2 p-1 bg-slate-950 rounded-xl border border-white/5">
           <button
-            type="submit"
-            disabled={loading}
-            className="flex items-center gap-2 rounded-xl bg-cyan-600 px-6 py-2.5 text-sm font-bold text-white hover:bg-cyan-500 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed transition shadow-lg shadow-cyan-950/40"
+            type="button"
+            onClick={() => {
+              setSearchMode('single');
+              setError('');
+            }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition shadow-sm ${
+              searchMode === 'single'
+                ? 'bg-cyan-600 text-white shadow-cyan-900/40'
+                : 'text-slate-400 hover:text-white'
+            }`}
           >
-            {loading ? (
-              <>
-                <span className="animate-spin h-4 w-4 rounded-full border-2 border-white/30 border-t-white" />
-                Evaluando en red federada...
-              </>
-            ) : (
-              <>
-                <Zap className="h-4 w-4" />
-                Consultar Riesgo
-              </>
-            )}
+            <Search className="h-4 w-4" />
+            <span>1. Buscar Dato por Dato</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSearchMode('set');
+              setError('');
+            }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition shadow-sm ${
+              searchMode === 'set'
+                ? 'bg-indigo-600 text-white shadow-indigo-900/40'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Layers className="h-4 w-4" />
+            <span>2. Buscar por Conjunto de Datos</span>
           </button>
         </div>
-      </form>
 
-      {/* ── RESULTADO DE CONSULTA (SIN HASHES VISIBLES) ──────────────────── */}
+        <span className="text-[11px] text-slate-400 px-2 font-mono">
+          {searchMode === 'single'
+            ? '🔍 Consulta atómica: evaluá un único DNI, CBU, Email o Teléfono.'
+            : '🔗 Evaluación cruzada: evaluá perfiles completos y detectá suplantación.'}
+        </span>
+      </div>
+
+      {/* ── FORMULARIO: MODALIDAD 1 - DATO POR DATO ── */}
+      {searchMode === 'single' && (
+        <form onSubmit={handleLookup} className="rounded-2xl border border-cyan-500/20 bg-slate-900/60 p-5 space-y-4 shadow-xl">
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-2">
+              Seleccioná el tipo de identificador a consultar:
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+              {[
+                { type: 'DNI' as const, icon: CreditCard, label: 'DNI / CUIL', demo: '30111222' },
+                { type: 'EMAIL' as const, icon: Mail, label: 'Email', demo: 'estafador@gmail.com' },
+                { type: 'PHONE' as const, icon: Phone, label: 'Teléfono', demo: '+5491122334455' },
+                { type: 'CBU' as const, icon: Building, label: 'CBU / CVU', demo: '0000003100010000000001' },
+                { type: 'IP' as const, icon: Globe, label: 'IP', demo: '190.191.200.45' },
+                { type: 'DEVICE' as const, icon: Fingerprint, label: 'Device ID', demo: 'a1b2c3d4e5f6' },
+                { type: 'CUIT' as const, icon: Hash, label: 'CUIT', demo: '20301112227' },
+              ].map(({ type, icon: Icon, label, demo }) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => {
+                    setSingleType(type);
+                    setSingleValue(demo);
+                  }}
+                  className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold border transition ${
+                    singleType === type
+                      ? (isInternal ? 'border-indigo-400 bg-indigo-500/20 text-indigo-200 shadow-sm' : 'border-cyan-400 bg-cyan-500/20 text-cyan-200 shadow-sm')
+                      : 'border-white/10 bg-slate-800/40 text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <Icon className={`h-3.5 w-3.5 ${singleType === type ? (isInternal ? 'text-indigo-400' : 'text-cyan-400') : 'text-slate-500'}`} />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center justify-between">
+              <span>Valor de {singleType === 'DNI' ? 'DNI / CUIL' : singleType === 'CBU' ? 'CBU / CVU' : singleType}</span>
+              <span className="text-[11px] text-slate-500 font-mono">
+                {singleType === 'DNI' && 'Ingresá el DNI sin puntos ni espacios (ej: 30111222)'}
+                {singleType === 'EMAIL' && 'Ingresá el correo electrónico a verificar'}
+                {singleType === 'PHONE' && 'Formato internacional recomendado (ej: +5491122334455)'}
+                {singleType === 'CBU' && 'Clave Bancaria Uniforme (22 dígitos numéricos)'}
+                {singleType === 'IP' && 'Dirección IP pública del usuario'}
+              </span>
+            </label>
+            <div className="relative">
+              <input
+                type={singleType === 'EMAIL' ? 'email' : 'text'}
+                value={singleValue}
+                onChange={e => {
+                  if (singleType === 'CBU') {
+                    setSingleValue(e.target.value.replace(/\D/g, '').slice(0, 22));
+                  } else {
+                    setSingleValue(e.target.value);
+                  }
+                }}
+                placeholder={
+                  singleType === 'DNI'
+                    ? 'Ej: 30111222'
+                    : singleType === 'EMAIL'
+                    ? 'Ej: estafador@gmail.com'
+                    : singleType === 'PHONE'
+                    ? 'Ej: +5491122334455'
+                    : singleType === 'CBU'
+                    ? 'Ej: 0000003100010000000001'
+                    : 'Ej: 190.191.200.45'
+                }
+                className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-base text-white placeholder-slate-600 focus:border-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-400/40 transition font-mono shadow-inner"
+              />
+            </div>
+          </div>
+
+          {/* Botones de Prueba Rápida con 1 Clic */}
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
+              <Sparkles className="h-3 w-3 text-cyan-400" /> Demos rápidas:
+            </span>
+            {singleType === 'DNI' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setSingleValue('30111222')}
+                  className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition font-mono"
+                >
+                  🚨 DNI Mula (30111222)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSingleValue('20123456789')}
+                  className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition font-mono"
+                >
+                  🚨 DNI Ficticio (20123456789)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSingleValue('40999888')}
+                  className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20 transition font-mono"
+                >
+                  ✅ DNI Limpio (40999888)
+                </button>
+              </>
+            )}
+
+            {singleType === 'EMAIL' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setSingleValue('estafador@gmail.com')}
+                  className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition font-mono"
+                >
+                  🚨 Phishing (estafador@gmail.com)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSingleValue('invalido@noexiste999.com')}
+                  className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition font-mono"
+                >
+                  ⚠️ Buzón Inexistente (invalido@noexiste999.com)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSingleValue('juan.perez@empresa.com')}
+                  className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20 transition font-mono"
+                >
+                  ✅ Email Legítimo (juan.perez@empresa.com)
+                </button>
+              </>
+            )}
+
+            {singleType === 'CBU' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setSingleValue('0000003100010000000001')}
+                  className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition font-mono"
+                >
+                  🚨 CBU Mula (0000003100010000000001)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSingleValue('0000003199990000000099')}
+                  className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20 transition font-mono"
+                >
+                  ✅ CBU Limpio (0000003199990000000099)
+                </button>
+              </>
+            )}
+
+            {singleType === 'PHONE' && (
+              <button
+                type="button"
+                onClick={() => setSingleValue('+5491122334455')}
+                className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition font-mono"
+              >
+                🚨 Teléfono Sospechoso (+5491122334455)
+              </button>
+            )}
+
+            {singleType === 'IP' && (
+              <button
+                type="button"
+                onClick={() => setSingleValue('190.191.200.45')}
+                className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition font-mono"
+              >
+                🚨 IP Botnet (190.191.200.45)
+              </button>
+            )}
+          </div>
+
+          {error && (
+            <p className="text-xs text-rose-400 flex items-center gap-1.5 bg-rose-950/30 border border-rose-500/30 rounded-xl p-2.5">
+              <XCircle className="h-4 w-4 shrink-0" />
+              {error}
+            </p>
+          )}
+
+          <div className="flex items-center gap-3 pt-2">
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex items-center gap-2 rounded-xl bg-cyan-600 px-6 py-2.5 text-sm font-bold text-white hover:bg-cyan-500 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed transition shadow-lg shadow-cyan-950/40"
+            >
+              {loading ? (
+                <>
+                  <span className="animate-spin h-4 w-4 rounded-full border-2 border-white/30 border-t-white" />
+                  Consultando {singleType}...
+                </>
+              ) : (
+                <>
+                  <Zap className="h-4 w-4" />
+                  Consultar {singleType} en Red
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* ── FORMULARIO: MODALIDAD 2 - POR CONJUNTO DE DATOS ── */}
+      {searchMode === 'set' && (
+        <form onSubmit={handleLookup} className="rounded-2xl border border-indigo-500/25 bg-slate-900/60 p-5 space-y-4 shadow-xl">
+          <div className="flex items-center justify-between pb-2 border-b border-white/5">
+            <div>
+              <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                <Layers className="h-4 w-4 text-indigo-400" />
+                Evaluación Combinada y Detección de Discrepancias (Identity Mismatch)
+              </p>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Ingresá los datos conocidos del perfil. El motor evaluará cada dato y además verificará si existen cruces ilícitos entre ellos (ej: un mismo email o CBU asociado a distintos DNIs).
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1">
+                <CreditCard className="h-3.5 w-3.5 text-cyan-400" /> DNI / CUIL
+              </label>
+              <input
+                type="text"
+                value={dni}
+                onChange={e => setDni(e.target.value)}
+                placeholder="Ej: 30111222"
+                className="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400/30 transition font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1">
+                <Mail className="h-3.5 w-3.5 text-cyan-400" /> Email
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="Ej: estafador@gmail.com"
+                className="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400/30 transition"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1">
+                <Phone className="h-3.5 w-3.5 text-cyan-400" /> Teléfono
+              </label>
+              <input
+                type="text"
+                value={phone}
+                onChange={e => setPhone(e.target.value)}
+                placeholder="Ej: +5491122334455"
+                className="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400/30 transition font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1">
+                <Globe className="h-3.5 w-3.5 text-cyan-400" /> Dirección IP
+              </label>
+              <input
+                type="text"
+                value={ip}
+                onChange={e => setIp(e.target.value)}
+                placeholder="Ej: 190.191.200.45"
+                className="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400/30 transition font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1">
+                <Building className="h-3.5 w-3.5 text-cyan-400" /> CBU / CVU
+              </label>
+              <input
+                type="text"
+                value={cbu}
+                onChange={e => setCbu(e.target.value.replace(/\D/g, '').slice(0, 22))}
+                placeholder="Ej: 0000003100010000000001"
+                maxLength={22}
+                className="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400/30 transition font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1">
+                <Fingerprint className="h-3.5 w-3.5 text-purple-400" /> Device ID / Fingerprint
+              </label>
+              <input
+                type="text"
+                value={device}
+                onChange={e => setDevice(e.target.value)}
+                placeholder="Ej: a1b2c3d4e5f6"
+                className="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400/30 transition font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1">
+                <Hash className="h-3.5 w-3.5 text-cyan-400" /> CUIT
+              </label>
+              <input
+                type="text"
+                value={cuit}
+                onChange={e => setCuit(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                placeholder="Ej: 20301112227"
+                maxLength={11}
+                className="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400/30 transition font-mono"
+              />
+            </div>
+          </div>
+
+          {/* Demos del Conjunto */}
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
+              <Sparkles className="h-3 w-3 text-indigo-400" /> Demos de Conjunto:
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setDni('30111222');
+                setEmail('estafador@gmail.com');
+                setPhone('+5491122334455');
+                setIp('190.191.200.45');
+                setCbu('0000003100010000000001');
+              }}
+              className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition"
+            >
+              🚨 Perfil de Fraude Completo (Mula)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setDni('40999888');
+                setEmail('estafador@gmail.com');
+                setPhone('');
+                setIp('');
+                setCbu('');
+              }}
+              className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/20 transition"
+            >
+              ⚠️ Discrepancia Mismatch (DNI Limpio + Email Estafador)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setDni('40999888');
+                setEmail('juan.perez@empresa.com');
+                setPhone('+5491199887766');
+                setIp('181.44.120.10');
+                setCbu('0000003199990000000099');
+              }}
+              className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20 transition"
+            >
+              ✅ Perfil Totalmente Limpio
+            </button>
+          </div>
+
+          {error && (
+            <p className="text-xs text-rose-400 flex items-center gap-1.5 bg-rose-950/30 border border-rose-500/30 rounded-xl p-2.5">
+              <XCircle className="h-4 w-4 shrink-0" />
+              {error}
+            </p>
+          )}
+
+          <div className="flex items-center gap-3 pt-2">
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-2.5 text-sm font-bold text-white hover:bg-indigo-500 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed transition shadow-lg shadow-indigo-950/40"
+            >
+              {loading ? (
+                <>
+                  <span className="animate-spin h-4 w-4 rounded-full border-2 border-white/30 border-t-white" />
+                  Evaluando correlación en red...
+                </>
+              ) : (
+                <>
+                  <Layers className="h-4 w-4" />
+                  Evaluar Conjunto de Datos
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* ── RESULTADO DE CONSULTA ── */}
       {result && (
-        <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-5 space-y-4 animate-fade-in shadow-xl">
+        <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-5 space-y-5 animate-fade-in shadow-xl">
+          {/* Header del Resultado */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/20 text-cyan-300 font-bold text-xs">
+                ZK
+              </span>
+              <div>
+                <h4 className="text-sm font-bold text-white">
+                  {searchMode === 'single'
+                    ? `Resultado de Consulta: ${singleType === 'DNI' ? 'DNI' : singleType === 'CBU' ? 'CBU/CVU' : singleType}`
+                    : 'Resultado de la Evaluación del Conjunto de Datos'}
+                </h4>
+                <p className="text-[11px] text-slate-400">
+                  Evaluado con arquitectura Zero-Knowledge y Fingerprinting criptográfico
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleMarkOK}
+                disabled={okLoading || okDone}
+                className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-1.5 text-xs font-bold transition active:scale-95 shadow-md ${
+                  okDone
+                    ? 'border-emerald-500/40 bg-emerald-950/60 text-emerald-300 cursor-default'
+                    : 'border-emerald-500/40 bg-emerald-950/30 text-emerald-300 hover:bg-emerald-900/60 hover:text-white'
+                }`}
+                title="Atenúa el score de riesgo restando −35 pts por reporte comunitario"
+              >
+                {okDone ? (
+                  <>
+                    <CheckCircle className="h-4 w-4 text-emerald-400" />
+                    Voto OK Registrado (−35 pts)
+                  </>
+                ) : okLoading ? (
+                  <>
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
+                    Aplicando...
+                  </>
+                ) : (
+                  <>
+                    <ThumbsUp className="h-3.5 w-3.5 text-emerald-400" />
+                    Marcar OK (−35 pts)
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
             {/* Gauge */}
             <ScoreGauge score={result.breakdown.finalScore} />
@@ -328,54 +789,31 @@ function SingleLookupView() {
             {/* Badge + Controles de Acción */}
             <div className="flex-1 space-y-3">
               <div className="flex items-center flex-wrap gap-2.5">
-                <span
-                  className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-sm font-bold ${riskBadgeClass(
-                    result.breakdown.riskLevel
-                  )}`}
-                >
-                  {result.breakdown.riskLevel === 'ALTO' ? (
-                    <ShieldAlert className="h-4 w-4" />
-                  ) : result.breakdown.riskLevel === 'MEDIO' ? (
-                    <AlertTriangle className="h-4 w-4" />
-                  ) : (
-                    <ShieldCheck className="h-4 w-4" />
-                  )}
-                  {result.breakdown.riskLevel === 'ALTO'
-                    ? 'ALTO RIESGO — BLOQUEAR'
-                    : result.breakdown.riskLevel === 'MEDIO'
-                    ? 'RIESGO MEDIO — REVISIÓN MANUAL'
-                    : 'RIESGO BAJO — APROBAR'}
+                {/* Recommendation Badge */}
+                {(() => {
+                  const rec = recommendationBadge(result.breakdown.recommendation);
+                  return (
+                    <span className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-sm font-bold ${rec.class}`}>
+                      <span>{rec.icon}</span>
+                      {rec.text}
+                    </span>
+                  );
+                })()}
+
+                {/* Scope Badge */}
+                <span className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-bold ${
+                  result.scope === 'INTERNAL'
+                    ? 'bg-indigo-500/15 border-indigo-500/25 text-indigo-300'
+                    : 'bg-cyan-500/15 border-cyan-500/25 text-cyan-300'
+                }`}>
+                  {result.scope === 'INTERNAL' ? <Building2 className="h-3 w-3" /> : <Network className="h-3 w-3" />}
+                  {result.scope === 'INTERNAL' ? 'INTERNO' : 'CONSORCIO'}
                 </span>
 
-                {/* ── BOTÓN OK PARA ATENUAR SCORE ─────────── */}
-                <button
-                  type="button"
-                  onClick={handleMarkOK}
-                  disabled={okLoading || okDone}
-                  className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-1.5 text-xs font-bold transition active:scale-95 shadow-md ${
-                    okDone
-                      ? 'border-emerald-500/40 bg-emerald-950/60 text-emerald-300 cursor-default'
-                      : 'border-emerald-500/40 bg-emerald-950/30 text-emerald-300 hover:bg-emerald-900/60 hover:text-white'
-                  }`}
-                  title="Atenúa el score de riesgo restando −35 pts por reporte comunitario"
-                >
-                  {okDone ? (
-                    <>
-                      <CheckCircle className="h-4 w-4 text-emerald-400" />
-                      Voto OK Registrado (−35 pts aplicados)
-                    </>
-                  ) : okLoading ? (
-                    <>
-                      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
-                      Aplicando atenuación...
-                    </>
-                  ) : (
-                    <>
-                      <ThumbsUp className="h-3.5 w-3.5 text-emerald-400" />
-                      Marcar como OK (−35 pts / Bajar Riesgo)
-                    </>
-                  )}
-                </button>
+                {/* Strategy Badge */}
+                <span className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-mono text-slate-400">
+                  {result.breakdown.compositeStrategy === 'MAX_SEVERITY_WEIGHTED' ? '⚖️ Max Severity Weighted' : '🎯 Single Param'}
+                </span>
               </div>
 
               {okDone && (
@@ -385,11 +823,71 @@ function SingleLookupView() {
                 </div>
               )}
 
-              {/* ── ALERTA DE EXISTENCIA DE EMAIL ────────────────────────── */}
+              {/* ── REASON CODES ── */}
+              {result.breakdown.reasonCodes && result.breakdown.reasonCodes.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {result.breakdown.reasonCodes.map(code => {
+                    const cfg = REASON_CODE_LABELS[code];
+                    return (
+                      <span key={code} className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-bold ${cfg.color}`}>
+                        <span>{cfg.icon}</span>
+                        {cfg.label}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* ── CRITICAL OVERRIDE ALERT ── */}
+              {result.breakdown.criticalOverride && (
+                <div className="rounded-xl border-2 border-rose-500/60 bg-rose-950/50 p-3 text-xs text-rose-200 flex items-start gap-2.5 shadow-lg">
+                  <Zap className="h-4 w-4 text-rose-400 shrink-0 mt-0.5 animate-pulse" />
+                  <div>
+                    <span className="font-bold text-rose-300 uppercase tracking-wide">
+                      ⚡ Critical Override Activado
+                    </span>
+                    <p className="mt-0.5 text-rose-200/90 leading-relaxed text-[11px]">
+                      El parámetro <strong className="font-mono">{result.breakdown.criticalOverrideSource}</strong> tiene un score individual ≥85, forzando el score compuesto a nivel crítico.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* ── DEVICE FARM ALERT ── */}
+              {result.breakdown.deviceFarmDetected && (
+                <div className="rounded-xl border-2 border-red-500/60 bg-red-950/50 p-3 text-xs text-red-200 flex items-start gap-2.5 shadow-lg">
+                  <Fingerprint className="h-4 w-4 text-red-400 shrink-0 mt-0.5 animate-pulse" />
+                  <div>
+                    <span className="font-bold text-red-300 uppercase tracking-wide">
+                      📱 MULTI_IDENTITY_DEVICE_FARM Detectada
+                    </span>
+                    <p className="mt-0.5 text-red-200/90 leading-relaxed text-[11px]">
+                      El dispositivo consultado está vinculado a <strong>3 o más CUITs distintos</strong> en los últimos 14 días. Score forzado a nivel crítico (95+).
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* ── ALERTA DE IDENTITY MISMATCH DETECTADA ── */}
+              {result.breakdown.mismatchDetected && (
+                <div className="rounded-xl border border-rose-500/50 bg-rose-950/40 p-3 text-xs text-rose-200 flex items-start gap-2.5 shadow-lg">
+                  <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold text-rose-300 uppercase tracking-wide">
+                      Alerta de Discrepancia de Identidad (Identity Mismatch):
+                    </span>
+                    <p className="mt-0.5 text-rose-200/90 leading-relaxed text-[11px]">
+                      El email o CBU ingresado en este conjunto estuvo vinculado en la red comunitaria a un DNI diferente. Alta sospecha de <strong>cuenta mula o suplantación de identidad</strong> (+45 pts aplicados).
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* ── ALERTA DE EXISTENCIA DE EMAIL ── */}
               {result.breakdown.emailVerification && (
                 <div className="space-y-2 pt-1">
                   {result.breakdown.emailVerification.status === 'NON_EXISTENT' && (
-                    <div className="rounded-2xl border-2 border-rose-500/80 bg-gradient-to-r from-rose-950/80 via-red-950/50 to-slate-900 p-4 text-white shadow-xl shadow-rose-950/40 animate-pulse">
+                    <div className="rounded-2xl border-2 border-rose-500/80 bg-gradient-to-r from-rose-950/80 via-red-950/50 to-slate-900 p-4 text-white shadow-xl shadow-rose-950/40">
                       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                         <div className="flex items-start gap-3">
                           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-600 text-white font-black text-xl shadow-lg">
@@ -405,7 +903,7 @@ function SingleLookupView() {
                               </span>
                             </div>
                             <p className="mt-1 text-xs text-rose-200/90 leading-relaxed">
-                              El correo <strong>{result.breakdown.emailVerification.email}</strong> no posee registros DNS MX o el buzón fue rechazado por el servidor (550 Mailbox not found). Alta probabilidad de <strong>identidad sintética o cuenta ficticia para estafas</strong>.
+                              El correo <strong>{result.breakdown.emailVerification.email}</strong> no posee servidores MX o el buzón fue rechazado (550 Mailbox not found).
                             </p>
                           </div>
                         </div>
@@ -416,7 +914,7 @@ function SingleLookupView() {
                           className="shrink-0 flex items-center gap-1.5 rounded-xl border border-rose-400/40 bg-rose-600/30 px-3.5 py-2 text-xs font-bold text-white hover:bg-rose-600/60 active:scale-95 transition whitespace-nowrap self-start sm:self-auto"
                         >
                           <Mail className="h-3.5 w-3.5" />
-                          {emailPingLoading ? 'Comprobando entrega...' : 'Probar Envío / Ver Rebote'}
+                          {emailPingLoading ? 'Comprobando...' : 'Probar Envío / Ver Rebote'}
                         </button>
                       </div>
                     </div>
@@ -427,8 +925,8 @@ function SingleLookupView() {
                       <div className="flex items-center gap-2.5 text-xs text-amber-200">
                         <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
                         <div>
-                          <span className="font-bold text-amber-300">Proveedor de Correo Temporal / Descartable detectado:</span>
-                          <p className="text-[11px] text-amber-300/80 mt-0.5">El dominio @{result.breakdown.emailVerification.domain} es un servicio descartable (10-minute mail). (+25 pts de penalidad).</p>
+                          <span className="font-bold text-amber-300">Proveedor de Correo Temporal / Descartable:</span>
+                          <p className="text-[11px] text-amber-300/80 mt-0.5">El dominio @{result.breakdown.emailVerification.domain} es un servicio temporal (+25 pts).</p>
                         </div>
                       </div>
                       <button
@@ -493,51 +991,156 @@ function SingleLookupView() {
                 </div>
               )}
 
-              {/* Factores del Modelo Probabilístico */}
-              <div className="space-y-1.5 text-xs bg-black/30 rounded-xl p-3 border border-white/5">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Reportes acumulados (Decaimiento exponencial Half-life)</span>
-                  <span className="font-mono font-bold text-slate-200">
-                    +{result.breakdown.historicalReportsScore} pts
-                  </span>
+              {/* ── DESGLOSE DATO POR DATO ── */}
+              {result.breakdown.identifierDetails && result.breakdown.identifierDetails.length > 0 && (
+                <div className="space-y-2 pt-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                      <Filter className="h-3.5 w-3.5 text-cyan-400" />
+                      {result.breakdown.identifierDetails.length > 1
+                        ? 'Desglose Dato por Dato del Conjunto Evaluado:'
+                        : 'Resultado del Identificador Consultado:'}
+                    </span>
+                    <span className="text-[11px] font-mono text-slate-500">
+                      {result.breakdown.identifierDetails.filter(d => d.matched).length} con incidentes / {result.breakdown.identifierDetails.length} consultados
+                    </span>
+                  </div>
+
+                  <div className={`grid gap-2.5 ${result.breakdown.identifierDetails.length > 1 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1'}`}>
+                    {result.breakdown.identifierDetails.map(detail => (
+                      <div
+                        key={detail.type}
+                        className={`rounded-xl p-3 border text-xs transition ${
+                          detail.matched
+                            ? 'bg-rose-950/20 border-rose-500/40 text-rose-200'
+                            : 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="font-bold flex items-center gap-1.5 text-white">
+                            {detail.type === 'DNI' && <CreditCard className="h-3.5 w-3.5 text-cyan-400" />}
+                            {detail.type === 'EMAIL' && <Mail className="h-3.5 w-3.5 text-cyan-400" />}
+                            {detail.type === 'PHONE' && <Phone className="h-3.5 w-3.5 text-cyan-400" />}
+                            {detail.type === 'CBU' && <Building className="h-3.5 w-3.5 text-cyan-400" />}
+                            {detail.type === 'IP' && <Globe className="h-3.5 w-3.5 text-cyan-400" />}
+                            {detail.type === 'DEVICE' && <Fingerprint className="h-3.5 w-3.5 text-purple-400" />}
+                            {detail.type === 'CUIT' && <Hash className="h-3.5 w-3.5 text-cyan-400" />}
+                            {detail.type === 'DNI' ? 'DNI / CUIL' : detail.type === 'CBU' ? 'CBU / CVU' : detail.type === 'DEVICE' ? 'Device ID' : detail.type}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                              detail.matched
+                                ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                                : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                            }`}
+                          >
+                            {detail.matched
+                              ? `🚨 ${detail.reportsCount} ${detail.reportsCount === 1 ? 'reporte' : 'reportes'}`
+                              : '✅ Sin reportes'}
+                          </span>
+                        </div>
+
+                        <div className="font-mono text-[11px] text-slate-300 mb-1">
+                          {detail.valueMasked}
+                        </div>
+
+                        {detail.matched ? (
+                          <div className="text-[11px] text-rose-300/90 space-y-0.5">
+                            <p>Reportado en: <strong>{detail.distinctEntitiesCount}</strong> entidad(es)</p>
+                            {detail.categories.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {detail.categories.map(c => (
+                                  <span key={c} className="rounded bg-rose-500/30 px-1.5 py-0.2 text-[9px] font-bold text-rose-200">
+                                    {c.replace(/_/g, ' ')}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-emerald-400/90">
+                            Identificador sin antecedentes en la red.
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
+              )}
+
+              {/* Factores del Motor de Scoring v2 — 4 Dimensiones */}
+              <div className="space-y-1.5 text-xs bg-black/30 rounded-xl p-3 border border-white/5">
+                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Desglose del Motor Matemático (4 Dimensiones)</div>
+
+                {/* Dim 1: Severidad Base */}
                 <div className="flex items-center justify-between">
-                  <span className={`flex items-center gap-1 ${result.breakdown.mismatchDetected ? 'text-rose-400 font-semibold' : 'text-slate-500'}`}>
-                    {result.breakdown.mismatchDetected ? <AlertTriangle className="h-3.5 w-3.5" /> : null}
-                    Discrepancia de Identidad (Mismatch)
-                    {result.breakdown.mismatchDetected && (
-                      <span className="ml-1 rounded bg-rose-500/20 px-1 py-0.5 text-[10px] font-bold text-rose-400 border border-rose-500/30">DETECTADO</span>
+                  <span className="text-slate-400 flex items-center gap-1">
+                    <span className="text-[10px]">①</span> Severidad Base (con Time Decay)
+                    {result.breakdown.timeDecayApplied && (
+                      <span className="ml-1 rounded bg-slate-600/30 px-1 py-0.5 text-[9px] font-bold text-slate-400 border border-slate-500/20">DECAY ×{result.breakdown.timeDecayFactor.toFixed(2)}</span>
                     )}
                   </span>
-                  <span className={`font-mono font-bold ${result.breakdown.mismatchDetected ? 'text-rose-400' : 'text-slate-600'}`}>
-                    +{result.breakdown.mismatchPenalty} pts
+                  <span className="font-mono font-bold text-slate-200">+{result.breakdown.historicalReportsScore} pts</span>
+                </div>
+
+                {/* Dim 2: Multi-Entity + Velocity + Mismatch */}
+                <div className="flex items-center justify-between">
+                  <span className={`flex items-center gap-1 ${result.breakdown.mismatchDetected ? 'text-rose-400 font-semibold' : 'text-slate-500'}`}>
+                    <span className="text-[10px]">②</span> Discrepancia de Identidad
+                    {result.breakdown.mismatchDetected && <span className="ml-1 rounded bg-rose-500/20 px-1 py-0.5 text-[10px] font-bold text-rose-400 border border-rose-500/30">DETECTADO</span>}
                   </span>
+                  <span className={`font-mono font-bold ${result.breakdown.mismatchDetected ? 'text-rose-400' : 'text-slate-600'}`}>+{result.breakdown.mismatchPenalty} pts</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className={`flex items-center gap-1 ${result.breakdown.velocityTriggered ? 'text-amber-400 font-semibold' : 'text-slate-500'}`}>
-                    {result.breakdown.velocityTriggered ? <Zap className="h-3.5 w-3.5" /> : null}
-                    Velocidad de ataque (Ráfaga &lt;24h)
-                    {result.breakdown.velocityTriggered && (
-                      <span className="ml-1 rounded bg-amber-500/20 px-1 py-0.5 text-[10px] font-bold text-amber-400 border border-amber-500/30">ACTIVO</span>
-                    )}
+                    <span className="text-[10px]">②</span> Velocity Spike
+                    {result.breakdown.velocityTriggered && <span className="ml-1 rounded bg-amber-500/20 px-1 py-0.5 text-[10px] font-bold text-amber-400 border border-amber-500/30">ACTIVO</span>}
                   </span>
-                  <span className={`font-mono font-bold ${result.breakdown.velocityTriggered ? 'text-amber-400' : 'text-slate-600'}`}>
-                    +{result.breakdown.velocityPenalty} pts
-                  </span>
+                  <span className={`font-mono font-bold ${result.breakdown.velocityTriggered ? 'text-amber-400' : 'text-slate-600'}`}>+{result.breakdown.velocityPenalty} pts</span>
                 </div>
+                {result.breakdown.multiEntityMultiplier > 1 && (
+                  <div className="flex items-center justify-between text-purple-400 font-semibold">
+                    <span className="flex items-center gap-1">
+                      <span className="text-[10px]">②</span>
+                      <Network className="h-3.5 w-3.5" /> Multi-Entidad Multiplicador
+                    </span>
+                    <span className="font-mono font-bold">×{result.breakdown.multiEntityMultiplier.toFixed(2)}</span>
+                  </div>
+                )}
 
-                {/* Penalidad de Email si aplica */}
+                {/* Dim 3: Device Farm */}
+                {result.breakdown.deviceFarmDetected && (
+                  <div className="flex items-center justify-between text-red-400 font-semibold">
+                    <span className="flex items-center gap-1">
+                      <span className="text-[10px]">③</span>
+                      <Fingerprint className="h-3.5 w-3.5" /> Device Farm Override
+                      <span className="ml-1 rounded bg-red-500/20 px-1 py-0.5 text-[10px] font-bold border border-red-500/30">FARM DETECTADA</span>
+                    </span>
+                    <span className="font-mono font-bold">→ {result.breakdown.deviceFarmScore} pts</span>
+                  </div>
+                )}
+
+                {/* Email penalty */}
                 {result.breakdown.emailPenalty ? (
                   <div className="flex items-center justify-between text-rose-400 font-semibold">
                     <span className="flex items-center gap-1">
                       <Mail className="h-3.5 w-3.5" />
                       Penalidad por Correo ({result.breakdown.emailVerification?.badgeText})
                     </span>
-                    <span className="font-mono font-bold">
-                      +{result.breakdown.emailPenalty} pts
-                    </span>
+                    <span className="font-mono font-bold">+{result.breakdown.emailPenalty} pts</span>
                   </div>
                 ) : null}
+
+                {/* Dim 4: Critical Override */}
+                {result.breakdown.criticalOverride && (
+                  <div className="flex items-center justify-between text-rose-300 font-semibold">
+                    <span className="flex items-center gap-1">
+                      <span className="text-[10px]">④</span>
+                      <Zap className="h-3.5 w-3.5" /> Critical Override ({result.breakdown.criticalOverrideSource})
+                    </span>
+                    <span className="font-mono font-bold">FORZADO</span>
+                  </div>
+                )}
 
                 <div className="border-t border-white/10 pt-2 flex items-center justify-between font-bold">
                   <span className="text-white">Score Final Computado</span>
@@ -643,7 +1246,7 @@ interface BulkRowResult {
   phoneMasked: string;
   ipMasked: string;
   cbuMasked: string;
-  emailStatus: 'EXISTING' | 'NON_EXISTENT' | 'DISPOSABLE' | 'INVALID_FORMAT' | 'NONE';
+  emailStatus: 'EXISTING' | 'NON_EXISTENT' | 'DISPOSABLE' | 'NONE';
   score: number;
   level: 'BAJO' | 'MEDIO' | 'ALTO' | 'ERROR';
   tipologia: string;
@@ -1123,6 +1726,8 @@ function ReportFraudModule() {
   const [phone, setPhone] = useState('');
   const [ip, setIp] = useState('');
   const [cbu, setCbu] = useState('');
+  const [device, setDevice] = useState('');
+  const [cuit, setCuit] = useState('');
   const [category, setCategory] = useState<IncidentCategory>('MULE_ACCOUNT');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -1132,8 +1737,8 @@ function ReportFraudModule() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!dni && !email && !phone && !ip && !cbu) {
-      setError('Ingresá al menos un identificador (DNI, Email, Teléfono, IP o CBU/CVU) para reportar.');
+    if (!dni && !email && !phone && !ip && !cbu && !device && !cuit) {
+      setError('Ingresá al menos un identificador para reportar.');
       return;
     }
     setError('');
@@ -1146,6 +1751,8 @@ function ReportFraudModule() {
         phone: phone || undefined,
         ip: ip || undefined,
         cbu: cbu || undefined,
+        device: device || undefined,
+        cuit: cuit || undefined,
         incidentCategory: category,
       });
       setSuccess(true);
@@ -1154,6 +1761,8 @@ function ReportFraudModule() {
       setPhone('');
       setIp('');
       setCbu('');
+      setDevice('');
+      setCuit('');
       setTimeout(() => setSuccess(false), 4000);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Error al registrar el reporte.';
@@ -1183,7 +1792,7 @@ function ReportFraudModule() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
             <label className="block text-xs text-slate-400 mb-1">DNI / CUIL</label>
             <input
@@ -1216,7 +1825,7 @@ function ReportFraudModule() {
           </div>
           <div>
             <label className="block text-xs text-slate-400 mb-1 flex items-center gap-1">
-              <Globe className="h-3 w-3 text-cyan-400" /> Dirección IP
+              <Globe className="h-3 w-3 text-cyan-400" /> IP
             </label>
             <input
               type="text"
@@ -1228,7 +1837,7 @@ function ReportFraudModule() {
           </div>
           <div>
             <label className="block text-xs text-slate-400 mb-1 flex items-center gap-1">
-              <Building className="h-3 w-3 text-cyan-400" /> CBU / CVU (22 d)
+              <Building className="h-3 w-3 text-cyan-400" /> CBU / CVU
             </label>
             <input
               type="text"
@@ -1239,7 +1848,85 @@ function ReportFraudModule() {
               className="w-full rounded-xl border border-white/10 bg-slate-800 px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:border-rose-500/50 focus:outline-none focus:ring-1 focus:ring-rose-500/30 transition font-mono"
             />
           </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1 flex items-center gap-1">
+              <Fingerprint className="h-3 w-3 text-purple-400" /> Device ID
+            </label>
+            <input
+              type="text"
+              value={device}
+              onChange={e => setDevice(e.target.value)}
+              placeholder="a1b2c3d4e5f6"
+              className="w-full rounded-xl border border-white/10 bg-slate-800 px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:border-rose-500/50 focus:outline-none focus:ring-1 focus:ring-rose-500/30 transition font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1 flex items-center gap-1">
+              <Hash className="h-3 w-3 text-cyan-400" /> CUIT
+            </label>
+            <input
+              type="text"
+              value={cuit}
+              onChange={e => setCuit(e.target.value.replace(/\D/g, '').slice(0, 11))}
+              placeholder="20301112227"
+              maxLength={11}
+              className="w-full rounded-xl border border-white/10 bg-slate-800 px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:border-rose-500/50 focus:outline-none focus:ring-1 focus:ring-rose-500/30 transition font-mono"
+            />
+          </div>
         </div>
+
+        {/* Botones de plantilla de reporte */}
+        <div className="flex flex-wrap items-center gap-2 pt-0.5">
+          <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
+            <Sparkles className="h-3 w-3 text-rose-400" /> Carga rápida de prueba:
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setDni('30111222');
+              setEmail('');
+              setPhone('');
+              setIp('');
+              setCbu('');
+              setCategory('MULE_ACCOUNT');
+            }}
+            className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition font-mono"
+          >
+            🪪 Solo DNI (Reporte Unitario)
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setDni('');
+              setEmail('');
+              setPhone('');
+              setIp('');
+              setCbu('0000003100010000000001');
+              setCategory('MULE_ACCOUNT');
+            }}
+            className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition font-mono"
+          >
+            🏦 Solo CBU (Reporte Unitario)
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setDni('38452190');
+              setEmail('estafador.red@gmail.com');
+              setPhone('+5491122334455');
+              setIp('190.191.200.45');
+              setCbu('0000003100010000000001');
+              setCategory('IDENTITY_THEFT');
+            }}
+            className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1 text-[11px] font-semibold text-indigo-300 hover:bg-indigo-500/20 transition font-mono"
+          >
+            🔗 Conjunto Completo (DNI + Email + Tel + IP + CBU)
+          </button>
+        </div>
+
+        <p className="text-[11px] text-slate-400">
+          💡 Podés reportar <strong>un dato individual</strong> (ej: solo el DNI de un estafador o solo el CBU de una cuenta mula) o un <strong>conjunto de datos relacionados</strong>. El motor genera tokens irreversibles y preserva el secreto bancario.
+        </p>
 
         {/* Categoría */}
         <div>
@@ -1699,6 +2386,14 @@ export default function FintechDashboard({
 }: {
   activeModule?: FintechModule;
 }) {
+  const { initSeedData, seedReady } = useConsortiumStore();
+
+  useEffect(() => {
+    if (!seedReady) {
+      initSeedData();
+    }
+  }, [initSeedData, seedReady]);
+
   const showAll = !activeModule;
 
   return (
