@@ -660,6 +660,11 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           ),
         }));
 
+        if (SupabaseService.isAvailable()) {
+          SupabaseService.persistFintech(newFintech).catch(console.error);
+          SupabaseService.recordAuditLog('SuperAdmin', 'FINTECH_ADDED', `Nueva entidad registrada: ${name}`).catch(console.error);
+        }
+
         return newFintech;
       },
 
@@ -676,6 +681,11 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             `${state.fintechs.find(f => f.id === id)?.name || id}: trustWeight → ${clamped.toFixed(2)}`
           ),
         }));
+
+        if (SupabaseService.isAvailable()) {
+          SupabaseService.updateTrustWeight(id, clamped).catch(console.error);
+          SupabaseService.recordAuditLog('SuperAdmin', 'TRUST_WEIGHT_UPDATED', `Entidad ${id}: trustWeight → ${clamped.toFixed(2)}`).catch(console.error);
+        }
       },
 
       toggleFintechStatus: (id: string) => {
@@ -683,6 +693,12 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           const fintech = state.fintechs.find(f => f.id === id);
           if (!fintech) return state;
           const newStatus = fintech.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
+
+          if (SupabaseService.isAvailable()) {
+            SupabaseService.toggleFintechStatus(id, newStatus).catch(console.error);
+            SupabaseService.recordAuditLog('SuperAdmin', 'STATUS_CHANGED', `${fintech.name}: ${fintech.status} → ${newStatus}`).catch(console.error);
+          }
+
           return {
             fintechs: state.fintechs.map(f =>
               f.id === id ? { ...f, status: newStatus } : f

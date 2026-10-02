@@ -18,6 +18,9 @@ export interface SupabaseConfig {
 const STORAGE_KEY_URL = 'antifraude_supabase_url';
 const STORAGE_KEY_KEY = 'antifraude_supabase_anon_key';
 
+const DEFAULT_SUPABASE_URL = 'https://yaehffwiehzdzykrzuge.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_mVVAkEq5XBG2H3bNIsOjGA_bJBTMfgO';
+
 /**
  * Obtiene la configuración activa de Supabase
  */
@@ -39,6 +42,14 @@ export function getSupabaseConfig(): SupabaseConfig {
       url = localUrl;
       anonKey = localKey;
     }
+  }
+
+  // 3. Fallback automático a las credenciales activas del proyecto para funcionamiento autónomo en Vercel
+  if (!url) {
+    url = DEFAULT_SUPABASE_URL;
+  }
+  if (!anonKey) {
+    anonKey = DEFAULT_SUPABASE_ANON_KEY;
   }
 
   // Limpiar URL eliminando barra final si existe

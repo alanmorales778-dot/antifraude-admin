@@ -356,4 +356,100 @@ export class SupabaseService {
       return false;
     }
   }
+
+  /**
+   * Registra una nueva entidad financiera en Supabase
+   */
+  static async persistFintech(entity: FintechEntity): Promise<boolean> {
+    if (!this.isAvailable()) return false;
+
+    try {
+      const res = await supabaseFetch('fintech_entities', {
+        method: 'POST',
+        prefer: 'resolution=merge-duplicates',
+        body: {
+          id: entity.id,
+          name: entity.name,
+          api_key: entity.apiKey,
+          trust_weight: entity.trustWeight,
+          status: entity.status,
+          queries_count: entity.queriesCount,
+          reports_count: entity.reportsCount,
+          false_positives_count: entity.falsePositivesCount,
+          updated_at: new Date().toISOString(),
+        },
+      });
+      return !res.error;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Actualiza el peso de confianza de una entidad en Supabase
+   */
+  static async updateTrustWeight(id: string, weight: number): Promise<boolean> {
+    if (!this.isAvailable()) return false;
+
+    try {
+      const res = await supabaseFetch(`fintech_entities?id=eq.${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: {
+          trust_weight: weight,
+          updated_at: new Date().toISOString(),
+        },
+      });
+      return !res.error;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Modifica el estado activo/suspendido de una entidad en Supabase
+   */
+  static async toggleFintechStatus(id: string, status: 'ACTIVE' | 'SUSPENDED'): Promise<boolean> {
+    if (!this.isAvailable()) return false;
+
+    try {
+      const res = await supabaseFetch(`fintech_entities?id=eq.${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: {
+          status,
+          updated_at: new Date().toISOString(),
+        },
+      });
+      return !res.error;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Persiste un registro de auditoría individual en Supabase
+   */
+  static async recordAuditLog(
+    actor: string,
+    action: string,
+    details: string,
+    scope: ServiceScope = 'CONSORTIUM'
+  ): Promise<boolean> {
+    if (!this.isAvailable()) return false;
+
+    try {
+      const res = await supabaseFetch('audit_logs', {
+        method: 'POST',
+        body: {
+          timestamp: new Date().toISOString(),
+          actor,
+          action,
+          details,
+          scope,
+        },
+      });
+      return !res.error;
+    } catch {
+      return false;
+    }
+  }
 }

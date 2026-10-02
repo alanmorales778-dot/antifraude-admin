@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS public.fintech_entities (
 -- Almacena únicamente hashes normalizados con salting. Jamás PII en claro.
 CREATE TABLE IF NOT EXISTS public.identity_nodes (
     id TEXT PRIMARY KEY, -- Hash o identificador único
-    identifier_type TEXT NOT NULL CHECK (identifier_type IN ('DNI', 'EMAIL', 'PHONE', 'IP', 'CBU', 'DEVICE', 'CUIT')),
+    identifier_type TEXT NOT NULL CHECK (identifier_type IN ('DNI', 'EMAIL', 'PHONE', 'IP', 'CBU', 'CBU_CVU', 'TAX_ID', 'CARD_BIN', 'DEVICE', 'CUIT')),
     hash TEXT NOT NULL,
     first_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
