@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -35,17 +35,17 @@ import { useConsortiumStore } from '@/lib/store';
 import { ServiceScope } from '@/lib/types';
 
 const NAV_ITEMS = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, description: 'KPIs y estadísticas' },
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, description: 'KPIs y estadÃ­sticas' },
   { id: 'consulta', label: 'Consulta de Riesgo', icon: Search, description: 'Lookup unitario y combinado ZK' },
   { id: 'consulta_masiva', label: 'Consultas Masivas', icon: FileSpreadsheet, description: 'Subir CSV y descargar layout' },
   { id: 'reporte', label: 'Reportar Fraude', icon: ShieldAlert, description: 'Ingreso de incidentes' },
-  { id: 'csv', label: 'Importación CSV', icon: Upload, description: 'Carga masiva de fraudes' },
+  { id: 'csv', label: 'ImportaciÃ³n CSV', icon: Upload, description: 'Carga masiva de fraudes' },
   { id: 'historial', label: 'Historial', icon: History, description: 'Mis reportes' },
   { id: 'analytics', label: 'Analytics', icon: TrendingUp, description: 'Inteligencia de amenazas' },
-  { id: 'api', label: 'API & Webhooks', icon: Key, description: 'Integración y claves' },
+  { id: 'api', label: 'API & Webhooks', icon: Key, description: 'IntegraciÃ³n y claves' },
 ];
 
-// Mapea cada tab al módulo dentro de FintechDashboard
+// Mapea cada tab al mÃ³dulo dentro de FintechDashboard
 type FintechModule = 'lookup' | 'bulk_lookup' | 'report' | 'csv' | 'history';
 const TAB_TO_MODULE: Record<string, FintechModule> = {
   consulta: 'lookup',
@@ -55,9 +55,9 @@ const TAB_TO_MODULE: Record<string, FintechModule> = {
   historial: 'history',
 };
 
-// ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // SERVICE SCOPE SWITCHER
-// ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function ServiceSwitcher({
   active,
@@ -110,9 +110,9 @@ function ServiceSwitcher({
   );
 }
 
-// ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // PORTAL PRINCIPAL
-// ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function EntityPortal({
   fintechId,
@@ -165,15 +165,15 @@ export default function EntityPortal({
   const isInternal = activeService === 'INTERNAL';
 
   return (
-    <div className="min-h-screen flex bg-[#13171e] text-[#e2e8f0] font-sans selection:bg-[#1b3b36] selection:text-white">
-      {/* ── SIDEBAR ─────────────────────────────────────────── */}
+    <div className="min-h-screen flex bg-[#070d18] text-[#e2e8f0] font-sans selection:bg-[#1b3b36] selection:text-white">
+      {/* â”€â”€ SIDEBAR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 w-60 flex flex-col bg-[#171c24] border-r border-[#29313d] transition-transform duration-300 ${
+        className={`fixed inset-y-0 left-0 z-40 w-60 flex flex-col bg-[#0a1222] border-r border-[#17253d] transition-transform duration-300 ${
           isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
       >
         {/* Logo + entidad activa */}
-        <div className="px-4 py-5 border-b border-[#29313d]">
+        <div className="px-4 py-5 border-b border-[#17253d]">
           <div className="flex items-center gap-3 mb-3">
             <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 border transition-colors ${
               isInternal
@@ -237,7 +237,7 @@ export default function EntityPortal({
                     ? isInternal
                       ? 'bg-[#1b2b3d] text-[#e0ecf7] border border-[#2d4663] font-semibold shadow-2xs'
                       : 'bg-[#18332c] text-[#d6ede7] border border-[#2c554a] font-semibold shadow-2xs'
-                    : 'text-[#7e8c9d] hover:text-[#d3dce6] hover:bg-[#1e2430] border border-transparent font-medium'
+                    : 'text-[#7e8c9d] hover:text-[#d3dce6] hover:bg-[#13233e]/50 border border-transparent font-medium'
                 }`}
               >
                 <Icon className={`h-4 w-4 shrink-0 ${
@@ -254,16 +254,16 @@ export default function EntityPortal({
           })}
         </nav>
 
-        {/* Stats rápidas + logout */}
-        <div className="p-3 border-t border-[#29313d] space-y-2 bg-[#141820]">
+        {/* Stats rÃ¡pidas + logout */}
+        <div className="p-3 border-t border-[#17253d] space-y-2 bg-[#141820]">
           <div className="grid grid-cols-2 gap-1.5 text-center">
-            <div className="rounded-md bg-[#1a202a] border border-[#28323f] p-2">
+            <div className="rounded-md bg-[#060c17] border border-[#17253d] p-2">
               <p className="text-sm font-bold font-mono text-[#d6e3f2]">
                 {activeFintech?.queriesCount ?? 0}
               </p>
               <p className="text-[9px] text-[#718096] uppercase tracking-wide">Consultas</p>
             </div>
-            <div className="rounded-md bg-[#1a202a] border border-[#28323f] p-2">
+            <div className="rounded-md bg-[#060c17] border border-[#17253d] p-2">
               <p className="text-sm font-bold font-mono text-[#e57373]">
                 {activeFintech?.reportsCount ?? 0}
               </p>
@@ -273,10 +273,10 @@ export default function EntityPortal({
 
           <button
             onClick={onLogout}
-            className="w-full flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-[#9faec0] hover:text-[#fc8181] hover:bg-[#2b1f1f] border border-[#29313d] transition-all"
+            className="w-full flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-[#9faec0] hover:text-[#fc8181] hover:bg-[#2b1f1f] border border-[#17253d] transition-all"
           >
             <LogOut className="h-3.5 w-3.5" />
-            <span>Cerrar Sesión</span>
+            <span>Cerrar SesiÃ³n</span>
           </button>
         </div>
       </aside>
@@ -289,10 +289,10 @@ export default function EntityPortal({
         />
       )}
 
-      {/* ── CONTENIDO PRINCIPAL ──────────────────────────────── */}
+      {/* â”€â”€ CONTENIDO PRINCIPAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="flex-1 lg:ml-60 flex flex-col min-h-screen">
         {/* Header */}
-        <header className="sticky top-0 z-20 flex items-center gap-4 px-6 py-3.5 border-b border-[#29313d] bg-[#171c24]/95 backdrop-blur-sm shadow-2xs">
+        <header className="sticky top-0 z-20 flex items-center gap-4 px-6 py-3.5 border-b border-[#17253d] bg-[#0a1222]/95 backdrop-blur-sm shadow-2xs">
           <button
             className="lg:hidden text-[#718096] hover:text-white transition"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -361,7 +361,7 @@ export default function EntityPortal({
             />
           )}
 
-          {/* Lookup, Reporte, CSV e Historial usan FintechDashboard con módulo activo */}
+          {/* Lookup, Reporte, CSV e Historial usan FintechDashboard con mÃ³dulo activo */}
           {isFintechModule && (
             <FintechDashboard activeModule={TAB_TO_MODULE[activeTab]} />
           )}
@@ -400,4 +400,5 @@ export default function EntityPortal({
     </div>
   );
 }
+
 
