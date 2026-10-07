@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState } from 'react';
 import {
@@ -20,6 +20,9 @@ import {
 } from 'lucide-react';
 import { useConsortiumStore } from '@/lib/store';
 import DatabaseConfigModal from '@/components/DatabaseConfigModal';
+import ScoringLabAdmin from '@/components/ScoringLabAdmin';
+import RegulatoryAuditTable from '@/components/RegulatoryAuditTable';
+import AdminUsersManagement from '@/components/AdminUsersManagement';
 
 interface AdminConsortiumPortalProps {
   onLogout: () => void;
@@ -30,6 +33,7 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
     adminSession,
     fintechs,
     auditLogs,
+    appUsers,
     addFintech,
     updateTrustWeight,
     toggleFintechStatus,
@@ -37,11 +41,21 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
     supabaseLatencyMs,
   } = useConsortiumStore();
 
-  const [activeTab, setActiveTab] = useState<'entities' | 'audit' | 'network'>('entities');
+  const [activeTab, setActiveTab] = useState<'entities' | 'audit' | 'network' | 'scoring-lab' | 'users'>('entities');
   const [newEntityName, setNewEntityName] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [isDbModalOpen, setIsDbModalOpen] = useState(false);
   const [filterQuery, setFilterQuery] = useState('');
+
+  // Auto-seleccionar pestaña si está en la URL (ej: #scoring, ?tab=scoring)
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const hash = window.location.hash.toLowerCase();
+    const search = window.location.search.toLowerCase();
+    if (hash.includes('scoring') || hash.includes('score') || search.includes('scoring') || search.includes('score')) {
+      setActiveTab('scoring-lab');
+    }
+  }, []);
 
   const handleCreateEntity = (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,6 +95,20 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Acceso Rápido al Control de Scores */}
+            <button
+              onClick={() => setActiveTab('scoring-lab')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                activeTab === 'scoring-lab'
+                  ? 'bg-blue-600/30 border-blue-500 text-cyan-300 shadow-[0_0_12px_rgba(59,130,246,0.3)]'
+                  : 'bg-[#0e1d38] border-[#1e3a6a] text-cyan-300 hover:bg-[#152b52]'
+              }`}
+            >
+              <Sliders className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Control de Scores</span>
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse ml-0.5" />
+            </button>
+
             {/* Supabase Status Indicator */}
             <button
               onClick={() => setIsDbModalOpen(true)}
@@ -113,8 +141,8 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
       {/* ── Main Workspace ── */}
       <main className="max-w-7xl mx-auto w-full px-6 py-8 flex-1 space-y-6">
         {/* Navigation Tabs */}
-        <div className="flex items-center justify-between border-b border-[#17253d] pb-4">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between border-b border-[#17253d] pb-4 gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => setActiveTab('entities')}
               className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all ${
@@ -146,6 +174,33 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
               }`}
             >
               Telemetría & Salud de Red
+            </button>
+
+            <button
+              onClick={() => setActiveTab('scoring-lab')}
+              className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                activeTab === 'scoring-lab'
+                  ? 'bg-[#1d4ed8] text-white shadow-[0_0_15px_rgba(29,78,216,0.35)] border border-[#3b82f6]/50'
+                  : 'bg-[#0d182e] text-[#94a3b8] hover:bg-[#13233e] hover:text-white border border-[#1e365b]'
+              }`}
+            >
+              <Sliders className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Gestión de Scores de Fraude</span>
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 ml-1">
+                Motor Dual
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('users')}
+              className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                activeTab === 'users'
+                  ? 'bg-[#1d4ed8] text-white shadow-[0_0_15px_rgba(29,78,216,0.35)] border border-[#3b82f6]/50'
+                  : 'bg-[#0d182e] text-[#94a3b8] hover:bg-[#13233e] hover:text-white border border-[#1e365b]'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5 text-blue-400" />
+              <span>Gestión de Accesos & Roles ({appUsers?.length || 0})</span>
             </button>
           </div>
 
@@ -307,44 +362,8 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
           </div>
         )}
 
-        {/* ── TAB 2: Auditoría ── */}
-        {activeTab === 'audit' && (
-          <div className="bg-[#0d182e] border border-[#1e365b] rounded-xl overflow-hidden shadow-lg">
-            <div className="p-4 border-b border-[#17253d] bg-[#091222] flex items-center justify-between">
-              <div>
-                <h3 className="text-xs font-bold text-white uppercase tracking-wide flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-[#34d399]" />
-                  <span>Trazabilidad Criptográfica Inmutable</span>
-                </h3>
-                <p className="text-[11px] text-[#94a3b8] mt-0.5">
-                  Registro auditado bajo estándar BCRA Comunicación A7370 y sincronizado en tiempo real con Supabase.
-                </p>
-              </div>
-              <span className="text-xs font-mono text-[#60a5fa] bg-[#13233e] px-2.5 py-1 rounded border border-[#203c68]">
-                {auditLogs.length} eventos registrados
-              </span>
-            </div>
-
-            <div className="divide-y divide-[#17253d] max-h-[550px] overflow-y-auto font-mono text-xs">
-              {auditLogs.map((log, idx) => (
-                <div key={idx} className="p-3.5 hover:bg-[#091222] transition flex items-start gap-4">
-                  <span className="text-[11px] text-[#64748b] shrink-0">
-                    {new Date(log.timestamp).toLocaleTimeString()}
-                  </span>
-                  <span className="px-2 py-0.5 rounded bg-[#13233e] text-[#93c5fd] border border-[#203c68] font-bold text-[10px] shrink-0">
-                    {log.action}
-                  </span>
-                  <span className="font-semibold text-[#60a5fa] shrink-0">
-                    [{log.actor}]
-                  </span>
-                  <span className="text-[#cbd5e1] flex-1 font-sans text-xs">
-                    {log.details}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* ── TAB 2: Auditoría Regulatoria Estándar BCRA A7370 ── */}
+        {activeTab === 'audit' && <RegulatoryAuditTable />}
 
         {/* ── TAB 3: Telemetría ── */}
         {activeTab === 'network' && (
@@ -388,6 +407,12 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
             </div>
           </div>
         )}
+
+        {/* ── TAB 4: Gestión de Scores de Fraude (Dual Engine) ── */}
+        {activeTab === 'scoring-lab' && <ScoringLabAdmin />}
+
+        {/* ── TAB 5: Gestión de Accesos & Roles (RBAC Supabase Auth) ── */}
+        {activeTab === 'users' && <AdminUsersManagement />}
       </main>
 
       {/* ── Footer ── */}

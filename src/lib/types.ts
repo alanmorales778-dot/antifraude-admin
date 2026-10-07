@@ -121,6 +121,24 @@ export interface ScoreBreakdown {
     badgeText: string;
     alertTitle?: string;
     alertMessage?: string;
+    // ── Email Intelligence: País + Antigüedad ──
+    country: {
+      countryCode: string;
+      countryName: string;
+      flag: string;
+      source: 'TLD' | 'MX_REGION' | 'PROVIDER_HQ' | 'UNKNOWN';
+      sourceLabel: string;
+    };
+    age: {
+      domainCreatedDate: string;
+      domainAgeDays: number;
+      ageLabel: string;
+      maturityLevel: 'NUEVO' | 'JOVEN' | 'INTERMEDIO' | 'MADURO';
+      maturityBadge: string;
+      agePenalty: number;
+      isNewDomain: boolean;
+      isYoungDomain: boolean;
+    };
   } | null;
   // ── Score Final ──
   finalScore: number;
@@ -276,6 +294,7 @@ export interface RiskEvaluationResult {
   timestamp: string;
   riskMatrix: RiskMatrixFactors;
   killSwitchTriggered?: boolean;
+  emailVerification?: any;
 }
 
 export interface WebhookConfig {
@@ -404,13 +423,42 @@ export interface NetworkAlert {
 
 export type DatabaseSyncStatus = 'CONNECTED' | 'DISCONNECTED' | 'CONFIG_NEEDED' | 'SYNCING' | 'ERROR';
 
+export interface AppUser {
+  id: string;
+  email: string;
+  role: 'admin' | 'usuario';
+  entityId?: string;
+  entityName?: string;
+  status: 'ACTIVE' | 'SUSPENDED';
+  totpEnrolled: boolean;
+  totpSecret?: string;
+  createdAt: string;
+  lastLogin?: string;
+}
+
+export interface ScoringAuditRecord {
+  id: string;
+  timestamp: string;
+  operationId: string;
+  entityName: string;
+  identifierPreview: string;
+  identifierType: string;
+  internalScore: number;
+  consortiumScore: number;
+  finalScore: number;
+  riskLevel: 'BAJO' | 'MEDIO' | 'ALTO';
+  recommendation: 'APROBAR' | 'DESAFIO_2FA' | 'BLOQUEAR';
+  triggeredRule?: string;
+}
+
 export interface AdminSession {
   isAuthenticated: boolean;
   email: string;
   name: string;
-  role: 'SUPER_ADMIN';
+  role: 'SUPER_ADMIN' | 'admin' | 'usuario';
   token: string;
   loginTime: string;
+  is2FAVerified?: boolean;
 }
 
 export interface PartnerSession {
@@ -429,4 +477,80 @@ export type AppRoute =
   | 'admin-portal'
   | 'partner-login'
   | 'partner-portal';
+
+export interface ScoringConfig {
+  severityBase: Record<IncidentCategory, number>;
+  decayFloor: Record<IncidentCategory, number>;
+  highRiskThreshold: number; // default 70
+  mediumRiskThreshold: number; // default 30
+  mismatchPenalty: number; // default 45
+  velocityPenalty: number; // default 25
+  velocityThreshold: number; // default 3
+  deviceFarmThreshold: number; // default 3
+  deviceFarmFloor: number; // default 85
+  criticalOverrideThreshold: number; // default 85
+  multiEntityMultipliers: {
+    two: number; // default 1.25
+    three: number; // default 1.50
+    fourOrMore: number; // default 1.80
+  };
+  emailPenalties: {
+    nonExistent: number; // default 35
+    disposable: number; // default 40
+    newDomain: number; // default 25
+    mediumDomain: number; // default 10
+  };
+  decayHalfLifeDays: number; // default 180
+  scoreOverrides?: {
+    manualEntityScore?: number | null;
+    manualConsortiumScore?: number | null;
+    enabled?: boolean;
+  };
+}
+
+export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
+  severityBase: {
+    FRAUD_CONFIRMED: 95,
+    MULE_ACCOUNT: 90,
+    ACCOUNT_TAKEOVER: 80,
+    IDENTITY_THEFT: 75,
+    PHISHING: 55,
+    CHARGEBACK: 50,
+    SUSPICIOUS: 40,
+  },
+  decayFloor: {
+    FRAUD_CONFIRMED: 45,
+    MULE_ACCOUNT: 40,
+    ACCOUNT_TAKEOVER: 25,
+    IDENTITY_THEFT: 20,
+    PHISHING: 10,
+    CHARGEBACK: 10,
+    SUSPICIOUS: 0,
+  },
+  highRiskThreshold: 70,
+  mediumRiskThreshold: 30,
+  mismatchPenalty: 45,
+  velocityPenalty: 25,
+  velocityThreshold: 3,
+  deviceFarmThreshold: 3,
+  deviceFarmFloor: 85,
+  criticalOverrideThreshold: 85,
+  multiEntityMultipliers: {
+    two: 1.25,
+    three: 1.50,
+    fourOrMore: 1.80,
+  },
+  emailPenalties: {
+    nonExistent: 35,
+    disposable: 40,
+    newDomain: 25,
+    mediumDomain: 10,
+  },
+  decayHalfLifeDays: 180,
+  scoreOverrides: {
+    manualEntityScore: null,
+    manualConsortiumScore: null,
+    enabled: false,
+  },
+};
 

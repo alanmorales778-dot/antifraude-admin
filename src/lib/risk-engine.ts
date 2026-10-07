@@ -2,6 +2,7 @@ import { IdentifierType, RiskEvaluationResult, RiskLevel, Recommendation, RiskMa
 import { computeBlindHashSync, generateCryptographicProof } from './crypto';
 import { db } from './db';
 import { redis } from './redis';
+import { verifyEmailExistence } from './emailVerifier';
 
 /**
  * Mapeo de severidad base según la tipología delictiva (Factor Gravedad 25%)
@@ -107,6 +108,10 @@ export async function evaluateRisk(
     recencyScore = 0;
   }
 
+  // Variable 5: Email Intelligence (Existencia, País, Dominio Joven/Descartable)
+  const emailVerification = type === 'EMAIL' ? verifyEmailExistence(rawValue) : undefined;
+  const emailPenalty = emailVerification ? emailVerification.scorePenalty : 0;
+
   // Ponderación final (0 a 100)
   let calculatedScore = 0;
   if (entity && !rehabilitated) {
@@ -116,9 +121,12 @@ export async function evaluateRisk(
       severityScore * 0.25 +
       recencyScore * 0.1
     );
-    calculatedScore = Math.min(100, Math.max(5, calculatedScore));
+    calculatedScore = Math.min(100, Math.max(5, calculatedScore + emailPenalty));
   } else if (rehabilitated) {
     calculatedScore = 10;
+  } else if (emailPenalty > 0) {
+    // Si no está reportado pero el email es inexistente, descartable o con dominio nuevo
+    calculatedScore = Math.min(100, emailPenalty);
   }
 
   // Niveles y Recomendaciones
@@ -160,7 +168,9 @@ export async function evaluateRisk(
   const latencyMs = Math.max(1, Math.round(performance.now() - startTime) + 4);
 
   const internalReported = entity?.reportingTenantIds?.includes(tenantId) ?? false;
-  const internalRiskScore = internalReported ? Math.min(100, Math.round(severityScore * 0.8 + recencyScore * 0.2)) : 0;
+  const internalRiskScore = internalReported
+    ? Math.min(100, Math.round(severityScore * 0.8 + recencyScore * 0.2) + emailPenalty)
+    : Math.min(100, emailPenalty);
   const consortiumRiskScore = calculatedScore;
 
   const result: RiskEvaluationResult = {
@@ -184,6 +194,7 @@ export async function evaluateRisk(
     timestamp,
     riskMatrix,
     killSwitchTriggered: killSwitch,
+    emailVerification,
   };
 
   // Guardar en caché Redis por 300 segundos

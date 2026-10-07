@@ -6,6 +6,7 @@ import {
   NetworkAlert,
   DeviceCUITLink,
   ServiceScope,
+  AppUser,
 } from './types';
 import { supabaseFetch, getSupabaseConfig } from './supabaseClient';
 
@@ -34,6 +35,7 @@ export class SupabaseService {
     networkAlerts: NetworkAlert[];
     auditLogs: StoreAuditLog[];
     deviceCUITLinks: DeviceCUITLink[];
+    appUsers?: AppUser[];
   } | null> {
     if (!this.isAvailable()) return null;
 
@@ -45,6 +47,7 @@ export class SupabaseService {
         alertsRes,
         auditRes,
         deviceLinksRes,
+        appUsersRes,
       ] = await Promise.all([
         supabaseFetch<any[]>('fintech_entities?select=*'),
         supabaseFetch<any[]>('identity_nodes?select=*'),
@@ -52,6 +55,7 @@ export class SupabaseService {
         supabaseFetch<any[]>('network_alerts?select=*&order=created_at.desc'),
         supabaseFetch<any[]>('audit_logs?select=*&order=timestamp.desc&limit=200'),
         supabaseFetch<any[]>('device_cuit_links?select=*&order=timestamp.desc&limit=1000'),
+        supabaseFetch<any[]>('app_users?select=*'),
       ]);
 
       if (fintechsRes.error && nodesRes.error && edgesRes.error) {
@@ -128,6 +132,20 @@ export class SupabaseService {
         entityId: d.entity_id,
       }));
 
+      // Mapear app_users si la tabla existe
+      const appUsers: AppUser[] = (appUsersRes.data || []).map(u => ({
+        id: u.id,
+        email: u.email,
+        role: u.role,
+        entityId: u.entity_id || 'CONSORCIO',
+        entityName: u.entity_name || 'Gobernanza Central',
+        status: u.status || 'ACTIVE',
+        totpEnrolled: Boolean(u.totp_enrolled),
+        totpSecret: u.totp_secret || undefined,
+        createdAt: u.created_at || new Date().toISOString(),
+        lastLogin: u.last_login || undefined,
+      }));
+
       return {
         fintechs,
         identityNodes,
@@ -135,6 +153,7 @@ export class SupabaseService {
         networkAlerts,
         auditLogs,
         deviceCUITLinks,
+        appUsers: appUsers.length > 0 ? appUsers : undefined,
       };
     } catch (err) {
       console.error('[SupabaseService] Error durante loadAllData:', err);

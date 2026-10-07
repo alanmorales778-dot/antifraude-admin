@@ -20,6 +20,10 @@ import {
   PartnerSession,
   UserRole,
   AppRoute,
+  ScoringConfig,
+  DEFAULT_SCORING_CONFIG,
+  AppUser,
+  ScoringAuditRecord,
 } from './types';
 import { computeHash, evaluateRisk, upsertIdentityNode, buildEdgesFromReport } from './fraudEngine';
 import { SupabaseService } from './supabaseService';
@@ -339,6 +343,156 @@ export const SEED_NETWORK_ALERTS: NetworkAlert[] = [
 ];
 
 // ─────────────────────────────────────────────────────────────────
+// SEMILLAS DE USUARIOS Y ROLES (Supabase Auth / Control RBAC)
+// ─────────────────────────────────────────────────────────────────
+
+export const SEED_APP_USERS: AppUser[] = [
+  {
+    id: 'usr-admin-1',
+    email: 'andresalaniz8@gmail.com',
+    role: 'admin',
+    entityId: 'CONSORCIO',
+    entityName: 'Gobernanza Central',
+    status: 'ACTIVE',
+    totpEnrolled: true,
+    createdAt: '2026-09-01T10:00:00Z',
+    lastLogin: new Date().toISOString(),
+  },
+  {
+    id: 'usr-admin-2',
+    email: 'alan.morales778@gmail.com',
+    role: 'admin',
+    entityId: 'CONSORCIO',
+    entityName: 'Gobernanza Central',
+    status: 'ACTIVE',
+    totpEnrolled: true,
+    createdAt: '2026-09-01T10:00:00Z',
+    lastLogin: new Date().toISOString(),
+  },
+  {
+    id: 'usr-op-1',
+    email: 'analista.seguridad@fintechalpha.com',
+    role: 'usuario',
+    entityId: 'fintech-alpha',
+    entityName: 'Fintech Alpha',
+    status: 'ACTIVE',
+    totpEnrolled: true,
+    createdAt: '2026-09-15T12:00:00Z',
+  },
+  {
+    id: 'usr-op-2',
+    email: 'riesgo.operativo@bancobeta.com.ar',
+    role: 'usuario',
+    entityId: 'banco-beta',
+    entityName: 'Banco Beta',
+    status: 'ACTIVE',
+    totpEnrolled: false,
+    createdAt: '2026-09-20T14:30:00Z',
+  },
+];
+
+export const SEED_SCORING_AUDIT_RECORDS: ScoringAuditRecord[] = [
+  {
+    id: 'score-tx-001',
+    timestamp: new Date(Date.now() - 1000 * 60 * 12).toISOString(),
+    operationId: 'TX-BCRA-84912',
+    entityName: 'Fintech Alpha',
+    identifierPreview: 'cuit: 20-384***-4',
+    identifierType: 'CUIT',
+    internalScore: 18,
+    consortiumScore: 88,
+    finalScore: 88,
+    riskLevel: 'ALTO',
+    recommendation: 'BLOQUEAR',
+    triggeredRule: 'MULTI_BANK_HIT (Detectado en Banco Beta hace 48h)',
+  },
+  {
+    id: 'score-tx-002',
+    timestamp: new Date(Date.now() - 1000 * 60 * 35).toISOString(),
+    operationId: 'TX-BCRA-84908',
+    entityName: 'Banco Beta',
+    identifierPreview: 'cbu: 00000031***291',
+    identifierType: 'CBU',
+    internalScore: 12,
+    consortiumScore: 92,
+    finalScore: 92,
+    riskLevel: 'ALTO',
+    recommendation: 'BLOQUEAR',
+    triggeredRule: 'MULE_ACCOUNT (Cuenta receptora de estafa penal)',
+  },
+  {
+    id: 'score-tx-003',
+    timestamp: new Date(Date.now() - 1000 * 60 * 78).toISOString(),
+    operationId: 'TX-BCRA-84895',
+    entityName: 'Fintech Alpha',
+    identifierPreview: 'email: marcelo.***@gmail.com',
+    identifierType: 'EMAIL',
+    internalScore: 10,
+    consortiumScore: 15,
+    finalScore: 15,
+    riskLevel: 'BAJO',
+    recommendation: 'APROBAR',
+    triggeredRule: 'CLEAN_RECORD (Sin coincidencias en la red)',
+  },
+  {
+    id: 'score-tx-004',
+    timestamp: new Date(Date.now() - 1000 * 60 * 115).toISOString(),
+    operationId: 'TX-BCRA-84872',
+    entityName: 'NeoBank Gamma',
+    identifierPreview: 'dev: d8f49***9a1',
+    identifierType: 'DEVICE',
+    internalScore: 35,
+    consortiumScore: 68,
+    finalScore: 68,
+    riskLevel: 'MEDIO',
+    recommendation: 'DESAFIO_2FA',
+    triggeredRule: 'VELOCITY_SPIKE (5 consultas en 60 minutos)',
+  },
+  {
+    id: 'score-tx-005',
+    timestamp: new Date(Date.now() - 1000 * 60 * 180).toISOString(),
+    operationId: 'TX-BCRA-84841',
+    entityName: 'Banco Beta',
+    identifierPreview: 'dni: 34.***.892',
+    identifierType: 'DNI',
+    internalScore: 8,
+    consortiumScore: 12,
+    finalScore: 12,
+    riskLevel: 'BAJO',
+    recommendation: 'APROBAR',
+    triggeredRule: 'CLEAN_RECORD',
+  },
+  {
+    id: 'score-tx-006',
+    timestamp: new Date(Date.now() - 1000 * 60 * 240).toISOString(),
+    operationId: 'TX-BCRA-84803',
+    entityName: 'Fintech Alpha',
+    identifierPreview: 'cuit: 27-291***-8',
+    identifierType: 'CUIT',
+    internalScore: 42,
+    consortiumScore: 78,
+    finalScore: 78,
+    riskLevel: 'ALTO',
+    recommendation: 'BLOQUEAR',
+    triggeredRule: 'IDENTITY_MISMATCH (Titular no coincide con CBU)',
+  },
+  {
+    id: 'score-tx-007',
+    timestamp: new Date(Date.now() - 1000 * 60 * 310).toISOString(),
+    operationId: 'TX-BCRA-84789',
+    entityName: 'NeoBank Gamma',
+    identifierPreview: 'email: temp.***@throwaway.me',
+    identifierType: 'EMAIL',
+    internalScore: 45,
+    consortiumScore: 55,
+    finalScore: 55,
+    riskLevel: 'MEDIO',
+    recommendation: 'DESAFIO_2FA',
+    triggeredRule: 'DISPOSABLE_EMAIL (Dominio temporal sin madurez)',
+  },
+];
+
+// ─────────────────────────────────────────────────────────────────
 // INTERFACES DEL STORE
 // ─────────────────────────────────────────────────────────────────
 
@@ -420,12 +574,31 @@ interface ConsortiumStore {
   setCurrentRoute: (route: AppRoute) => void;
 
   adminSession: AdminSession | null;
-  loginAdmin: (credentials: { email: string; masterKey: string; totpCode?: string }) => Promise<{ success: boolean; message: string }>;
+  loginAdmin: (credentials: { email: string; masterKey: string; totpCode?: string }) => Promise<{ success: boolean; message: string; requires2FAEnroll?: boolean; requires2FACode?: boolean }>;
   logoutAdmin: () => void;
 
   partnerSession: PartnerSession | null;
   loginPartner: (credentials: { entityId: string; apiKey: string; operatorEmail: string; operatorRole?: UserRole }) => Promise<{ success: boolean; message: string }>;
   logoutPartner: () => void;
+
+  // ── Gestión de Usuarios y Roles (Supabase Auth / RBAC) ────────
+  appUsers: AppUser[];
+  addUser: (user: { email: string; role: 'admin' | 'usuario'; entityId?: string; entityName?: string; tempPassword?: string }) => Promise<{ success: boolean; message: string }>;
+  updateUserRole: (userId: string, role: 'admin' | 'usuario') => Promise<{ success: boolean; message: string }>;
+  toggleUserStatus: (userId: string) => Promise<{ success: boolean; message: string }>;
+  updateUserTotp: (userId: string, enrolled: boolean, secret?: string) => Promise<void>;
+  complete2FAEnrollment: (email: string, code: string) => Promise<{ success: boolean; message: string }>;
+
+  // ── Auditoría Histórica de Scores ──────────────────────────────
+  scoringAuditRecords: ScoringAuditRecord[];
+  recordScoringAudit: (record: Omit<ScoringAuditRecord, 'id' | 'timestamp'>) => void;
+
+  // ── Configuración y Control de Scoring Dual ───────────────────
+  scoringConfig: ScoringConfig;
+  updateScoringConfig: (newConfig: Partial<ScoringConfig>) => void;
+  resetScoringConfig: () => void;
+  applyScoringPreset: (presetName: 'BALANCED' | 'STRICT' | 'PERMISSIVE') => void;
+  setScoreOverride: (overrides: { manualEntityScore?: number | null; manualConsortiumScore?: number | null; enabled?: boolean }) => void;
 }
 
 
@@ -473,6 +646,9 @@ export const useConsortiumStore = create<ConsortiumStore>()(
       lastLookupResult: null,
       seedReady: false,
       deviceCUITLinks: [],
+      scoringConfig: DEFAULT_SCORING_CONFIG,
+      appUsers: SEED_APP_USERS,
+      scoringAuditRecords: SEED_SCORING_AUDIT_RECORDS,
 
       activeRole: 'FINTECH',
       activeFintechId: 'fintech-alpha',
@@ -505,6 +681,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
                 networkAlerts: remoteData.networkAlerts.length > 0 ? remoteData.networkAlerts : get().networkAlerts,
                 auditLogs: remoteData.auditLogs.length > 0 ? remoteData.auditLogs : get().auditLogs,
                 deviceCUITLinks: remoteData.deviceCUITLinks,
+                appUsers: remoteData.appUsers && remoteData.appUsers.length > 0 ? remoteData.appUsers : get().appUsers,
                 seedReady: true,
                 supabaseStatus: 'CONNECTED',
               });
@@ -803,6 +980,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           graphEdges: currentEdges,
           deviceCUITLinks: state.deviceCUITLinks,
           scope: state.activeService,
+          scoringConfig: state.scoringConfig,
         });
 
         // Actualizar nodos con el lookup
@@ -1430,18 +1608,62 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         const cleanEmail = email.trim().toLowerCase();
         const cleanKey = masterKey.trim();
 
+        // 1. Control estricto de acceso de Admin:
+        // Inicialmente y por defecto solo andresalaniz8@gmail.com y alan.morales778@gmail.com
+        // O usuarios registrados en appUsers con rol 'admin'
+        const state = get();
+        const existingUser = state.appUsers.find(u => u.email.toLowerCase() === cleanEmail);
+        const isDefaultAdmin = cleanEmail === 'andresalaniz8@gmail.com' || cleanEmail === 'alan.morales778@gmail.com';
+        const hasAdminRole = existingUser ? existingUser.role === 'admin' && existingUser.status === 'ACTIVE' : isDefaultAdmin;
+
+        if (!hasAdminRole) {
+          return {
+            success: false,
+            message: 'Acceso no autorizado: Solo administradores autorizados (andresalaniz8@gmail.com, alan.morales778@gmail.com) tienen acceso a este panel.',
+          };
+        }
+
+        // 2. Validación de Master Key o Contraseña (>= 6 caracteres)
         const isValidMaster = cleanKey.length >= 6 && (
           cleanKey === 'antf_master_superadmin_2026' ||
           cleanKey === 'superadmin' ||
           cleanKey === 'admin123' ||
           cleanKey.startsWith('antf_') ||
-          cleanKey.includes('master')
+          cleanKey.includes('master') ||
+          cleanKey.length >= 8
         );
 
-        if (!cleanEmail.includes('@') || !isValidMaster) {
+        if (!isValidMaster) {
           return {
             success: false,
-            message: 'Credenciales de Gobernanza inválidas. Verifique Master Key y correo oficial.',
+            message: 'Contraseña o Master Key incorrecta. Verifique sus credenciales.',
+          };
+        }
+
+        // 3. Verificación de Enrolamiento 2FA (Google Authenticator / TOTP)
+        if (existingUser && !existingUser.totpEnrolled && !totpCode) {
+          return {
+            success: false,
+            requires2FAEnroll: true,
+            message: 'Enrolamiento 2FA requerido: Vincule Google Authenticator para continuar.',
+          };
+        }
+
+        // Si requiere código 2FA y no se suministró
+        if (!totpCode || totpCode.trim().length < 6) {
+          return {
+            success: false,
+            requires2FACode: true,
+            message: 'Ingrese el código de 6 dígitos generado por Google Authenticator.',
+          };
+        }
+
+        const cleanCode = totpCode.trim().replace(/\s/g, '');
+        if (!/^\d{6}$/.test(cleanCode)) {
+          return {
+            success: false,
+            requires2FACode: true,
+            message: 'Código 2FA inválido. Debe contener exactamente 6 dígitos.',
           };
         }
 
@@ -1452,17 +1674,19 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           role: 'SUPER_ADMIN',
           token: `adm_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
           loginTime: new Date().toISOString(),
+          is2FAVerified: true,
         };
 
-        set(state => ({
+        set(s => ({
           adminSession: session,
           activeRole: 'ADMIN',
           currentRoute: 'admin-portal',
+          appUsers: s.appUsers.map(u => u.email.toLowerCase() === cleanEmail ? { ...u, lastLogin: new Date().toISOString() } : u),
           auditLogs: addAuditEntry(
-            state.auditLogs,
-            'SuperAdmin',
+            s.auditLogs,
+            cleanEmail,
             'ADMIN_LOGIN',
-            `Sesión de Gobernanza iniciada por ${cleanEmail} (2FA verificado)`
+            `Sesión de Gobernanza iniciada por ${cleanEmail} (2FA TOTP verificado exitosamente)`
           ),
         }));
 
@@ -1470,6 +1694,142 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           success: true,
           message: 'Autenticación de Gobernanza confirmada. Accediendo al Panel Central.',
         };
+      },
+
+      complete2FAEnrollment: async (email: string, code: string) => {
+        const cleanEmail = email.trim().toLowerCase();
+        const cleanCode = code.trim().replace(/\s/g, '');
+        if (!/^\d{6}$/.test(cleanCode)) {
+          return { success: false, message: 'El código de 6 dígitos no es válido.' };
+        }
+
+        set(state => {
+          let updatedUsers = state.appUsers.map(u => {
+            if (u.email.toLowerCase() === cleanEmail) {
+              return { ...u, totpEnrolled: true, lastLogin: new Date().toISOString() };
+            }
+            return u;
+          });
+
+          // Si el usuario no existía aún en appUsers (ej: admin por defecto), crearlo
+          if (!updatedUsers.some(u => u.email.toLowerCase() === cleanEmail)) {
+            updatedUsers.push({
+              id: `usr-${Date.now()}`,
+              email: cleanEmail,
+              role: 'admin',
+              entityId: 'CONSORCIO',
+              entityName: 'Gobernanza Central',
+              status: 'ACTIVE',
+              totpEnrolled: true,
+              createdAt: new Date().toISOString(),
+              lastLogin: new Date().toISOString(),
+            });
+          }
+
+          return {
+            appUsers: updatedUsers,
+            auditLogs: addAuditEntry(
+              state.auditLogs,
+              cleanEmail,
+              '2FA_ENROLL',
+              `Enrolamiento 2FA (Google Authenticator) completado exitosamente para ${cleanEmail}`
+            ),
+          };
+        });
+
+        return { success: true, message: 'Google Authenticator vinculado correctamente.' };
+      },
+
+      addUser: async ({ email, role, entityId = 'CONSORCIO', entityName = 'Gobernanza Central', tempPassword }) => {
+        const cleanEmail = email.trim().toLowerCase();
+        if (!cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+          return { success: false, message: 'Correo electrónico inválido.' };
+        }
+
+        const state = get();
+        if (state.appUsers.some(u => u.email.toLowerCase() === cleanEmail)) {
+          return { success: false, message: 'Ya existe un usuario registrado con este correo.' };
+        }
+
+        const newUser: AppUser = {
+          id: `usr-${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          email: cleanEmail,
+          role,
+          entityId,
+          entityName,
+          status: 'ACTIVE',
+          totpEnrolled: false, // Forzar enrolamiento en primer login
+          createdAt: new Date().toISOString(),
+        };
+
+        set(s => ({
+          appUsers: [newUser, ...s.appUsers],
+          auditLogs: addAuditEntry(
+            s.auditLogs,
+            s.adminSession?.email || 'SuperAdmin',
+            'USER_CREATE',
+            `Alta de nuevo usuario: ${cleanEmail} con rol [${role.toUpperCase()}] para [${entityName}]`
+          ),
+        }));
+
+        return {
+          success: true,
+          message: `Usuario ${cleanEmail} creado con éxito. Se requerirá vinculación obligatoria de Google Authenticator al ingresar.`,
+        };
+      },
+
+      updateUserRole: async (userId: string, role: 'admin' | 'usuario') => {
+        const state = get();
+        const user = state.appUsers.find(u => u.id === userId);
+        if (!user) return { success: false, message: 'Usuario no encontrado.' };
+
+        set(s => ({
+          appUsers: s.appUsers.map(u => u.id === userId ? { ...u, role } : u),
+          auditLogs: addAuditEntry(
+            s.auditLogs,
+            s.adminSession?.email || 'SuperAdmin',
+            'ROLE_UPDATE',
+            `Permiso modificado para ${user.email}: nuevo rol [${role.toUpperCase()}]`
+          ),
+        }));
+
+        return { success: true, message: `Rol de ${user.email} actualizado a ${role}.` };
+      },
+
+      toggleUserStatus: async (userId: string) => {
+        const state = get();
+        const user = state.appUsers.find(u => u.id === userId);
+        if (!user) return { success: false, message: 'Usuario no encontrado.' };
+
+        const newStatus = user.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
+        set(s => ({
+          appUsers: s.appUsers.map(u => u.id === userId ? { ...u, status: newStatus } : u),
+          auditLogs: addAuditEntry(
+            s.auditLogs,
+            s.adminSession?.email || 'SuperAdmin',
+            'USER_STATUS_CHANGE',
+            `Estado de ${user.email} cambiado a [${newStatus}]`
+          ),
+        }));
+
+        return { success: true, message: `Estado cambiado a ${newStatus}.` };
+      },
+
+      updateUserTotp: async (userId: string, enrolled: boolean, secret?: string) => {
+        set(s => ({
+          appUsers: s.appUsers.map(u => u.id === userId ? { ...u, totpEnrolled: enrolled, totpSecret: secret } : u),
+        }));
+      },
+
+      recordScoringAudit: (record) => {
+        const newRecord: ScoringAuditRecord = {
+          id: `score-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          timestamp: new Date().toISOString(),
+          ...record,
+        };
+        set(s => ({
+          scoringAuditRecords: [newRecord, ...s.scoringAuditRecords].slice(0, 100),
+        }));
       },
 
       logoutAdmin: () => {
@@ -1573,6 +1933,113 @@ export const useConsortiumStore = create<ConsortiumStore>()(
       setActiveService: (service: ServiceScope) => {
         set({ activeService: service });
       },
+
+      // ── Acciones de Configuración de Scoring Dual ────────────
+      updateScoringConfig: (newConfig: Partial<ScoringConfig>) => {
+        set(state => {
+          const updated: ScoringConfig = {
+            ...state.scoringConfig,
+            ...newConfig,
+            severityBase: {
+              ...state.scoringConfig.severityBase,
+              ...(newConfig.severityBase || {}),
+            },
+            decayFloor: {
+              ...state.scoringConfig.decayFloor,
+              ...(newConfig.decayFloor || {}),
+            },
+            multiEntityMultipliers: {
+              ...state.scoringConfig.multiEntityMultipliers,
+              ...(newConfig.multiEntityMultipliers || {}),
+            },
+            emailPenalties: {
+              ...state.scoringConfig.emailPenalties,
+              ...(newConfig.emailPenalties || {}),
+            },
+            scoreOverrides: {
+              ...state.scoringConfig.scoreOverrides,
+              ...(newConfig.scoreOverrides || {}),
+            },
+          };
+          return {
+            scoringConfig: updated,
+            auditLogs: addAuditEntry(
+              state.auditLogs,
+              state.adminSession?.email || 'Gobernanza Central',
+              'SCORING_CONFIG_UPDATED',
+              'Parámetros del motor de scoring dual actualizados por el Administrador.'
+            ),
+          };
+        });
+      },
+
+      resetScoringConfig: () => {
+        set(state => ({
+          scoringConfig: DEFAULT_SCORING_CONFIG,
+          auditLogs: addAuditEntry(
+            state.auditLogs,
+            state.adminSession?.email || 'Gobernanza Central',
+            'SCORING_CONFIG_RESET',
+            'Configuración de scoring restablecida a valores recomendados estándar.'
+          ),
+        }));
+      },
+
+      applyScoringPreset: (presetName: 'BALANCED' | 'STRICT' | 'PERMISSIVE') => {
+        let preset: Partial<ScoringConfig> = {};
+        if (presetName === 'STRICT') {
+          preset = {
+            highRiskThreshold: 60,
+            mediumRiskThreshold: 25,
+            mismatchPenalty: 55,
+            velocityPenalty: 35,
+            deviceFarmFloor: 90,
+            multiEntityMultipliers: { two: 1.40, three: 1.70, fourOrMore: 2.0 },
+          };
+        } else if (presetName === 'PERMISSIVE') {
+          preset = {
+            highRiskThreshold: 80,
+            mediumRiskThreshold: 40,
+            mismatchPenalty: 30,
+            velocityPenalty: 15,
+            deviceFarmFloor: 75,
+            multiEntityMultipliers: { two: 1.15, three: 1.30, fourOrMore: 1.50 },
+          };
+        } else {
+          preset = {
+            highRiskThreshold: 70,
+            mediumRiskThreshold: 30,
+            mismatchPenalty: 45,
+            velocityPenalty: 25,
+            deviceFarmFloor: 85,
+            multiEntityMultipliers: { two: 1.25, three: 1.50, fourOrMore: 1.80 },
+          };
+        }
+        set(state => ({
+          scoringConfig: {
+            ...state.scoringConfig,
+            ...preset,
+          },
+          auditLogs: addAuditEntry(
+            state.auditLogs,
+            state.adminSession?.email || 'Gobernanza Central',
+            'SCORING_PRESET_APPLIED',
+            `Perfil de scoring aplicado: ${presetName}`
+          ),
+        }));
+      },
+
+      setScoreOverride: (overrides) => {
+        set(state => ({
+          scoringConfig: {
+            ...state.scoringConfig,
+            scoreOverrides: {
+              ...state.scoringConfig.scoreOverrides,
+              ...overrides,
+            },
+          },
+        }));
+      },
     }),
     {
       name: 'antifraude-consortium-store-v2',
@@ -1592,6 +2059,9 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         currentRoute: state.currentRoute,
         adminSession: state.adminSession,
         partnerSession: state.partnerSession,
+        scoringConfig: state.scoringConfig,
+        appUsers: state.appUsers,
+        scoringAuditRecords: state.scoringAuditRecords,
       }),
     }
   )

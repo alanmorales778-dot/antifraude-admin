@@ -9,6 +9,8 @@ import {
   ReasonCode,
   ServiceScope,
   DeviceCUITLink,
+  ScoringConfig,
+  DEFAULT_SCORING_CONFIG,
 } from './types';
 import { normalizeIdentifier, hashData, CONSORTIUM_SALT } from './crypto';
 import { verifyEmailExistence } from './emailVerifier';
@@ -18,7 +20,7 @@ import { verifyEmailExistence } from './emailVerifier';
 // ─────────────────────────────────────────────────────────────────
 
 /** Dimensión 1: Pesos base por categoría de incidente */
-const SEVERITY_BASE: Record<IncidentCategory, number> = {
+export const SEVERITY_BASE: Record<IncidentCategory, number> = {
   FRAUD_CONFIRMED: 95,
   MULE_ACCOUNT: 90,
   ACCOUNT_TAKEOVER: 80,
@@ -29,7 +31,7 @@ const SEVERITY_BASE: Record<IncidentCategory, number> = {
 };
 
 /** Pisos mínimos residuales para categorías severas (nunca decae a 0) */
-const DECAY_FLOOR: Record<IncidentCategory, number> = {
+export const DECAY_FLOOR: Record<IncidentCategory, number> = {
   FRAUD_CONFIRMED: 45,
   MULE_ACCOUNT: 40,
   ACCOUNT_TAKEOVER: 25,
@@ -40,9 +42,9 @@ const DECAY_FLOOR: Record<IncidentCategory, number> = {
 };
 
 /** Dimensión 2: Velocity & Multi-Entity */
-const MISMATCH_PENALTY = 45;
-const VELOCITY_PENALTY = 25;
-const VELOCITY_THRESHOLD = 3;
+export const MISMATCH_PENALTY = 45;
+export const VELOCITY_PENALTY = 25;
+export const VELOCITY_THRESHOLD = 3;
 const VELOCITY_WINDOW_MS = 60 * 60 * 1000;
 
 /** Multi-entity: ≥2 entidades distintas en <7 días → multiplicador */
@@ -236,12 +238,14 @@ export async function evaluateRisk(params: {
   graphEdges: SpecGraphEdge[];
   deviceCUITLinks?: DeviceCUITLink[];
   scope?: ServiceScope;
+  scoringConfig?: ScoringConfig;
 }): Promise<LookupResult> {
   const {
     dni, email, phone, ip, cbu, device, cuit,
     fintechId, fintechs, identityNodes, graphEdges,
     deviceCUITLinks = [],
     scope = 'CONSORTIUM',
+    scoringConfig = DEFAULT_SCORING_CONFIG,
   } = params;
 
   // Hashes de los identificadores provistos
@@ -257,6 +261,9 @@ export async function evaluateRisk(params: {
     .filter(Boolean) as string[];
 
   const paramCount = inputHashes.length;
+
+  const highThresh = scoringConfig?.highRiskThreshold ?? 70;
+  const medThresh = scoringConfig?.mediumRiskThreshold ?? 30;
 
   // ─────────────────────────────────────────────────────────────────
   // EVALUADOR MODULAR POR ÁMBITO (INTERNAL vs CONSORTIUM)
@@ -277,7 +284,7 @@ export async function evaluateRisk(params: {
 
       const reportingFintech = fintechs.find(f => f.id === edge.reportedByEntityId);
       const trustWeight = reportingFintech ? reportingFintech.trustWeight : 0.5;
-      const severityBase = SEVERITY_BASE[edge.incidentCategory] ?? 15;
+      const severityBase = (scoringConfig?.severityBase && scoringConfig.severityBase[edge.incidentCategory]) ?? SEVERITY_BASE[edge.incidentCategory] ?? 15;
       const decay = timeDecayFactor(edge.timestamp);
 
       if (decay < 0.95) timeDecayApplied = true;
@@ -318,16 +325,17 @@ export async function evaluateRisk(params: {
         if (phoneHash && checkMismatch(phoneHash)) { mismatchDetected = true; break; }
         if (cbuHash && checkMismatch(cbuHash)) { mismatchDetected = true; break; }
       }
-      if (mismatchDetected) mismatchPenalty = MISMATCH_PENALTY;
+      if (mismatchDetected) mismatchPenalty = scoringConfig?.mismatchPenalty ?? MISMATCH_PENALTY;
     }
 
     // Velocity
     let velocityTriggered = false;
     let velocityPenalty = 0;
+    const velThreshold = scoringConfig?.velocityThreshold ?? VELOCITY_THRESHOLD;
 
     for (const hash of inputHashes) {
       const node = identityNodes.find(n => n.hash === hash);
-      if (node && node.lookupsLastHour >= VELOCITY_THRESHOLD) {
+      if (node && node.lookupsLastHour >= velThreshold) {
         velocityTriggered = true;
         break;
       }
@@ -337,19 +345,19 @@ export async function evaluateRisk(params: {
       const recentEdges = edges.filter(e => {
         if (e.isFalsePositive) return false;
         const isMatch =
-          inputHashes.includes(e.sourceHash) || inputHashes.includes(e.targetHash);
+          inputHashes.includes(e.sourceHash) || inputHashes.includes(edge.targetHash);
         const isRecent =
           Date.now() - new Date(e.timestamp).getTime() < VELOCITY_WINDOW_MS;
         return isMatch && isRecent;
       });
 
       const distinctEntities = new Set(recentEdges.map(e => e.reportedByEntityId));
-      if (distinctEntities.size >= VELOCITY_THRESHOLD) {
+      if (distinctEntities.size >= velThreshold) {
         velocityTriggered = true;
       }
     }
 
-    if (velocityTriggered) velocityPenalty = VELOCITY_PENALTY;
+    if (velocityTriggered) velocityPenalty = scoringConfig?.velocityPenalty ?? VELOCITY_PENALTY;
 
     // Multi-Entity Multiplier (solo aplica al consorcio)
     const multiEntity = isConsortium
@@ -358,27 +366,51 @@ export async function evaluateRisk(params: {
     let multiEntityMultiplier = 1;
 
     if (multiEntity.isMultiEntity) {
-      multiEntityMultiplier = 1.5 + (multiEntity.distinctEntities - 2) * 0.25;
+      if (multiEntity.distinctEntities >= 4) {
+        multiEntityMultiplier = scoringConfig?.multiEntityMultipliers?.fourOrMore ?? 1.80;
+      } else if (multiEntity.distinctEntities === 3) {
+        multiEntityMultiplier = scoringConfig?.multiEntityMultipliers?.three ?? 1.50;
+      } else {
+        multiEntityMultiplier = scoringConfig?.multiEntityMultipliers?.two ?? 1.25;
+      }
     }
 
     // Device Farm
     let deviceFarmDetected = false;
     let deviceFarmScore = 0;
+    const farmThreshold = scoringConfig?.deviceFarmThreshold ?? DEVICE_FARM_CUIT_THRESHOLD;
 
     if (deviceHash) {
       const farmLinks = isConsortium
         ? deviceCUITLinks
         : deviceCUITLinks.filter(l => l.entityId === fintechId);
       const farmResult = detectDeviceFarm(deviceHash, farmLinks);
-      if (farmResult.isDeviceFarm) {
+      if (farmResult.isDeviceFarm || farmResult.linkedCUITs >= farmThreshold) {
         deviceFarmDetected = true;
-        deviceFarmScore = DEVICE_FARM_CRITICAL_SCORE;
+        deviceFarmScore = scoringConfig?.deviceFarmFloor ?? DEVICE_FARM_CRITICAL_SCORE;
       }
     }
 
     // Email
     const emailVerification = email ? verifyEmailExistence(email) : null;
-    const emailPenalty = emailVerification ? emailVerification.scorePenalty : 0;
+    let emailPenalty = 0;
+    if (emailVerification) {
+      if (emailVerification.status === 'NON_EXISTENT') {
+        emailPenalty += scoringConfig?.emailPenalties?.nonExistent ?? 35;
+      } else if (emailVerification.status === 'DISPOSABLE') {
+        emailPenalty += scoringConfig?.emailPenalties?.disposable ?? 40;
+      }
+      if (emailVerification.domainAgeDays != null) {
+        if (emailVerification.domainAgeDays < 30) {
+          emailPenalty += scoringConfig?.emailPenalties?.newDomain ?? 25;
+        } else if (emailVerification.domainAgeDays < 365) {
+          emailPenalty += scoringConfig?.emailPenalties?.mediumDomain ?? 10;
+        }
+      }
+      if (emailPenalty === 0 && emailVerification.scorePenalty > 0) {
+        emailPenalty = emailVerification.scorePenalty;
+      }
+    }
 
     // Score bruto
     let rawScore =
@@ -396,6 +428,7 @@ export async function evaluateRisk(params: {
     let criticalOverride = false;
     let criticalOverrideSource: string | undefined;
     const compositeStrategy = paramCount > 1 ? 'MAX_SEVERITY_WEIGHTED' : 'SINGLE_PARAM';
+    const critOverrideThresh = scoringConfig?.criticalOverrideThreshold ?? CRITICAL_OVERRIDE_THRESHOLD;
 
     if (paramCount > 1) {
       const individualScores: { type: string; score: number }[] = [];
@@ -407,8 +440,9 @@ export async function evaluateRisk(params: {
           if (edge.sourceHash === hash || edge.targetHash === hash) {
             const fintech = fintechs.find(f => f.id === edge.reportedByEntityId);
             const tw = fintech ? fintech.trustWeight : 0.5;
+            const sev = (scoringConfig?.severityBase && scoringConfig.severityBase[edge.incidentCategory]) ?? SEVERITY_BASE[edge.incidentCategory] ?? 15;
             score += applyDecayWithFloor(
-              (SEVERITY_BASE[edge.incidentCategory] ?? 15) * tw,
+              sev * tw,
               edge.timestamp,
               edge.incidentCategory
             );
@@ -430,7 +464,7 @@ export async function evaluateRisk(params: {
         { type: '', score: 0 }
       );
 
-      if (maxIndividual.score >= CRITICAL_OVERRIDE_THRESHOLD) {
+      if (maxIndividual.score >= critOverrideThresh) {
         criticalOverride = true;
         criticalOverrideSource = maxIndividual.type;
         rawScore = Math.max(rawScore, Math.min(100, maxIndividual.score * 1.05));
@@ -439,7 +473,7 @@ export async function evaluateRisk(params: {
 
     const score = Math.min(100, Math.max(0, Math.round(rawScore)));
     const level: 'BAJO' | 'MEDIO' | 'ALTO' =
-      score >= 70 ? 'ALTO' : score >= 30 ? 'MEDIO' : 'BAJO';
+      score >= highThresh ? 'ALTO' : score >= medThresh ? 'MEDIO' : 'BAJO';
 
     return {
       score,
@@ -469,22 +503,28 @@ export async function evaluateRisk(params: {
     e => !e.isFalsePositive && (e.reportedByEntityId === fintechId || e.scope === 'INTERNAL')
   );
   const internalEval = evaluateScope(internalEdges, false);
-  const internalRiskScore = internalEval.score;
-  const internalRiskLevel = internalEval.level;
+  const internalRiskScore = (scoringConfig?.scoreOverrides?.enabled && scoringConfig.scoreOverrides.manualEntityScore != null)
+    ? scoringConfig.scoreOverrides.manualEntityScore
+    : internalEval.score;
+  const internalRiskLevel: 'BAJO' | 'MEDIO' | 'ALTO' =
+    internalRiskScore >= highThresh ? 'ALTO' : internalRiskScore >= medThresh ? 'MEDIO' : 'BAJO';
 
   // ── 2. SCORE DEL CONSORCIO (Inteligencia Colectiva y Red Federal) ──────────
   const consortiumEdges = graphEdges.filter(e => !e.isFalsePositive);
   const consortiumEval = evaluateScope(consortiumEdges, true);
-  const consortiumRiskScore = consortiumEval.score;
-  const consortiumRiskLevel = consortiumEval.level;
+  const consortiumRiskScore = (scoringConfig?.scoreOverrides?.enabled && scoringConfig.scoreOverrides.manualConsortiumScore != null)
+    ? scoringConfig.scoreOverrides.manualConsortiumScore
+    : consortiumEval.score;
+  const consortiumRiskLevel: 'BAJO' | 'MEDIO' | 'ALTO' =
+    consortiumRiskScore >= highThresh ? 'ALTO' : consortiumRiskScore >= medThresh ? 'MEDIO' : 'BAJO';
 
   // Selección del contexto activo según scope
   const activeEval = scope === 'INTERNAL' ? internalEval : consortiumEval;
-  const finalScore = activeEval.score;
-  const riskLevel = activeEval.level;
+  const finalScore = scope === 'INTERNAL' ? internalRiskScore : consortiumRiskScore;
+  const riskLevel = scope === 'INTERNAL' ? internalRiskLevel : consortiumRiskLevel;
 
   const recommendation: 'ALLOW' | 'REVIEW' | 'BLOCK' =
-    finalScore >= 70 ? 'BLOCK' : finalScore >= 30 ? 'REVIEW' : 'ALLOW';
+    finalScore >= highThresh ? 'BLOCK' : finalScore >= medThresh ? 'REVIEW' : 'ALLOW';
 
   // Reason codes
   const reasonCodes = buildReasonCodes({
