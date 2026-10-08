@@ -132,7 +132,16 @@ export default function EntityPortal({
     supabaseLatencyMs,
     partnerSession,
   } = useConsortiumStore();
-  const activeFintech = fintechs.find(f => f.id === fintechId) || fintechs[0];
+  const activeFintech = fintechs.find(f => f.id === fintechId) || fintechs[0] || {
+    id: fintechId || 'mi-entidad',
+    name: partnerSession?.entityName || 'Mi Entidad Financiera',
+    apiKey: '',
+    trustWeight: 1.0,
+    status: 'ACTIVE',
+    queriesCount: 0,
+    reportsCount: 0,
+    falsePositivesCount: 0,
+  };
   const currentTenant = INITIAL_TENANTS[0];
 
   // RBAC: Ocultar 'API & Webhooks' para rol 'Analista'. Solo visible para Administradores.

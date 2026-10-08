@@ -41,27 +41,8 @@ import { verifyTOTP, generateTOTPSecret } from './totp';
 
 // Hashes pre-computados de los casos del spec usando el salt del consorcio.
 // Se calculan en runtime al inicializar el store si no existen en storage.
-const SEED_FINTECH_ALPHA: FintechEntity = {
-  id: 'fintech-alpha',
-  name: 'Fintech Alpha',
-  apiKey: 'antf_live_alpha_a1b2c3d4e5f6',
-  trustWeight: 1.0,
-  status: 'ACTIVE',
-  queriesCount: 0,
-  reportsCount: 0,
-  falsePositivesCount: 0,
-};
-
-const SEED_BANCO_BETA: FintechEntity = {
-  id: 'banco-beta',
-  name: 'Banco Beta',
-  apiKey: 'antf_live_beta_f6e5d4c3b2a1',
-  trustWeight: 0.8,
-  status: 'ACTIVE',
-  queriesCount: 0,
-  reportsCount: 0,
-  falsePositivesCount: 0,
-};
+// Base de datos limpia iniciada desde 0 sin bancos ni listas negras mock
+export const SEED_FINTECHS: FintechEntity[] = [];
 
 const SEED_AUDIT_LOGS: StoreAuditLog[] = [
   {
@@ -276,8 +257,8 @@ function addAuditEntry(
 export const useConsortiumStore = create<ConsortiumStore>()(
   persist(
     (set, get) => ({
-      // ── Estado inicial ─────────────────────────────────────────
-      fintechs: [SEED_FINTECH_ALPHA, SEED_BANCO_BETA],
+      // ── Estado inicial 100% limpio para pruebas desde cero ───
+      fintechs: [],
       identityNodes: [],
       graphEdges: [],
       auditLogs: SEED_AUDIT_LOGS,
@@ -289,12 +270,12 @@ export const useConsortiumStore = create<ConsortiumStore>()(
       appUsers: SEED_APP_USERS,
       scoringAuditRecords: SEED_SCORING_AUDIT_RECORDS,
 
-      activeRole: 'FINTECH',
-      activeFintechId: 'fintech-alpha',
+      activeRole: 'ADMIN',
+      activeFintechId: '',
       activeService: 'CONSORTIUM',
 
       // ── Sesiones y Rutas Independientes ────────────────────────
-      currentRoute: 'partner-login',
+      currentRoute: 'admin-login',
       adminSession: null,
       partnerSession: null,
 
@@ -312,12 +293,12 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           try {
             set({ supabaseStatus: 'SYNCING' });
             const remoteData = await SupabaseService.loadAllData(get().activeService);
-            if (remoteData && (remoteData.identityNodes.length > 0 || remoteData.graphEdges.length > 0)) {
+            if (remoteData) {
               set({
-                fintechs: remoteData.fintechs.length > 0 ? remoteData.fintechs : get().fintechs,
+                fintechs: remoteData.fintechs,
                 identityNodes: remoteData.identityNodes,
                 graphEdges: remoteData.graphEdges,
-                networkAlerts: remoteData.networkAlerts.length > 0 ? remoteData.networkAlerts : get().networkAlerts,
+                networkAlerts: remoteData.networkAlerts,
                 auditLogs: remoteData.auditLogs.length > 0 ? remoteData.auditLogs : get().auditLogs,
                 deviceCUITLinks: remoteData.deviceCUITLinks,
                 appUsers: remoteData.appUsers && remoteData.appUsers.length > 0 ? remoteData.appUsers : get().appUsers,
@@ -331,7 +312,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           }
         }
 
-        set({ identityNodes: [], graphEdges: [], seedReady: true });
+        set({ fintechs: [], identityNodes: [], graphEdges: [], networkAlerts: [], deviceCUITLinks: [], seedReady: true });
       },
 
       // ── Acciones Admin ────────────────────────────────────────

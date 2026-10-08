@@ -45,15 +45,29 @@ export default function PartnerLogin({
   const { fintechs, loginPartner, complete2FAEnrollment, setCurrentRoute, appUsers } = useConsortiumStore();
 
   const [viewMode, setViewMode] = useState<'LOGIN' | '2FA_ENROLL'>('LOGIN');
-  const [selectedEntityId, setSelectedEntityId] = useState(fintechs[0]?.id || 'fintech-alpha');
-  const [apiKey, setApiKey] = useState(fintechs[0]?.apiKey || 'antf_live_alpha_a1b2c3d4e5f6');
-  const [operatorEmail, setOperatorEmail] = useState('analista.seguridad@fintechalpha.com');
+  const [selectedEntityId, setSelectedEntityId] = useState(fintechs[0]?.id || '');
+  const [apiKey, setApiKey] = useState(fintechs[0]?.apiKey || '');
+  const [operatorEmail, setOperatorEmail] = useState('');
   const [operatorRole, setOperatorRole] = useState<UserRole>('ANALYST_L2');
   const [totpCode, setTotpCode] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Sincronizar automáticamente cuando se cargan o crean entidades
+  useEffect(() => {
+    if (fintechs.length > 0) {
+      if (!selectedEntityId || !fintechs.some(f => f.id === selectedEntityId)) {
+        setSelectedEntityId(fintechs[0].id);
+        setApiKey(fintechs[0].apiKey);
+        const userInEntity = appUsers.find(u => u.entityId === fintechs[0].id);
+        if (userInEntity) {
+          setOperatorEmail(userInEntity.email);
+        }
+      }
+    }
+  }, [fintechs, appUsers, selectedEntityId]);
 
   // Formulario 2FA Enroll con código QR real y secreto Base32 dinámico
   const [factorId, setFactorId] = useState('');
@@ -268,7 +282,39 @@ export default function PartnerLogin({
 
             {/* MODO 1: LOGIN */}
             {viewMode === 'LOGIN' && (
-              <form onSubmit={handleSubmit} className="p-8 space-y-4 bg-[#0d182e]">
+              fintechs.length === 0 ? (
+                <div className="p-8 space-y-5 bg-[#0d182e] text-center">
+                  <div className="w-14 h-14 rounded-2xl bg-blue-500/10 border border-blue-500/30 text-blue-400 mx-auto flex items-center justify-center shadow-lg">
+                    <Building2 className="w-7 h-7" />
+                  </div>
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-bold text-white">Sin Entidades Financieras Registradas</h3>
+                    <p className="text-xs text-[#94a3b8] leading-relaxed max-w-sm mx-auto">
+                      La plataforma está inicializada desde cero para pruebas de preproducción. 
+                      Para comenzar, acceda como <strong className="text-white">Administrador de Gobernanza</strong> y cree su primer banco o fintech participante.
+                    </p>
+                  </div>
+                  {showAdminLink && onNavigateAdmin ? (
+                    <button
+                      type="button"
+                      onClick={onNavigateAdmin}
+                      className="w-full py-2.5 px-4 rounded-xl bg-[#1d4ed8] hover:bg-[#2563eb] text-white font-semibold text-xs shadow-md border border-[#3b82f6]/50 transition-all flex items-center justify-center gap-2"
+                    >
+                      <span>Ir al Panel de Gobernanza (Crear Banco)</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  ) : (
+                    <a
+                      href="/admin"
+                      className="w-full py-2.5 px-4 rounded-xl bg-[#1d4ed8] hover:bg-[#2563eb] text-white font-semibold text-xs shadow-md border border-[#3b82f6]/50 transition-all flex items-center justify-center gap-2"
+                    >
+                      <span>Ir al Panel de Gobernanza (Crear Banco)</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </a>
+                  )}
+                </div>
+              ) : (
+                <form onSubmit={handleSubmit} className="p-8 space-y-4 bg-[#0d182e]">
                 {/* Selector de Entidad */}
                 <div className="space-y-1.5">
                   <label className="block text-xs font-semibold text-[#cbd5e1] tracking-wide">
@@ -433,7 +479,7 @@ export default function PartnerLogin({
                   <span className="text-[#94a3b8]">BCRA Com. A7370</span>
                 </div>
               </form>
-            )}
+            ))}
 
             {/* MODO 2: ENROLAMIENTO OBLIGATORIO 2FA */}
             {viewMode === '2FA_ENROLL' && (

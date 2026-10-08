@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useEffect } from 'react';
 import { useConsortiumStore } from '@/lib/store';
@@ -70,7 +70,7 @@ export default function AppRouter() {
         onSuccess={() => setCurrentRoute('admin-portal')}
         onNavigatePartner={() => setCurrentRoute('partner-login')}
         onNavigateHome={() => setCurrentRoute('admin-login')}
-        showPartnerLink={false}
+        showPartnerLink={true}
       />
     );
   }
@@ -84,7 +84,7 @@ export default function AppRouter() {
           onSuccess={() => setCurrentRoute('admin-portal')}
           onNavigatePartner={() => setCurrentRoute('partner-login')}
           onNavigateHome={() => setCurrentRoute('admin-login')}
-          showPartnerLink={false}
+          showPartnerLink={true}
         />
       );
     }
@@ -106,7 +106,7 @@ export default function AppRouter() {
         onSuccess={() => setCurrentRoute('partner-portal')}
         onNavigateAdmin={() => setCurrentRoute('admin-login')}
         onNavigateHome={() => setCurrentRoute('partner-login')}
-        showAdminLink={false}
+        showAdminLink={true}
       />
     );
   }
@@ -120,7 +120,7 @@ export default function AppRouter() {
           onSuccess={() => setCurrentRoute('partner-portal')}
           onNavigateAdmin={() => setCurrentRoute('admin-login')}
           onNavigateHome={() => setCurrentRoute('partner-login')}
-          showAdminLink={false}
+          showAdminLink={true}
         />
       );
     }

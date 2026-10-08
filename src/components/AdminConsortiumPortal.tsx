@@ -247,7 +247,29 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
             </div>
 
             {/* Listado de Entidades */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredEntities.length === 0 ? (
+              <div className="p-12 border border-[#1e365b] rounded-2xl bg-[#0c1628] text-center space-y-4">
+                <div className="w-16 h-16 rounded-2xl bg-blue-500/10 border border-blue-500/30 text-blue-400 mx-auto flex items-center justify-center shadow-lg">
+                  <Building2 className="w-8 h-8" />
+                </div>
+                <div className="max-w-md mx-auto space-y-2">
+                  <h3 className="text-base font-bold text-white">No hay entidades financieras registradas</h3>
+                  <p className="text-xs text-[#94a3b8] leading-relaxed">
+                    La plataforma se encuentra completamente limpia y lista para preproducción.
+                    Haga clic en <strong className="text-white">"Adherir Nueva Entidad"</strong> para dar de alta su primer banco o fintech y comenzar a realizar pruebas.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsAdding(true)}
+                  className="px-4 py-2.5 rounded-xl bg-[#1d4ed8] hover:bg-[#2563eb] text-white text-xs font-semibold shadow-md border border-[#3b82f6]/50 transition-all inline-flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Adherir Primera Entidad Financiera</span>
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredEntities.map(fintech => (
                 <div
                   key={fintech.id}
@@ -342,6 +364,7 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
                 </div>
               ))}
             </div>
+          )}
           </div>
         )}
 

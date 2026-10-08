@@ -120,7 +120,9 @@ export default function InstitutionalGateway({
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
               </button>
               <p className="text-[10px] text-center text-[#8a98a8] mt-2">
-                {fintechs.length} entidades activas conectadas
+                {fintechs.length > 0
+                  ? `${fintechs.length} ${fintechs.length === 1 ? 'entidad activa conectada' : 'entidades activas conectadas'}`
+                  : 'Plataforma lista para adherir primera entidad'}
               </p>
             </div>
           </div>

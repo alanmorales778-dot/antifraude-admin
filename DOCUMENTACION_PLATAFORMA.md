@@ -395,20 +395,34 @@ CREATE POLICY "Allow public read/write in sandbox" ON public.app_users FOR ALL U
 
 ---
 
-## 7. Credenciales y Usuarios Iniciales para Pruebas
+## 7. Flujo de Inicialización para Pruebas de Preproducción (Desde Cero)
 
-Para realizar la validación end-to-end de la plataforma:
+La base de datos y la plataforma se encuentran actualmente limpias (0 bancos y 0 registros de lista negra) para permitir realizar pruebas de preproducción personalizadas.
 
-### Acceso SuperAdmin (Gobernanza Central - `/admin`)
+### Paso 1: Ingreso a Gobernanza Central (SuperAdmin)
+- **URL:** [antifraude-one.vercel.app/admin](https://antifraude-one.vercel.app/admin)
 - **Correos Autorizados:** `andresalaniz8@gmail.com` o `alan.morales778@gmail.com`
 - **Master Key / Contraseña:** `antf_master_superadmin_2026`
-- **Flujo 2FA:** Al primer ingreso, mostrará el código QR. Escanee con Google Authenticator e ingrese el código dinámico de 6 dígitos.
+- **Autenticación 2FA:** Escanear el código QR con Google Authenticator e ingresar el código de 6 dígitos.
 
-### Acceso Entidad Financiera (Portal Participantes - `/`)
-- **Entidad:** Fintech Alpha
-- **API Key:** `antf_live_alpha_a1b2c3d4e5f6`
-- **Correo Autorizado:** `analista.seguridad@fintechalpha.com`
-- **Flujo 2FA:** Al ingresar por primera vez, solicitará vincular Google Authenticator mediante el código QR antes de habilitar el ingreso al Workspace.
+### Paso 2: Creación del Primer Banco / Entidad Financiera
+1. Dentro del panel de administración, dirigirse a la pestaña **"Entidades Participantes"**.
+2. Hacer clic en el botón **"Adherir Nueva Entidad"** (o en la tarjeta de bienvenida vacía).
+3. Ingresar el nombre de la institución (ej: *Banco Santander*, *Ualá*, *Banco Galicia*, etc.).
+4. El sistema generará automáticamente la **API Key B2B** (`antf_live_...`) y registrará la entidad en tiempo real en Supabase con un peso de confianza inicial del 70% (`trustWeight: 0.70`).
+
+### Paso 3: Alta de Operadores / Analistas Autorizados
+1. En el mismo panel, acceder a la pestaña **"Gestión de Accesos & Roles"**.
+2. Hacer clic en **"Dar de Alta Usuario"**.
+3. Ingresar el correo del analista de riesgo y asociarlo a la entidad financiera creada en el Paso 2 con rol **"usuario"**.
+
+### Paso 4: Ingreso al Workspace de la Entidad Financiera
+- **URL:** [antifraude-one.vercel.app](https://antifraude-one.vercel.app)
+- Seleccionar la nueva entidad financiera en el selector desplegable.
+- La API Key se completará automáticamente con la generada en el Paso 2.
+- Ingresar el correo del analista dado de alta en el Paso 3.
+- Al ingresar por primera vez, el sistema solicitará la vinculación obligatoria de Google Authenticator vía QR.
+- Una vez vinculado, el operador ingresa a su **Internal Risk Workspace** limpio, listo para ejecutar consultas de riesgo unitarias, masivas o reportar incidentes.
 
 ---
 
