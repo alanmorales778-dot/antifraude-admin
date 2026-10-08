@@ -22,13 +22,6 @@ interface DashboardKPIsProps {
 }
 
 export default function DashboardKPIs({ stats, tenants, onNavigateTab }: DashboardKPIsProps) {
-  const chartDays = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
-  const queriesData = [112000, 128000, 134000, 142850, 139200, 95000, 89000];
-  const alertsData = [2450, 2890, 3120, 3420, 3100, 1980, 1850];
-
-  const maxQuery = Math.max(...queriesData);
-  const maxAlert = Math.max(...alertsData);
-
   const store = useConsortiumStore();
   const graphEdges = store?.graphEdges || [];
   const auditLogs = store?.auditLogs || [];
@@ -38,25 +31,28 @@ export default function DashboardKPIs({ stats, tenants, onNavigateTab }: Dashboa
   const dynamicFraudEdges = graphEdges.filter(e => !e.isFalsePositive && e.incidentCategory !== 'SUSPICIOUS').length;
   const dynamicTotalEdges = graphEdges.length;
 
-  const baseTotalReported = stats?.totalReportedData || 18450;
-  const baseFraudReported = stats?.fraudReportedData || 2480;
-
-  const totalReportedData = baseTotalReported + dynamicTotalEdges;
-  const fraudReportedData = baseFraudReported + dynamicFraudEdges;
+  const totalReportedData = dynamicTotalEdges;
+  const fraudReportedData = dynamicFraudEdges;
   const fraudPercentage = totalReportedData > 0
     ? ((fraudReportedData / totalReportedData) * 100).toFixed(1)
-    : '13.4';
+    : '0.0';
 
-  // ── KPI 2: Consultas Procesadas Hoy (aprobado sin cambios) ─────
-  const totalQueries = stats?.totalQueriesProcessed || (142850 + auditLogs.length);
+  // ── KPI 2: Consultas Procesadas Hoy ───────────────────────────
+  const lookupLogs = auditLogs.filter(l => l.action === 'LOOKUP' || l.action === 'BATCH_LOOKUP');
+  const totalQueries = lookupLogs.length;
 
   // ── KPI 3: Tasa Crítica (Alerta Diaria) ────────────────────────
-  // Marca el % de transacciones detectadas como fraudulentas en el día
-  // Regla estricta de color:
-  // < 30%    -> Verde (Normal / Seguro)
-  // 30% - 60% -> Amarillo (Alerta Moderada)
-  // > 60%    -> Rojo (Alerta Crítica)
-  const criticalRate = stats?.dailyCriticalRate ?? 18.4;
+  const criticalRate = totalQueries > 0
+    ? Number(((fraudReportedData / totalQueries) * 100).toFixed(1))
+    : (totalReportedData > 0 ? Number(((fraudReportedData / totalReportedData) * 100).toFixed(1)) : 0.0);
+
+  const chartDays = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+  const todayIdx = (new Date().getDay() + 6) % 7; // Lunes=0, Domingo=6
+  const queriesData = chartDays.map((_, idx) => (idx === todayIdx ? totalQueries : 0));
+  const alertsData = chartDays.map((_, idx) => (idx === todayIdx ? fraudReportedData : 0));
+
+  const maxQuery = Math.max(...queriesData, 1);
+  const maxAlert = Math.max(...alertsData, 1);
 
   const isGreen = criticalRate < 30;
   const isYellow = criticalRate >= 30 && criticalRate <= 60;
@@ -98,7 +94,7 @@ export default function DashboardKPIs({ stats, tenants, onNavigateTab }: Dashboa
         pulse: false,
       };
 
-  const detectedToday = Math.max(1, Math.round((criticalRate / 100) * 140));
+  const detectedToday = fraudReportedData;
 
   return (
     <div className="space-y-6">
@@ -125,7 +121,7 @@ export default function DashboardKPIs({ stats, tenants, onNavigateTab }: Dashboa
           </div>
           <div className="mt-3 border-t border-white/5 pt-2 flex items-center justify-between text-[11px] text-slate-500">
             <span>Fórmula: (Fraude / Totales) × 100</span>
-            <span className="text-emerald-400/90 font-medium">+1.8% en base federal</span>
+            <span className="text-emerald-400/90 font-medium">Tiempo real activo</span>
           </div>
         </div>
 
@@ -143,7 +139,7 @@ export default function DashboardKPIs({ stats, tenants, onNavigateTab }: Dashboa
             </div>
             <div className="mt-1 flex items-center gap-1.5 text-xs text-cyan-400">
               <Zap className="h-3.5 w-3.5" />
-              <span>98.6 consultas / segundo</span>
+              <span>{totalQueries > 0 ? 'Conexión activa en vivo' : 'Sistema listo desde 0'}</span>
             </div>
           </div>
           <div className="mt-3 border-t border-white/5 pt-2 text-[11px] text-slate-500">

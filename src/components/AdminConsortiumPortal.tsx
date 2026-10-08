@@ -19,7 +19,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { useConsortiumStore } from '@/lib/store';
-import DatabaseConfigModal from '@/components/DatabaseConfigModal';
+
 import ScoringLabAdmin from '@/components/ScoringLabAdmin';
 import RegulatoryAuditTable from '@/components/RegulatoryAuditTable';
 import AdminUsersManagement from '@/components/AdminUsersManagement';
@@ -43,8 +43,6 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
 
   const [activeTab, setActiveTab] = useState<'entities' | 'audit' | 'network' | 'scoring-lab' | 'users'>('entities');
   const [newEntityName, setNewEntityName] = useState('');
-  const [isAdding, setIsAdding] = useState(false);
-  const [isDbModalOpen, setIsDbModalOpen] = useState(false);
   const [filterQuery, setFilterQuery] = useState('');
 
   // Auto-seleccionar pestaña si está en la URL (ej: #scoring, ?tab=scoring)
@@ -109,22 +107,6 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
               <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse ml-0.5" />
             </button>
 
-            {/* Supabase Status Indicator */}
-            <button
-              onClick={() => setIsDbModalOpen(true)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono border transition-all ${
-                supabaseStatus === 'CONNECTED'
-                  ? 'bg-[#062c1d] border-[#0f5132] text-[#34d399] hover:bg-[#083b27]'
-                  : 'bg-[#2e1d09] border-[#663e0e] text-[#fbbf24] hover:bg-[#3d270c]'
-              }`}
-            >
-              <Database className="w-3.5 h-3.5" />
-              <span>
-                {supabaseStatus === 'CONNECTED'
-                  ? `Cloud DB: ${supabaseLatencyMs || 0}ms`
-                  : 'Memoria Local (Configurar DB)'}
-              </span>
-            </button>
 
             {/* Logout */}
             <button
@@ -423,11 +405,7 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
         </div>
       </footer>
 
-      {/* Database Modal */}
-      <DatabaseConfigModal
-        isOpen={isDbModalOpen}
-        onClose={() => setIsDbModalOpen(false)}
-      />
+
     </div>
   );
 }

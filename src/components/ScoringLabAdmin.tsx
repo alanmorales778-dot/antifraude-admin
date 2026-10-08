@@ -88,9 +88,9 @@ export default function ScoringLabAdmin() {
     riskDistribution: { low: number; medium: number; high: number };
   }>({
     totalTransactions: 0,
-    falsePositiveRate: 0.78,
+    falsePositiveRate: 0,
     activeAlertsCount: 0,
-    riskDistribution: { low: 64, medium: 24, high: 12 },
+    riskDistribution: { low: 0, medium: 0, high: 0 },
   });
 
   // Modal de Advertencia de Compliance para Guardar Configuración
@@ -887,11 +887,11 @@ export default function ScoringLabAdmin() {
                 <span className="text-2xl font-bold font-mono text-white">
                   {(liveMetrics.totalTransactions > 0
                     ? liveMetrics.totalTransactions
-                    : fintechs.reduce((sum, f) => sum + (f.queriesCount || 0), 0) + (scoringAuditRecords?.length || 0) * 18
+                    : fintechs.reduce((sum, f) => sum + (f.queriesCount || 0), 0) + (scoringAuditRecords?.length || 0)
                   ).toLocaleString('es-AR')}
                 </span>
                 <span className="text-xs font-semibold text-emerald-400 font-mono">
-                  +14.8% hoy
+                  {liveMetrics.totalTransactions > 0 ? '+14.8% hoy' : 'En vivo'}
                 </span>
               </div>
               <div className="flex items-center gap-1.5 mt-1.5">
@@ -911,7 +911,7 @@ export default function ScoringLabAdmin() {
               </div>
               <div className="mt-3 flex items-baseline gap-2">
                 <span className="text-2xl font-bold font-mono text-emerald-400">
-                  {liveMetrics.falsePositiveRate > 0 ? `${liveMetrics.falsePositiveRate.toFixed(2)}%` : '0.78%'}
+                  {liveMetrics.falsePositiveRate > 0 ? `${liveMetrics.falsePositiveRate.toFixed(2)}%` : '0.00%'}
                 </span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/40">
                   Salud Óptima (&lt;1.5%)
@@ -956,7 +956,7 @@ export default function ScoringLabAdmin() {
               </div>
               <div className="mt-3 flex items-baseline gap-2">
                 <span className="text-2xl font-bold font-mono text-rose-400">
-                  {liveAlerts.length > 0 ? liveAlerts.length : (networkAlerts?.length || 2)}
+                  {liveAlerts.length > 0 ? liveAlerts.length : (networkAlerts?.length || 0)}
                 </span>
                 <span className="text-xs text-[#94a3b8]">
                   activas en red federal

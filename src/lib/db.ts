@@ -374,13 +374,13 @@ class InMemoryConsortiumDb {
       typologyCounts[event.reason] = (typologyCounts[event.reason] || 0) + 1;
     }
 
-    const totalReportedData = 18450 + totalEntities + this.fraudEvents.length;
-    const fraudReportedData = 2280 + highRiskCount + this.fraudEvents.length;
-    const fraudDataPercentage = totalReportedData > 0 ? Number(((fraudReportedData / totalReportedData) * 100).toFixed(1)) : 12.4;
+    const totalReportedData = totalEntities + this.fraudEvents.length;
+    const fraudReportedData = highRiskCount + this.fraudEvents.length;
+    const fraudDataPercentage = totalReportedData > 0 ? Number(((fraudReportedData / totalReportedData) * 100).toFixed(1)) : 0.0;
 
-    const dailyTotalProcessed = 142850 + this.auditLogs.length;
-    const dailyFraudCount = 3420 + highRiskCount;
-    const dailyCriticalRate = dailyTotalProcessed > 0 ? Number(((dailyFraudCount / dailyTotalProcessed) * 100).toFixed(1)) : 2.4;
+    const dailyTotalProcessed = this.auditLogs.length;
+    const dailyFraudCount = highRiskCount;
+    const dailyCriticalRate = dailyTotalProcessed > 0 ? Number(((dailyFraudCount / dailyTotalProcessed) * 100).toFixed(1)) : 0.0;
 
     return {
       totalEntities,
@@ -393,9 +393,9 @@ class InMemoryConsortiumDb {
       dailyTotalProcessed,
       dailyFraudCount,
       dailyCriticalRate,
-      fraudAvoidedMonth: 1248 + highRiskCount,
-      estimatedMoneySavedARS: 842500000 + highRiskCount * 1450000,
-      estimatedMoneySavedUSD: 720000 + Math.round((highRiskCount * 1450000) / 1200),
+      fraudAvoidedMonth: highRiskCount,
+      estimatedMoneySavedARS: highRiskCount * 1450000,
+      estimatedMoneySavedUSD: Math.round((highRiskCount * 1450000) / 1200),
       highRiskCount,
       mediumRiskCount,
       lowRiskCount,

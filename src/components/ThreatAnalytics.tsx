@@ -14,47 +14,57 @@ import {
   ArrowUpRight,
   Fingerprint,
 } from 'lucide-react';
+import { useConsortiumStore } from '@/lib/store';
 
 export default function ThreatAnalytics() {
+  const { graphEdges } = useConsortiumStore();
+  const total = graphEdges.length;
+
+  const muleCount = graphEdges.filter(e => e.incidentCategory === 'MULE_ACCOUNT').length;
+  const atoCount = graphEdges.filter(e => e.incidentCategory === 'ACCOUNT_TAKEOVER' || e.incidentCategory === 'IDENTITY_THEFT').length;
+  const syntheticCount = graphEdges.filter(e => e.incidentCategory === 'SYNTHETIC_IDENTITY').length;
+  const chargebackCount = graphEdges.filter(e => e.incidentCategory === 'CARD_FRAUD').length;
+  const phishingCount = graphEdges.filter(e => e.incidentCategory === 'PHISHING').length;
+
   const typologies = [
     {
       name: 'Cuentas Mula & Triangulación',
-      count: 542,
-      percentage: 38,
+      count: muleCount,
+      percentage: total > 0 ? Math.round((muleCount / total) * 100) : 0,
       color: 'bg-rose-500',
-      trend: '+12%',
+      trend: total > 0 ? `${muleCount} incidentes` : '0 incidentes',
       description: 'Cuentas bancarias o billeteras utilizadas para lavar giros de estafas en cadena.',
     },
     {
       name: 'Robo de Cuenta (Account Takeover)',
-      count: 356,
-      percentage: 25,
+      count: atoCount,
+      percentage: total > 0 ? Math.round((atoCount / total) * 100) : 0,
       color: 'bg-indigo-500',
-      trend: '-4%',
+      trend: total > 0 ? `${atoCount} incidentes` : '0 incidentes',
       description: 'Credenciales vulneradas por SIM swapping, ingeniería social o malware bancario.',
     },
     {
       name: 'Identidades Sintéticas & DNI Falso',
-      count: 228,
-      percentage: 16,
+      count: syntheticCount,
+      percentage: total > 0 ? Math.round((syntheticCount / total) * 100) : 0,
       color: 'bg-amber-500',
-      trend: '+19%',
+      trend: total > 0 ? `${syntheticCount} incidentes` : '0 incidentes',
       description: 'Combinación de DNI legítimos con fotos adulteradas para superar validación biométrica.',
     },
     {
       name: 'Contracargos Reincidentes',
-      count: 171,
-      percentage: 12,
+      count: chargebackCount,
+      percentage: total > 0 ? Math.round((chargebackCount / total) * 100) : 0,
       color: 'bg-cyan-500',
-      trend: '-2%',
+      trend: total > 0 ? `${chargebackCount} incidentes` : '0 incidentes',
       description: 'Usuarios que desconocen compras reiteradas en plataformas de comercio electrónico.',
     },
     {
       name: 'Phishing Bancario & Smishing',
-      count: 128,
-      percentage: 9,
+      count: phishingCount,
+      percentage: total > 0 ? Math.round((phishingCount / total) * 100) : 0,
       color: 'bg-emerald-500',
-      trend: '+8%',
+      trend: total > 0 ? `${phishingCount} incidentes` : '0 incidentes',
       description: 'Enlaces clonados simulando plataformas de homebanking o billeteras oficiales.',
     },
   ];

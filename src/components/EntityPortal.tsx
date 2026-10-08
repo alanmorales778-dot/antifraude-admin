@@ -29,27 +29,24 @@ import ApiDocsAndKeys from '@/components/ApiDocsAndKeys';
 import WebhooksCenter from '@/components/WebhooksCenter';
 import AuditLogViewer from '@/components/AuditLogViewer';
 import AICopilotDrawer from '@/components/AICopilotDrawer';
-import DatabaseConfigModal from '@/components/DatabaseConfigModal';
 import { INITIAL_TENANTS } from '@/lib/data-seed';
 import { useConsortiumStore } from '@/lib/store';
 import { ServiceScope } from '@/lib/types';
 
 const NAV_ITEMS = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, description: 'KPIs y estadÃ­sticas' },
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, description: 'KPIs y estadísticas' },
   { id: 'consulta', label: 'Consulta de Riesgo', icon: Search, description: 'Lookup unitario y combinado ZK' },
-  { id: 'consulta_masiva', label: 'Consultas Masivas', icon: FileSpreadsheet, description: 'Subir CSV y descargar layout' },
   { id: 'reporte', label: 'Reportar Fraude', icon: ShieldAlert, description: 'Ingreso de incidentes' },
-  { id: 'csv', label: 'ImportaciÃ³n CSV', icon: Upload, description: 'Carga masiva de fraudes' },
+  { id: 'csv', label: 'Importación CSV', icon: Upload, description: 'Carga masiva de fraudes' },
   { id: 'historial', label: 'Historial', icon: History, description: 'Mis reportes' },
   { id: 'analytics', label: 'Analytics', icon: TrendingUp, description: 'Inteligencia de amenazas' },
-  { id: 'api', label: 'API & Webhooks', icon: Key, description: 'IntegraciÃ³n y claves' },
+  { id: 'api', label: 'API & Webhooks', icon: Key, description: 'Integración y claves' },
 ];
 
-// Mapea cada tab al mÃ³dulo dentro de FintechDashboard
+// Mapea cada tab al módulo dentro de FintechDashboard
 type FintechModule = 'lookup' | 'bulk_lookup' | 'report' | 'csv' | 'history';
 const TAB_TO_MODULE: Record<string, FintechModule> = {
   consulta: 'lookup',
-  consulta_masiva: 'bulk_lookup',
   reporte: 'report',
   csv: 'csv',
   historial: 'history',
@@ -124,7 +121,6 @@ export default function EntityPortal({
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
-  const [isDbModalOpen, setIsDbModalOpen] = useState(false);
   const [stats, setStats] = useState<any>(null);
 
   const {
@@ -343,27 +339,6 @@ export default function EntityPortal({
               {isInternal ? 'WORKSPACE INTERNO' : 'CONSORCIO FEDERAL'}
             </div>
 
-            {/* Supabase Cloud Memory Button */}
-            <button
-              onClick={() => setIsDbModalOpen(true)}
-              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] font-mono border transition-all ${
-                supabaseStatus === 'CONNECTED'
-                  ? 'bg-[#14291f] border-[#254d3b] text-[#7ee787] hover:bg-[#1a382a]'
-                  : supabaseStatus === 'SYNCING'
-                  ? 'bg-[#152735] border-[#254560] text-[#79c0ff] hover:bg-[#1c354a]'
-                  : 'bg-[#2a2114] border-[#4d3c22] text-[#e3b341] hover:bg-[#382c1a]'
-              }`}
-              title="Configurar Memoria Cloud (Supabase)"
-            >
-              <Database className="h-3 w-3" />
-              <span>
-                {supabaseStatus === 'CONNECTED'
-                  ? `Cloud DB: ${supabaseLatencyMs ? `${supabaseLatencyMs}ms` : 'Supabase'}`
-                  : supabaseStatus === 'SYNCING'
-                  ? 'Sincronizando...'
-                  : 'Memoria Local (Conectar DB)'}
-              </span>
-            </button>
 
             <span className="flex items-center gap-1.5 text-[11px] text-[#718096] font-mono">
               <span className="w-2 h-2 rounded-full bg-[#48bb78] animate-pulse" />
@@ -417,7 +392,6 @@ export default function EntityPortal({
       </div>
 
       <AICopilotDrawer isOpen={isCopilotOpen} onClose={() => setIsCopilotOpen(false)} />
-      <DatabaseConfigModal isOpen={isDbModalOpen} onClose={() => setIsDbModalOpen(false)} />
     </div>
   );
 }
