@@ -1060,7 +1060,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
 
       reportFraud: async ({ dni, email, phone, ip, cbu, device, cuit, incidentCategory, internalTicketId, incidentId }) => {
         const state = get();
-        const fintechId = state.activeFintechId;
+        const fintechId = state.partnerSession?.entityId || state.activeFintechId || (state.fintechs[0]?.id) || 'fintech-alpha';
         const fintech = state.fintechs.find(f => f.id === fintechId);
 
         if (fintech?.status === 'SUSPENDED') {
@@ -1076,7 +1076,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         const deviceHash = device ? await computeHash('DEVICE', device) : null;
         const cuitHash = cuit ? await computeHash('CUIT', cuit) : null;
 
-        const actorName = fintech?.name || fintechId;
+        const actorName = fintech?.name || state.partnerSession?.entityName || 'Fintech Alpha';
         const identifiers = [
           dni ? `DNI: ${dni.slice(0, 2)}***${dni.slice(-3)}` : null,
           email ? `Email: ${email.slice(0, 3)}***@${email.split('@')[1] || ''}` : null,

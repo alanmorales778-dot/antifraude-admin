@@ -8,9 +8,9 @@ import QRCode from 'qrcode';
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
 /**
- * Genera un secreto aleatorio Base32 de longitud especificada (por defecto 20 caracteres)
+ * Genera un secreto aleatorio Base32 de longitud especificada (por defecto 32 caracteres = 160 bits RFC 4648)
  */
-export function generateTOTPSecret(length: number = 20): string {
+export function generateTOTPSecret(length: number = 32): string {
   const bytes = new Uint8Array(length);
   if (typeof window !== 'undefined' && window.crypto) {
     window.crypto.getRandomValues(bytes);
@@ -41,6 +41,27 @@ export function generateTOTPUri(
   const cleanIssuer = issuer.trim();
   const cleanSecret = secret.replace(/\s+/g, '').toUpperCase();
   return `otpauth://totp/${encodeURIComponent(cleanIssuer)}:${encodeURIComponent(cleanEmail)}?secret=${cleanSecret}&issuer=${encodeURIComponent(cleanIssuer)}&algorithm=SHA1&digits=6&period=30`;
+}
+
+/**
+ * Genera el código QR en formato SVG puro
+ */
+export async function generateQRCodeSvg(otpauthUri: string): Promise<string> {
+  try {
+    return await QRCode.toString(otpauthUri, {
+      type: 'svg',
+      width: 240,
+      margin: 2,
+      color: {
+        dark: '#050a14',
+        light: '#ffffff',
+      },
+      errorCorrectionLevel: 'M',
+    });
+  } catch (err) {
+    console.error('Error generando SVG de QR code:', err);
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240"><text x="20" y="120" fill="#fff">QR no disponible</text></svg>`;
+  }
 }
 
 /**

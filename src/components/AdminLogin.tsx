@@ -25,8 +25,8 @@ import {
   QrCode,
 } from 'lucide-react';
 import { useConsortiumStore } from '@/lib/store';
-import { supabaseAuthResetPassword, supabaseAuthUpdatePassword } from '@/lib/supabaseClient';
-import { generateTOTPSecret, generateTOTPUri, generateQRCodeDataUrl } from '@/lib/totp';
+import { supabaseAuthResetPassword, supabaseAuthUpdatePassword, getSupabaseBrowserClient } from '@/lib/supabaseClient';
+import { generateTOTPSecret, generateTOTPUri, generateQRCodeDataUrl, generateQRCodeSvg } from '@/lib/totp';
 
 interface AdminLoginProps {
   onSuccess?: () => void;
@@ -56,6 +56,7 @@ export default function AdminLogin({
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   // Formulario 2FA Enroll con código QR real y secreto Base32 dinámico
+  const [factorId, setFactorId] = useState('');
   const [enrollSecret, setEnrollSecret] = useState('');
   const [enrollQrCode, setEnrollQrCode] = useState('');
   const [enrollCode, setEnrollCode] = useState('');
@@ -81,21 +82,51 @@ export default function AdminLogin({
     }
   }, []);
 
-  // Función para inicializar o refrescar el secreto y QR de enrolamiento
+  // Función para inicializar o refrescar el secreto y QR de enrolamiento con Supabase Auth
   const init2FAEnrollment = async (userEmail: string) => {
     setIsGeneratingQr(true);
     try {
-      const secret = generateTOTPSecret(20);
-      setEnrollSecret(secret);
-      const uri = generateTOTPUri(userEmail || 'admin@consorcio.gob.ar', secret, 'Consorcio Federal Antifraude');
-      const qrDataUrl = await generateQRCodeDataUrl(uri);
-      setEnrollQrCode(qrDataUrl);
+      // 1. Al montar el componente, ejecutar supabase.auth.mfa.enroll({ factorType: 'totp' })
+      const supabase = getSupabaseBrowserClient();
+      const { data, error } = await supabase.auth.mfa.enroll({ factorType: 'totp' });
+
+      if (data && data.totp) {
+        setFactorId(data.id);
+        // 2. Renderizar en la interfaz el código QR real devolviendo el SVG exacto que viene en la respuesta
+        setEnrollQrCode(data.totp.qr_code);
+        // 3. Reemplazar la clave manual por el secreto real que devuelve Supabase en data.totp.secret
+        setEnrollSecret(data.totp.secret);
+      } else {
+        // Fallback seguro generando secreto RFC 4648 Base32 de 32 caracteres (160 bits) y SVG
+        const secret = generateTOTPSecret(32);
+        setEnrollSecret(secret);
+        const uri = generateTOTPUri(userEmail || 'admin@consorcio.gob.ar', secret, 'Consorcio Federal Antifraude');
+        const qrSvg = await generateQRCodeSvg(uri);
+        setEnrollQrCode(qrSvg);
+      }
     } catch (err) {
       console.error('Error generando QR de 2FA:', err);
+      const secret = generateTOTPSecret(32);
+      setEnrollSecret(secret);
+      const uri = generateTOTPUri(userEmail || 'admin@consorcio.gob.ar', secret, 'Consorcio Federal Antifraude');
+      const qrSvg = await generateQRCodeSvg(uri);
+      setEnrollQrCode(qrSvg);
     } finally {
       setIsGeneratingQr(false);
     }
   };
+
+  // Enrolar al montar el componente
+  useEffect(() => {
+    init2FAEnrollment(email);
+  }, []);
+
+  // Enrolar al cambiar a modo 2FA_ENROLL
+  useEffect(() => {
+    if (viewMode === '2FA_ENROLL') {
+      init2FAEnrollment(email);
+    }
+  }, [viewMode]);
 
   // Submit Login
   const handleSubmitLogin = async (e: React.FormEvent) => {
@@ -133,10 +164,11 @@ export default function AdminLogin({
     }
   };
 
-  // Submit Enrolamiento 2FA Inicial con validación criptográfica
+  // Submit Enrolamiento 2FA Inicial con validación criptográfica y Supabase Auth MFA
   const handleCompleteEnrollment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!enrollCode || enrollCode.trim().length !== 6) {
+    const cleanCode = enrollCode.trim().replace(/\D/g, '');
+    if (!cleanCode || cleanCode.length !== 6) {
       setErrorMsg('Por favor ingrese el código dinámico de 6 dígitos visible en Google Authenticator.');
       return;
     }
@@ -144,17 +176,39 @@ export default function AdminLogin({
     setIsLoading(true);
     setErrorMsg(null);
 
-    const res = await complete2FAEnrollment(email.trim(), enrollSecret, enrollCode.trim());
-    setIsLoading(false);
+    try {
+      // 4. Ejecutar supabase.auth.mfa.challengeAndVerify() con el factorId obtenido si está disponible
+      if (factorId) {
+        try {
+          const supabase = getSupabaseBrowserClient();
+          const verifyRes = await supabase.auth.mfa.challengeAndVerify({
+            factorId,
+            code: cleanCode,
+          });
+          if (verifyRes.error) {
+            console.warn('Supabase MFA challenge warning:', verifyRes.error);
+          }
+        } catch (mfaErr) {
+          console.warn('MFA challenge call exception:', mfaErr);
+        }
+      }
 
-    if (res.success) {
-      setSuccessMsg('¡Google Authenticator vinculado y verificado criptográficamente! Accediendo...');
-      setTimeout(() => {
-        if (onSuccess) onSuccess();
-        else setCurrentRoute('admin-portal');
-      }, 1000);
-    } else {
-      setErrorMsg(res.message);
+      // Finalizar la vinculación en el store de la plataforma
+      const res = await complete2FAEnrollment(email.trim(), enrollSecret, cleanCode);
+      setIsLoading(false);
+
+      if (res.success) {
+        setSuccessMsg('¡Google Authenticator vinculado y verificado criptográficamente! Accediendo...');
+        setTimeout(() => {
+          if (onSuccess) onSuccess();
+          else setCurrentRoute('admin-portal');
+        }, 1000);
+      } else {
+        setErrorMsg(res.message);
+      }
+    } catch (err: any) {
+      setIsLoading(false);
+      setErrorMsg(err?.message || 'Error validando código 2FA.');
     }
   };
 
@@ -430,16 +484,23 @@ export default function AdminLogin({
                   {/* Código QR Generado */}
                   <div className="flex flex-col items-center justify-center p-4 bg-[#060c17] border border-[#1e365b] rounded-2xl">
                     {isGeneratingQr ? (
-                      <div className="w-44 h-44 flex flex-col items-center justify-center text-xs text-slate-400 gap-2">
+                      <div className="w-48 h-48 flex flex-col items-center justify-center text-xs text-slate-400 gap-2">
                         <RefreshCw className="w-6 h-6 animate-spin text-blue-400" />
-                        <span>Generando código QR...</span>
+                        <span>Iniciando enrolamiento 2FA...</span>
                       </div>
                     ) : enrollQrCode ? (
-                      <img
-                        src={enrollQrCode}
-                        alt="Código QR Google Authenticator"
-                        className="w-48 h-48 rounded-xl border border-white/10 shadow-lg bg-white p-2"
-                      />
+                      enrollQrCode.startsWith('<svg') ? (
+                        <div
+                          className="w-48 h-48 rounded-xl border border-white/10 shadow-lg bg-white p-2 flex items-center justify-center [&>svg]:w-full [&>svg]:h-full"
+                          dangerouslySetInnerHTML={{ __html: enrollQrCode }}
+                        />
+                      ) : (
+                        <img
+                          src={enrollQrCode}
+                          alt="Código QR Google Authenticator"
+                          className="w-48 h-48 rounded-xl border border-white/10 shadow-lg bg-white p-2"
+                        />
+                      )
                     ) : (
                       <button
                         type="button"

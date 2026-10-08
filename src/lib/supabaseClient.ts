@@ -9,6 +9,8 @@
  * 3. Permite sincronización bidireccional y fallback suave a localStorage si no está configurado.
  */
 
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+
 export interface SupabaseConfig {
   url: string;
   anonKey: string;
@@ -20,6 +22,23 @@ const STORAGE_KEY_KEY = 'antifraude_supabase_anon_key';
 
 const DEFAULT_SUPABASE_URL = 'https://yaehffwiehzdzykrzuge.supabase.co';
 const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_mVVAkEq5XBG2H3bNIsOjGA_bJBTMfgO';
+
+let _supabaseClientInstance: SupabaseClient | null = null;
+
+export function getSupabaseBrowserClient(): SupabaseClient {
+  const config = getSupabaseConfig();
+  if (!_supabaseClientInstance) {
+    _supabaseClientInstance = createClient(config.url, config.anonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+      },
+    });
+  }
+  return _supabaseClientInstance;
+}
+
+export const supabase = getSupabaseBrowserClient();
 
 /**
  * Obtiene la configuración activa de Supabase

@@ -2273,59 +2273,49 @@ function ReportFraudModule() {
     e.preventDefault();
     setError('');
 
-    // Validación según modo
-    if (reportMode === 'single') {
-      let hasPrimary = false;
-      if (primaryType === 'DNI' && dni.trim()) hasPrimary = true;
-      if (primaryType === 'CBU' && cbu.trim()) hasPrimary = true;
-      if (primaryType === 'CUIT' && cuit.trim()) hasPrimary = true;
-      if (primaryType === 'EMAIL' && email.trim()) hasPrimary = true;
-      if (primaryType === 'PHONE' && phone.trim()) hasPrimary = true;
-      
-      if (!hasPrimary) {
-        setError(`Debe ingresar el identificador principal obligatorio (${primaryType}).`);
-        return;
-      }
-    } else {
-      if (!dni && !email && !phone && !ip && !cbu && !device && !cuit) {
-        setError('Debe ingresar al menos un identificador para el conjunto.');
-        return;
-      }
+    // Comprobar que al menos un dato haya sido provisto
+    const hasAnyIdentifier = Boolean(
+      dni.trim() || email.trim() || phone.trim() || ip.trim() || cbu.trim() || device.trim() || cuit.trim()
+    );
+
+    if (!hasAnyIdentifier) {
+      setError('Debe ingresar al menos un identificador (DNI, CBU/CVU, CUIT, Email o Teléfono).');
+      return;
     }
 
-    // ── Validaciones Inteligentes (Zero-Trust Enterprise) ──
-    // CBU/CVU: Exactamente 22 dígitos numéricos
+    // ── Validaciones Inteligentes y Flexibles ──
+    // CBU/CVU
     if (cbu.trim()) {
       const cleanCbu = cbu.trim().replace(/\D/g, '');
-      if (cleanCbu.length !== 22) {
-        setError(`Validación CBU/CVU fallida: Debe contener EXACTAMENTE 22 dígitos numéricos (longitud actual: ${cleanCbu.length}).`);
+      if (cleanCbu.length > 0 && cleanCbu.length < 10) {
+        setError('Validación CBU/CVU: Ingrese una cuenta bancaria o CVU válida.');
         return;
       }
     }
 
-    // CUIT/CUIL: Exactamente 11 dígitos numéricos
+    // CUIT/CUIL
     if (cuit.trim()) {
       const cleanCuit = cuit.trim().replace(/\D/g, '');
-      if (cleanCuit.length !== 11) {
-        setError(`Validación CUIT/CUIL fallida: Debe contener EXACTAMENTE 11 dígitos numéricos (longitud actual: ${cleanCuit.length}).`);
+      if (cleanCuit.length > 0 && cleanCuit.length < 10) {
+        setError('Validación CUIT/CUIL: Debe contener al menos 10-11 dígitos numéricos.');
         return;
       }
     }
 
-    // DNI: Flexible de 7 a 8 dígitos numéricos
+    // DNI: Flexible
     if (dni.trim()) {
       const cleanDni = dni.trim().replace(/\D/g, '');
-      if (cleanDni.length < 7 || cleanDni.length > 8) {
-        setError(`Validación DNI fallida: Debe contener entre 7 y 8 dígitos numéricos (longitud actual: ${cleanDni.length}).`);
+      if (cleanDni.length > 0 && cleanDni.length < 6) {
+        setError('Validación DNI: Debe contener al menos 6 dígitos numéricos.');
         return;
       }
     }
 
-    // Teléfono: Formato flexible con soporte internacional
+    // Teléfono
     if (phone.trim()) {
       const cleanPhone = phone.trim();
       if (!/^\+?[\d\s\-()]{6,20}$/.test(cleanPhone)) {
-        setError('Validación de teléfono fallida: Formato internacional inválido.');
+        setError('Validación de teléfono fallida: Formato de número inválido.');
         return;
       }
     }

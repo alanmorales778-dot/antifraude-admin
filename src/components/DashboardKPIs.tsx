@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import {
   ShieldAlert,
   ShieldCheck,
@@ -8,7 +8,6 @@ import {
   TrendingUp,
   Activity,
   AlertTriangle,
-  Lock,
   Layers,
   ArrowRight,
   Sparkles,
@@ -57,9 +56,7 @@ export default function DashboardKPIs({ stats, tenants, onNavigateTab }: Dashboa
   // < 30%    -> Verde (Normal / Seguro)
   // 30% - 60% -> Amarillo (Alerta Moderada)
   // > 60%    -> Rojo (Alerta Crítica)
-  const [customRate, setCustomRate] = useState<number | null>(null);
-  const baseRate = stats?.dailyCriticalRate ?? 18.4;
-  const criticalRate = customRate !== null ? customRate : baseRate;
+  const criticalRate = stats?.dailyCriticalRate ?? 18.4;
 
   const isGreen = criticalRate < 30;
   const isYellow = criticalRate >= 30 && criticalRate <= 60;
@@ -184,40 +181,6 @@ export default function DashboardKPIs({ stats, tenants, onNavigateTab }: Dashboa
             </div>
           </div>
 
-          {/* Selector interactivo de simulación de umbrales */}
-          <div className="mt-2.5 flex items-center gap-1.5 pt-1 text-[10px]">
-            <span className="text-slate-400 text-[10px]">Simular:</span>
-            <button
-              type="button"
-              onClick={() => setCustomRate(18.4)}
-              className={`px-1.5 py-0.5 rounded border transition font-mono ${
-                isGreen ? 'bg-emerald-500/30 text-emerald-200 border-emerald-400 font-bold' : 'bg-slate-800 text-slate-400 border-white/5 hover:text-white'
-              }`}
-              title="< 30% Verde"
-            >
-              🟢 18%
-            </button>
-            <button
-              type="button"
-              onClick={() => setCustomRate(45.0)}
-              className={`px-1.5 py-0.5 rounded border transition font-mono ${
-                isYellow ? 'bg-amber-500/30 text-amber-200 border-amber-400 font-bold' : 'bg-slate-800 text-slate-400 border-white/5 hover:text-white'
-              }`}
-              title="30% - 60% Amarillo"
-            >
-              🟡 45%
-            </button>
-            <button
-              type="button"
-              onClick={() => setCustomRate(72.5)}
-              className={`px-1.5 py-0.5 rounded border transition font-mono ${
-                isRed ? 'bg-rose-500/30 text-rose-200 border-rose-400 font-bold' : 'bg-slate-800 text-slate-400 border-white/5 hover:text-white'
-              }`}
-              title="> 60% Rojo"
-            >
-              🔴 73%
-            </button>
-          </div>
 
           <div className="mt-3 border-t border-white/10 pt-2 flex items-center justify-between text-[11px] text-slate-400">
             <span>{alertConfig.recommendation}</span>
@@ -234,9 +197,9 @@ export default function DashboardKPIs({ stats, tenants, onNavigateTab }: Dashboa
       </div>
 
       {/* Main Charts Row */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <div className="w-full">
         {/* Daily Queries vs High-Risk Detections SVG Line Chart */}
-        <div className="glass-panel rounded-2xl p-6 lg:col-span-2">
+        <div className="glass-panel rounded-2xl p-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
               <h3 className="text-sm font-bold text-white">Evolución Diaria: Consultas vs. Detecciones Críticas</h3>
@@ -288,63 +251,6 @@ export default function DashboardKPIs({ stats, tenants, onNavigateTab }: Dashboa
               <span>SLA Red: 99.998% Uptime</span>
               <span>Filtrado automático de colisiones criptográficas</span>
             </div>
-          </div>
-        </div>
-
-        {/* Latency & Consortium Performance Panel */}
-        <div className="glass-panel rounded-2xl p-6 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-white">Rendimiento en el Borde (Edge)</h3>
-              <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-400 border border-emerald-500/20">
-                &lt; 50ms GARANTIZADO
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-slate-400">
-              Distribución de latencia de respuesta del clúster de caché en memoria y Postgres
-            </p>
-
-            <div className="mt-6 space-y-4">
-              <div>
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="text-slate-300">P50 (Mediana)</span>
-                  <span className="font-mono text-emerald-400 font-semibold">6 ms</span>
-                </div>
-                <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
-                  <div className="h-full bg-emerald-500 rounded-full" style={{ width: '12%' }} />
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="text-slate-300">P90</span>
-                  <span className="font-mono text-cyan-400 font-semibold">11 ms</span>
-                </div>
-                <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
-                  <div className="h-full bg-cyan-500 rounded-full" style={{ width: '22%' }} />
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="text-slate-300">P99 (Peor caso)</span>
-                  <span className="font-mono text-indigo-400 font-semibold">14 ms</span>
-                </div>
-                <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
-                  <div className="h-full bg-indigo-500 rounded-full" style={{ width: '28%' }} />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-6 rounded-xl border border-white/5 bg-slate-900/60 p-3.5">
-            <div className="flex items-center gap-2 text-xs font-semibold text-slate-200">
-              <Lock className="h-4 w-4 text-indigo-400" />
-              <span>Garantía de Privacidad Ciega</span>
-            </div>
-            <p className="mt-1 text-[11px] text-slate-400">
-              Ninguna entidad conoce los clientes de las demás. Los cruces se producen exclusivamente en el espacio de hashes SHA-256 irreversibles.
-            </p>
           </div>
         </div>
       </div>
