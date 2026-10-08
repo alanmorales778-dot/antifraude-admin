@@ -89,7 +89,7 @@ export default function ThreatAnalytics() {
             <p className="text-xs text-slate-400">Mapeo de vector de ataque en las principales entidades financieras argentinas</p>
           </div>
           <span className="rounded bg-indigo-500/10 px-2.5 py-1 text-xs font-mono text-indigo-300 border border-indigo-500/20">
-            Total Reportes: 1,425
+            Total Reportes: {total}
           </span>
         </div>
 

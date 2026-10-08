@@ -112,7 +112,7 @@ export const SEED_APP_USERS: AppUser[] = [
     entityId: 'fintech-alpha',
     entityName: 'Fintech Alpha',
     status: 'ACTIVE',
-    totpEnrolled: true,
+    totpEnrolled: false,
     createdAt: '2026-09-15T12:00:00Z',
   },
   {
@@ -217,7 +217,7 @@ interface ConsortiumStore {
   logoutAdmin: () => void;
 
   partnerSession: PartnerSession | null;
-  loginPartner: (credentials: { entityId: string; apiKey: string; operatorEmail: string; operatorRole?: UserRole }) => Promise<{ success: boolean; message: string }>;
+  loginPartner: (credentials: { entityId: string; apiKey: string; operatorEmail: string; operatorRole?: UserRole; totpCode?: string }) => Promise<{ success: boolean; message: string; requires2FAEnroll?: boolean; requires2FACode?: boolean }>;
   logoutPartner: () => void;
 
   // ── Gestión de Usuarios y Roles (Supabase Auth / RBAC) ────────
@@ -1268,18 +1268,31 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           };
         }
 
-        set(state => {
-          let updatedUsers = state.appUsers.map(u => {
+        const state = get();
+        let targetUser = state.appUsers.find(u => u.email.toLowerCase() === cleanEmail);
+        const isDefaultSuperAdmin = cleanEmail === 'andresalaniz8@gmail.com' || cleanEmail === 'alan.morales778@gmail.com';
+
+        if (!targetUser && !isDefaultSuperAdmin) {
+          return {
+            success: false,
+            message: `Acceso no autorizado: El usuario ${cleanEmail} no ha sido dado de alta previamente por un Administrador desde el Panel de Gobernanza Central.`,
+          };
+        }
+
+        const isAdmin = targetUser ? targetUser.role === 'admin' : isDefaultSuperAdmin;
+
+        set(s => {
+          let updatedUsers = s.appUsers.map(u => {
             if (u.email.toLowerCase() === cleanEmail) {
               return { ...u, totpEnrolled: true, totpSecret: cleanSecret, lastLogin: new Date().toISOString() };
             }
             return u;
           });
 
-          // Si el usuario no existía aún en appUsers, crearlo
-          if (!updatedUsers.some(u => u.email.toLowerCase() === cleanEmail)) {
+          // Si el usuario es un admin por defecto que aún no estaba en appUsers:
+          if (!updatedUsers.some(u => u.email.toLowerCase() === cleanEmail) && isDefaultSuperAdmin) {
             updatedUsers.push({
-              id: `usr-${Date.now()}`,
+              id: `usr-admin-${Date.now()}`,
               email: cleanEmail,
               role: 'admin',
               entityId: 'CONSORCIO',
@@ -1292,31 +1305,56 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             });
           }
 
-          const session: AdminSession = {
-            isAuthenticated: true,
-            email: cleanEmail,
-            name: cleanEmail.split('@')[0].toUpperCase(),
-            role: 'SUPER_ADMIN',
-            token: `adm_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
-            loginTime: new Date().toISOString(),
-            is2FAVerified: true,
-          };
-
-          return {
-            adminSession: session,
-            activeRole: 'ADMIN',
-            currentRoute: 'admin-portal',
-            appUsers: updatedUsers,
-            auditLogs: addAuditEntry(
-              state.auditLogs,
-              cleanEmail,
-              '2FA_ENROLL',
-              `Enrolamiento 2FA (Google Authenticator) vinculado y verificado criptográficamente para ${cleanEmail}`
-            ),
-          };
+          if (isAdmin) {
+            const adminSession: AdminSession = {
+              isAuthenticated: true,
+              email: cleanEmail,
+              name: cleanEmail.split('@')[0].toUpperCase(),
+              role: 'SUPER_ADMIN',
+              token: `adm_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+              loginTime: new Date().toISOString(),
+              is2FAVerified: true,
+            };
+            return {
+              adminSession,
+              activeRole: 'ADMIN',
+              currentRoute: 'admin-portal',
+              appUsers: updatedUsers,
+              auditLogs: addAuditEntry(
+                s.auditLogs,
+                cleanEmail,
+                '2FA_ENROLL',
+                `Enrolamiento 2FA (Google Authenticator) vinculado y verificado criptográficamente para SuperAdmin ${cleanEmail}`
+              ),
+            };
+          } else {
+            const partnerEntity = s.fintechs.find(f => f.id === targetUser?.entityId) || s.fintechs[0];
+            const partnerSession: PartnerSession = {
+              isAuthenticated: true,
+              entityId: partnerEntity.id,
+              entityName: partnerEntity.name,
+              operatorEmail: cleanEmail,
+              operatorRole: 'ANALYST_L2',
+              token: `ptn_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+              loginTime: new Date().toISOString(),
+            };
+            return {
+              partnerSession,
+              activeRole: 'FINTECH',
+              activeFintechId: partnerEntity.id,
+              currentRoute: 'partner-portal',
+              appUsers: updatedUsers,
+              auditLogs: addAuditEntry(
+                s.auditLogs,
+                partnerEntity.name,
+                '2FA_ENROLL',
+                `Enrolamiento 2FA (Google Authenticator) vinculado y verificado criptográficamente para ${cleanEmail}`
+              ),
+            };
+          }
         });
 
-        return { success: true, message: 'Google Authenticator vinculado y verificado correctamente.' };
+        return { success: true, message: 'Google Authenticator vinculado y verificado criptográficamente con éxito.' };
       },
 
       addUser: async ({ email, role, entityId = 'CONSORCIO', entityName = 'Gobernanza Central', tempPassword }) => {
@@ -1424,7 +1462,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         }));
       },
 
-      loginPartner: async ({ entityId, apiKey, operatorEmail, operatorRole = 'ANALYST_L2' }) => {
+      loginPartner: async ({ entityId, apiKey, operatorEmail, operatorRole = 'ANALYST_L2', totpCode }) => {
         const state = get();
         const entity = state.fintechs.find(f => f.id === entityId);
 
@@ -1443,17 +1481,69 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         }
 
         const cleanKey = apiKey.trim();
-        if (cleanKey !== entity.apiKey && !cleanKey.startsWith('antf_live_') && cleanKey !== 'demo') {
+        if (cleanKey !== entity.apiKey && !cleanKey.startsWith('antf_live_')) {
           return {
             success: false,
             message: 'Clave API de Entidad inválida o revocada por el Consorcio.',
           };
         }
 
-        if (!operatorEmail.includes('@')) {
+        const cleanEmail = operatorEmail.trim().toLowerCase();
+        if (!cleanEmail.includes('@') || !cleanEmail.includes('.')) {
           return {
             success: false,
             message: 'Debe ingresar un correo corporativo institucional válido.',
+          };
+        }
+
+        // Control de Acceso: El usuario debe haber sido dado de alta previamente por un Administrador
+        const existingUser = state.appUsers.find(u => u.email.toLowerCase() === cleanEmail);
+        if (!existingUser) {
+          return {
+            success: false,
+            message: `Acceso no autorizado: El usuario [${cleanEmail}] no ha sido dado de alta previamente por un Administrador desde el Panel de Gobernanza Central.`,
+          };
+        }
+
+        if (existingUser.status === 'SUSPENDED') {
+          return {
+            success: false,
+            message: 'Cuenta de usuario suspendida o bloqueada por la Gobernanza Central.',
+          };
+        }
+
+        // Control 2FA Obligatorio con Google Authenticator
+        if (!existingUser.totpEnrolled || !existingUser.totpSecret) {
+          return {
+            success: false,
+            requires2FAEnroll: true,
+            message: 'Enrolamiento 2FA requerido: Vincule Google Authenticator para continuar.',
+          };
+        }
+
+        if (!totpCode || totpCode.trim().length < 6) {
+          return {
+            success: false,
+            requires2FACode: true,
+            message: 'Ingrese el código dinámico de 6 dígitos generado por Google Authenticator.',
+          };
+        }
+
+        const cleanCode = totpCode.trim().replace(/\s/g, '');
+        if (!/^\d{6}$/.test(cleanCode)) {
+          return {
+            success: false,
+            requires2FACode: true,
+            message: 'Código 2FA inválido. Debe contener exactamente 6 dígitos numéricos.',
+          };
+        }
+
+        const isCodeValid = await verifyTOTP(cleanCode, existingUser.totpSecret, 1);
+        if (!isCodeValid) {
+          return {
+            success: false,
+            requires2FACode: true,
+            message: 'Código 2FA incorrecto o expirado. Verifique que la hora de su teléfono esté sincronizada e intente con el código actual de Google Authenticator.',
           };
         }
 
@@ -1461,7 +1551,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           isAuthenticated: true,
           entityId: entity.id,
           entityName: entity.name,
-          operatorEmail: operatorEmail.trim().toLowerCase(),
+          operatorEmail: cleanEmail,
           operatorRole: operatorRole,
           token: `ptn_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
           loginTime: new Date().toISOString(),
@@ -1472,11 +1562,12 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           activeRole: 'FINTECH',
           activeFintechId: entity.id,
           currentRoute: 'partner-portal',
+          appUsers: state2.appUsers.map(u => u.email.toLowerCase() === cleanEmail ? { ...u, lastLogin: new Date().toISOString() } : u),
           auditLogs: addAuditEntry(
             state2.auditLogs,
             entity.name,
             'PARTNER_LOGIN',
-            `Ingreso corporativo: ${operatorEmail} (${operatorRole}) en ${entity.name}`
+            `Ingreso corporativo: ${cleanEmail} (${operatorRole}) en ${entity.name} (2FA TOTP RFC 6238 verificado criptográficamente)`
           ),
         }));
 

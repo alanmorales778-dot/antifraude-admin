@@ -44,6 +44,7 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
   const [activeTab, setActiveTab] = useState<'entities' | 'audit' | 'network' | 'scoring-lab' | 'users'>('entities');
   const [newEntityName, setNewEntityName] = useState('');
   const [filterQuery, setFilterQuery] = useState('');
+  const [isAdding, setIsAdding] = useState(false);
 
   // Auto-seleccionar pestaña si está en la URL (ej: #scoring, ?tab=scoring)
   React.useEffect(() => {
