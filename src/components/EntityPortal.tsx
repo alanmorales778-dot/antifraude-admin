@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -134,9 +134,30 @@ export default function EntityPortal({
     setActiveService,
     supabaseStatus,
     supabaseLatencyMs,
+    partnerSession,
   } = useConsortiumStore();
   const activeFintech = fintechs.find(f => f.id === fintechId) || fintechs[0];
   const currentTenant = INITIAL_TENANTS[0];
+
+  // RBAC: Ocultar 'API & Webhooks' para rol 'Analista'. Solo visible para Administradores.
+  const isAnalyst = Boolean(
+    partnerSession?.operatorRole === 'ANALYST_L1' ||
+    partnerSession?.operatorRole === 'ANALYST_L2' ||
+    (partnerSession?.operatorRole && String(partnerSession.operatorRole).toLowerCase().includes('analyst')) ||
+    (partnerSession?.operatorRole && String(partnerSession.operatorRole).toLowerCase().includes('analista'))
+  );
+
+  const visibleNavItems = NAV_ITEMS.filter(item => {
+    if (item.id === 'api' && isAnalyst) return false;
+    return true;
+  });
+
+  // Si el usuario es analista e intenta entrar en API, redirigir a dashboard
+  useEffect(() => {
+    if (isAnalyst && activeTab === 'api') {
+      setActiveTab('dashboard');
+    }
+  }, [isAnalyst, activeTab]);
 
   // Sincronizar el fintech activo en el store global
   useEffect(() => {
@@ -222,7 +243,7 @@ export default function EntityPortal({
 
         {/* Nav */}
         <nav className="flex-1 p-2.5 space-y-1 overflow-y-auto">
-          {NAV_ITEMS.map(item => {
+          {visibleNavItems.map(item => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             return (

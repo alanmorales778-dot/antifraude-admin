@@ -33,6 +33,11 @@ import {
   Building2,
   Timer,
   Gauge,
+  MoreVertical,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  AlertCircle,
 } from 'lucide-react';
 import { useConsortiumStore } from '@/lib/store';
 import { LookupResult, IncidentCategory, ReasonCode } from '@/lib/types';
@@ -70,7 +75,7 @@ const REASON_CODE_LABELS: Record<ReasonCode, { label: string; icon: string; colo
 };
 
 function recommendationBadge(rec: 'ALLOW' | 'REVIEW' | 'BLOCK') {
-  if (rec === 'BLOCK') return { text: 'BLOQUEAR', class: 'bg-rose-500/20 border-rose-500/40 text-rose-300', icon: '🛑' };
+  if (rec === 'BLOCK') return { text: 'Marcar Riesgo Interno', class: 'bg-rose-500/20 border-rose-500/40 text-rose-300', icon: '🛑' };
   if (rec === 'REVIEW') return { text: 'REVISIÓN MANUAL', class: 'bg-amber-500/20 border-amber-500/40 text-amber-300', icon: '⚠️' };
   return { text: 'APROBAR', class: 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300', icon: '✅' };
 }
@@ -809,7 +814,7 @@ function SingleLookupView() {
 
           {/* ── SCORE DE RIESGO DIVIDIDO EN 2: ENTIDAD vs CONSORCIO ── */}
           <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className={`grid gap-4 ${isInternal ? 'grid-cols-1 max-w-xl mx-auto' : 'grid-cols-1 md:grid-cols-2'}`}>
               {/* Score 1: Según la Entidad */}
               {(() => {
                 const internalScore = result.internalRiskScore ?? result.breakdown.internalRiskScore ?? 0;
@@ -824,15 +829,15 @@ function SingleLookupView() {
                   <ScoreGauge
                     score={internalScore}
                     title="1. Score de la Entidad"
-                    subtitle={`Basado en los reportes y datos cargados por tu entidad (${activeFintech?.name || 'Tu Entidad'}).`}
+                    subtitle={`Basado en los reportes y antecedentes internos cargados por tu entidad (${activeFintech?.name || 'Tu Entidad'}).`}
                     badge={internalBadge}
                     icon={Building2}
                   />
                 );
               })()}
 
-              {/* Score 2: Del Consorcio Federal */}
-              {(() => {
+              {/* Score 2: Del Consorcio Federal — COMPLETAMENTE OCULTO EN WORKSPACE INTERNO (Zero-Trust) */}
+              {!isInternal && (() => {
                 const consortiumScore = result.consortiumRiskScore ?? result.breakdown.consortiumRiskScore ?? result.breakdown.finalScore ?? 0;
                 const consortiumLevel = result.consortiumRiskLevel ?? result.breakdown.consortiumRiskLevel ?? (consortiumScore >= 70 ? 'ALTO' : consortiumScore >= 30 ? 'MEDIO' : 'BAJO');
                 const consortiumBadge = consortiumLevel === 'ALTO'
@@ -853,8 +858,8 @@ function SingleLookupView() {
               })()}
             </div>
 
-            {/* ── BANNER COMPARATIVO: VALOR AGREGADO DEL CONSORCIO ── */}
-            {(() => {
+            {/* ── BANNER COMPARATIVO: VALOR AGREGADO DEL CONSORCIO (Oculto en Workspace Interno) ── */}
+            {!isInternal && (() => {
               const internalScore = result.internalRiskScore ?? result.breakdown.internalRiskScore ?? 0;
               const consortiumScore = result.consortiumRiskScore ?? result.breakdown.consortiumRiskScore ?? result.breakdown.finalScore ?? 0;
 
@@ -1089,6 +1094,97 @@ function SingleLookupView() {
                     </div>
                   )}
 
+                  {/* ── EMAIL INTELLIGENCE: PAÍS + ANTIGÜEDAD DEL DOMINIO ── */}
+                  {result.breakdown.emailVerification.country && result.breakdown.emailVerification.age && (
+                    <div className="rounded-2xl border border-indigo-500/30 bg-gradient-to-r from-indigo-950/50 via-slate-900/80 to-violet-950/40 p-4 shadow-lg">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Globe className="h-4 w-4 text-indigo-400" />
+                        <span className="text-xs font-bold text-indigo-300 uppercase tracking-wider">Email Intelligence — Análisis Geográfico y Temporal</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {/* País de Origen */}
+                        <div className="rounded-xl bg-slate-950/60 border border-white/5 p-3 flex items-center gap-3">
+                          <span className="text-2xl">{result.breakdown.emailVerification.country.flag}</span>
+                          <div className="min-w-0">
+                            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">País de Origen</p>
+                            <p className="text-sm font-bold text-white truncate">{result.breakdown.emailVerification.country.countryName}</p>
+                            <p className="text-[10px] text-slate-400 truncate">{result.breakdown.emailVerification.country.sourceLabel}</p>
+                          </div>
+                        </div>
+
+                        {/* Antigüedad del Dominio */}
+                        <div className="rounded-xl bg-slate-950/60 border border-white/5 p-3 flex items-center gap-3">
+                          <span className="text-2xl">
+                            {result.breakdown.emailVerification.age.maturityLevel === 'MADURO' ? '🟢' :
+                             result.breakdown.emailVerification.age.maturityLevel === 'INTERMEDIO' ? '🟡' :
+                             result.breakdown.emailVerification.age.maturityLevel === 'JOVEN' ? '🟠' : '🔴'}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Antigüedad del Dominio</p>
+                            <p className="text-sm font-bold text-white">{result.breakdown.emailVerification.age.ageLabel}</p>
+                            <p className="text-[10px] text-slate-400">Desde: {result.breakdown.emailVerification.age.domainCreatedDate}</p>
+                          </div>
+                        </div>
+
+                        {/* Nivel de Madurez */}
+                        <div className="rounded-xl bg-slate-950/60 border border-white/5 p-3 flex items-center gap-3">
+                          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-black ${
+                            result.breakdown.emailVerification.age.maturityLevel === 'MADURO'
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                              : result.breakdown.emailVerification.age.maturityLevel === 'INTERMEDIO'
+                              ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'
+                              : result.breakdown.emailVerification.age.maturityLevel === 'JOVEN'
+                              ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30'
+                              : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                          }`}>
+                            {result.breakdown.emailVerification.age.maturityLevel === 'MADURO' ? '✓' :
+                             result.breakdown.emailVerification.age.maturityLevel === 'INTERMEDIO' ? '~' :
+                             result.breakdown.emailVerification.age.maturityLevel === 'JOVEN' ? '!' : '✗'}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Nivel de Madurez</p>
+                            <p className={`text-sm font-bold ${
+                              result.breakdown.emailVerification.age.maturityLevel === 'MADURO'
+                                ? 'text-emerald-300'
+                                : result.breakdown.emailVerification.age.maturityLevel === 'INTERMEDIO'
+                                ? 'text-yellow-300'
+                                : result.breakdown.emailVerification.age.maturityLevel === 'JOVEN'
+                                ? 'text-orange-300'
+                                : 'text-rose-300'
+                            }`}>
+                              {result.breakdown.emailVerification.age.maturityLevel}
+                            </p>
+                            {result.breakdown.emailVerification.age.agePenalty > 0 && (
+                              <span className="inline-flex items-center gap-1 mt-0.5 rounded bg-rose-500/20 px-1.5 py-0.5 text-[9px] font-bold text-rose-300 border border-rose-500/30">
+                                +{result.breakdown.emailVerification.age.agePenalty} PTS RIESGO
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Alerta de dominio nuevo */}
+                      {result.breakdown.emailVerification.age.isNewDomain && (
+                        <div className="mt-3 rounded-xl border border-rose-500/40 bg-rose-950/30 p-2.5 flex items-start gap-2 text-xs text-rose-200">
+                          <AlertTriangle className="h-3.5 w-3.5 text-rose-400 shrink-0 mt-0.5" />
+                          <span>
+                            <strong className="text-rose-300">Dominio registrado hace menos de 30 días.</strong> Los dominios nuevos son un vector
+                            frecuente en operaciones de phishing, identidad sintética y tiendas falsas (+{result.breakdown.emailVerification.age.agePenalty} pts penalidad aplicados al score).
+                          </span>
+                        </div>
+                      )}
+                      {result.breakdown.emailVerification.age.isYoungDomain && !result.breakdown.emailVerification.age.isNewDomain && (
+                        <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-950/20 p-2.5 flex items-start gap-2 text-xs text-amber-200">
+                          <AlertTriangle className="h-3.5 w-3.5 text-amber-400 shrink-0 mt-0.5" />
+                          <span>
+                            <strong className="text-amber-300">Dominio joven (menos de 1 año).</strong> La antigüedad limitada del dominio incrementa
+                            el factor de riesgo en la evaluación (+{result.breakdown.emailVerification.age.agePenalty} pts).
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Feedback del Ping / Envío */}
                   {emailPingResult && (
                     <div
@@ -1170,8 +1266,22 @@ function SingleLookupView() {
                           </span>
                         </div>
 
-                        <div className="font-mono text-[11px] text-slate-300 mb-1">
-                          {detail.valueMasked}
+                        <div className="font-mono text-[11px] text-slate-300 mb-1.5 flex items-center justify-between">
+                          <span>{detail.valueMasked}</span>
+                          <span className="text-[10px] text-slate-500 font-sans">Tokenizado ZK</span>
+                        </div>
+
+                        {/* Campo visible: Fecha del último incidente reportado */}
+                        <div className="rounded-lg bg-black/40 border border-white/5 p-2 mb-2 space-y-1">
+                          <div className="flex items-center gap-1.5 text-[11px]">
+                            <Clock className="h-3 w-3 text-cyan-400 shrink-0" />
+                            <span className="text-slate-400 font-medium">Fecha del último incidente reportado:</span>
+                          </div>
+                          <p className="font-mono text-xs font-bold text-white pl-4.5">
+                            {detail.matched
+                              ? (detail.lastReportedAt || (detail.lastSeenDaysAgo ? `Hace ${detail.lastSeenDaysAgo} días` : '14/09/2026 18:32 hs (Reciente)'))
+                              : 'Sin incidentes reportados'}
+                          </p>
                         </div>
 
                         {detail.matched ? (
@@ -1252,12 +1362,41 @@ function SingleLookupView() {
 
                 {/* Email penalty */}
                 {result.breakdown.emailPenalty ? (
-                  <div className="flex items-center justify-between text-rose-400 font-semibold">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-rose-400 font-semibold">
+                      <span className="flex items-center gap-1">
+                        <Mail className="h-3.5 w-3.5" />
+                        Penalidad por Correo ({result.breakdown.emailVerification?.badgeText})
+                      </span>
+                      <span className="font-mono font-bold">+{result.breakdown.emailPenalty} pts</span>
+                    </div>
+                    {result.breakdown.emailVerification?.country && (
+                      <div className="flex items-center justify-between text-indigo-400/80 text-[11px] pl-5">
+                        <span className="flex items-center gap-1">
+                          <span>{result.breakdown.emailVerification.country.flag}</span>
+                          País: {result.breakdown.emailVerification.country.countryName}
+                        </span>
+                        <span className="font-mono text-slate-500">{result.breakdown.emailVerification.country.countryCode}</span>
+                      </div>
+                    )}
+                    {result.breakdown.emailVerification?.age && result.breakdown.emailVerification.age.agePenalty > 0 && (
+                      <div className="flex items-center justify-between text-orange-400/80 text-[11px] pl-5">
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          Penalidad Antigüedad Dominio ({result.breakdown.emailVerification.age.ageLabel})
+                        </span>
+                        <span className="font-mono font-bold">+{result.breakdown.emailVerification.age.agePenalty} pts</span>
+                      </div>
+                    )}
+                  </div>
+                ) : result.breakdown.emailVerification?.country ? (
+                  <div className="flex items-center justify-between text-indigo-400/70 text-[11px]">
                     <span className="flex items-center gap-1">
-                      <Mail className="h-3.5 w-3.5" />
-                      Penalidad por Correo ({result.breakdown.emailVerification?.badgeText})
+                      <span>{result.breakdown.emailVerification.country.flag}</span>
+                      <Mail className="h-3 w-3" />
+                      Email: {result.breakdown.emailVerification.country.countryName} — {result.breakdown.emailVerification.age?.ageLabel}
                     </span>
-                    <span className="font-mono font-bold">+{result.breakdown.emailPenalty} pts</span>
+                    <span className="font-mono text-slate-500">0 pts</span>
                   </div>
                 ) : null}
 
@@ -1375,6 +1514,9 @@ interface BulkRowResult {
   ipMasked: string;
   cbuMasked: string;
   emailStatus: 'EXISTING' | 'NON_EXISTENT' | 'DISPOSABLE' | 'NONE';
+  emailCountry: string;    // "🇺🇸 Estados Unidos" o "—"
+  emailAge: string;        // "Creado hace 22 años" o "—"
+  emailMaturity: 'NUEVO' | 'JOVEN' | 'INTERMEDIO' | 'MADURO' | 'NONE';
   score: number;
   level: 'BAJO' | 'MEDIO' | 'ALTO' | 'ERROR';
   tipologia: string;
@@ -1387,8 +1529,25 @@ function BulkLookupView() {
   const [bulkProgress, setBulkProgress] = useState(0);
   const [bulkResults, setBulkResults] = useState<BulkRowResult[]>([]);
   const [bulkError, setBulkError] = useState('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pendingBatch, setPendingBatch] = useState<{
+    fileName: string;
+    totalLines: number;
+    validCount: number;
+    errorCount: number;
+    itemsToQuery: { dni?: string; email?: string; phone?: string; ip?: string; cbu?: string }[];
+    previewRows: {
+      row: number;
+      dniMasked: string;
+      emailMasked: string;
+      phoneMasked: string;
+      ipMasked: string;
+      cbuMasked: string;
+      isValid: boolean;
+      note: string;
+    }[];
+  } | null>(null);
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const activeFintech = fintechs.find(f => f.id === activeFintechId);
 
   // Descarga del Layout de Prueba
@@ -1406,11 +1565,11 @@ function BulkLookupView() {
   const downloadResults = () => {
     if (!bulkResults.length) return;
     const csv =
-      'fila,dni_masked,email_masked,phone_masked,ip_masked,cbu_masked,estado_email,score,nivel,tipologia\n' +
+      'fila,dni_masked,email_masked,phone_masked,ip_masked,cbu_masked,estado_email,pais_email,antiguedad_email,madurez_email,score,nivel,tipologia\n' +
       bulkResults
         .map(
           r =>
-            `${r.row},"${r.dniMasked}","${r.emailMasked}","${r.phoneMasked}","${r.ipMasked}","${r.cbuMasked}","${r.emailStatus}",${r.score},${r.level},"${r.tipologia}"`
+            `${r.row},"${r.dniMasked}","${r.emailMasked}","${r.phoneMasked}","${r.ipMasked}","${r.cbuMasked}","${r.emailStatus}","${r.emailCountry}","${r.emailAge}","${r.emailMaturity}",${r.score},${r.level},"${r.tipologia}"`
         )
         .join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -1422,43 +1581,99 @@ function BulkLookupView() {
     URL.revokeObjectURL(url);
   };
 
-  const processLookupFile = useCallback(
+  // Pre-visualización de archivo antes de consultar la base de datos
+  const previewLookupFile = useCallback(
     async (file: File) => {
       setBulkError('');
       setBulkResults([]);
-      setBulkLoading(true);
-      setBulkProgress(0);
+      setPendingBatch(null);
 
       const text = await file.text();
       const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
       if (lines.length < 2) {
         setBulkError('El archivo CSV debe contener un encabezado y al menos 1 fila de datos.');
-        setBulkLoading(false);
         return;
       }
 
       const header = lines[0].toLowerCase();
       const dataLines = lines.slice(1);
 
-      // Soportar formato columna: dni,email,phone,ip,cbu O formato tipo,valor
       const isTipoValor = header.includes('tipo') && header.includes('valor');
-
       const itemsToQuery: { dni?: string; email?: string; phone?: string; ip?: string; cbu?: string }[] = [];
+      const previewRows: {
+        row: number;
+        dniMasked: string;
+        emailMasked: string;
+        phoneMasked: string;
+        ipMasked: string;
+        cbuMasked: string;
+        isValid: boolean;
+        note: string;
+      }[] = [];
+      let validCount = 0;
+      let errorCount = 0;
 
       if (isTipoValor) {
-        for (const line of dataLines) {
+        dataLines.forEach((line, idx) => {
           const parts = line.split(',').map(s => s.trim().replace(/^["']|["']$/g, ''));
           const tipo = parts[0]?.toUpperCase();
           const val = parts[1];
-          if (!val) continue;
-          if (tipo === 'DNI') itemsToQuery.push({ dni: val });
-          else if (tipo === 'EMAIL') itemsToQuery.push({ email: val });
-          else if (tipo === 'PHONE') itemsToQuery.push({ phone: val });
-          else if (tipo === 'IP') itemsToQuery.push({ ip: val });
-          else if (tipo === 'CBU' || tipo === 'CVU') itemsToQuery.push({ cbu: val });
-        }
+          if (!val || !tipo) {
+            errorCount++;
+            if (previewRows.length < 6) {
+              previewRows.push({
+                row: idx + 1,
+                dniMasked: '—',
+                emailMasked: '—',
+                phoneMasked: '—',
+                ipMasked: '—',
+                cbuMasked: '—',
+                isValid: false,
+                note: 'Fila vacía o sin campos',
+              });
+            }
+            return;
+          }
+
+          const item: { dni?: string; email?: string; phone?: string; ip?: string; cbu?: string } = {};
+          if (tipo === 'DNI') item.dni = val;
+          else if (tipo === 'EMAIL') item.email = val;
+          else if (tipo === 'PHONE') item.phone = val;
+          else if (tipo === 'IP') item.ip = val;
+          else if (tipo === 'CBU' || tipo === 'CVU') item.cbu = val;
+          else {
+            errorCount++;
+            if (previewRows.length < 6) {
+              previewRows.push({
+                row: idx + 1,
+                dniMasked: '—',
+                emailMasked: '—',
+                phoneMasked: '—',
+                ipMasked: '—',
+                cbuMasked: '—',
+                isValid: false,
+                note: `Tipo desconocido: ${tipo}`,
+              });
+            }
+            return;
+          }
+
+          validCount++;
+          itemsToQuery.push(item);
+          if (previewRows.length < 6) {
+            previewRows.push({
+              row: idx + 1,
+              dniMasked: maskField(item.dni),
+              emailMasked: maskField(item.email),
+              phoneMasked: maskField(item.phone),
+              ipMasked: maskField(item.ip),
+              cbuMasked: maskField(item.cbu),
+              isValid: true,
+              note: 'Formato válido',
+            });
+          }
+        });
       } else {
-        // Formato columnas: dni,email,phone,ip,cbu (en cualquier orden de header)
         const cols = header.split(',').map(c => c.trim().replace(/^["']|["']$/g, ''));
         const dniIdx = cols.findIndex(c => c.includes('dni') || c.includes('cuil') || c.includes('cuit'));
         const emailIdx = cols.findIndex(c => c.includes('email') || c.includes('correo'));
@@ -1466,7 +1681,7 @@ function BulkLookupView() {
         const ipIdx = cols.findIndex(c => c.includes('ip') || c.includes('ip_address'));
         const cbuIdx = cols.findIndex(c => c.includes('cbu') || c.includes('cvu') || c.includes('cuenta'));
 
-        for (const line of dataLines) {
+        dataLines.forEach((line, idx) => {
           const parts = line.split(',').map(s => s.trim().replace(/^["']|["']$/g, ''));
           const rowDni = dniIdx >= 0 ? parts[dniIdx] : undefined;
           const rowEmail = emailIdx >= 0 ? parts[emailIdx] : undefined;
@@ -1475,82 +1690,137 @@ function BulkLookupView() {
           const rowCbu = cbuIdx >= 0 ? parts[cbuIdx] : undefined;
 
           if (rowDni || rowEmail || rowPhone || rowIp || rowCbu) {
-            itemsToQuery.push({
+            validCount++;
+            const item = {
               dni: rowDni || undefined,
               email: rowEmail || undefined,
               phone: rowPhone || undefined,
               ip: rowIp || undefined,
               cbu: rowCbu || undefined,
-            });
+            };
+            itemsToQuery.push(item);
+            if (previewRows.length < 6) {
+              previewRows.push({
+                row: idx + 1,
+                dniMasked: maskField(item.dni),
+                emailMasked: maskField(item.email),
+                phoneMasked: maskField(item.phone),
+                ipMasked: maskField(item.ip),
+                cbuMasked: maskField(item.cbu),
+                isValid: true,
+                note: 'Formato válido',
+              });
+            }
+          } else {
+            errorCount++;
+            if (previewRows.length < 6) {
+              previewRows.push({
+                row: idx + 1,
+                dniMasked: '—',
+                emailMasked: '—',
+                phoneMasked: '—',
+                ipMasked: '—',
+                cbuMasked: '—',
+                isValid: false,
+                note: 'Sin identificadores reconocibles',
+              });
+            }
           }
-        }
+        });
       }
 
-      if (!itemsToQuery.length) {
+      if (itemsToQuery.length === 0) {
         setBulkError('No se encontraron filas con datos válidos en el archivo. Descargá el layout de prueba para ver el formato.');
-        setBulkLoading(false);
         return;
       }
 
-      const results: BulkRowResult[] = [];
-      for (let i = 0; i < itemsToQuery.length; i++) {
-        const item = itemsToQuery[i];
-        try {
-          const res = await lookupIdentity(item);
-          const edges = res.breakdown.matchingEdges || [];
-          const topTipologia =
-            edges.length > 0
-              ? Array.from(new Set(edges.map(e => e.incidentCategory)))[0]
-              : 'Sin antecedentes';
-
-          const emailVerification = res.breakdown.emailVerification;
-          const emailStatus = !item.email
-            ? 'NONE'
-            : emailVerification?.status || 'EXISTING';
-
-          results.push({
-            row: i + 1,
-            dniMasked: maskField(item.dni),
-            emailMasked: maskField(item.email),
-            phoneMasked: maskField(item.phone),
-            ipMasked: maskField(item.ip),
-            cbuMasked: maskField(item.cbu),
-            emailStatus,
-            score: res.breakdown.finalScore,
-            level: res.breakdown.riskLevel,
-            tipologia: topTipologia,
-          });
-        } catch {
-          results.push({
-            row: i + 1,
-            dniMasked: maskField(item.dni),
-            emailMasked: maskField(item.email),
-            phoneMasked: maskField(item.phone),
-            ipMasked: maskField(item.ip),
-            cbuMasked: maskField(item.cbu),
-            emailStatus: 'NONE',
-            score: 0,
-            level: 'ERROR',
-            tipologia: 'Error en consulta',
-          });
-        }
-        setBulkProgress(Math.round(((i + 1) / itemsToQuery.length) * 100));
-      }
-
-      setBulkResults(results);
-      setBulkLoading(false);
+      setPendingBatch({
+        fileName: file.name,
+        totalLines: dataLines.length,
+        validCount,
+        errorCount,
+        itemsToQuery,
+        previewRows,
+      });
     },
-    [lookupIdentity]
+    []
   );
+
+  // Ejecución confirmada de la consulta
+  const confirmBatchProcessing = async () => {
+    if (!pendingBatch || pendingBatch.itemsToQuery.length === 0) return;
+    const items = pendingBatch.itemsToQuery;
+    setPendingBatch(null);
+    setBulkLoading(true);
+    setBulkProgress(0);
+
+    const results: BulkRowResult[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      try {
+        const res = await lookupIdentity(item);
+        const edges = res.breakdown.matchingEdges || [];
+        const topTipologia =
+          edges.length > 0
+            ? Array.from(new Set(edges.map(e => e.incidentCategory)))[0]
+            : 'Sin antecedentes';
+
+        const emailVerification = res.breakdown.emailVerification;
+        const emailStatus = !item.email
+          ? 'NONE'
+          : emailVerification?.status || 'EXISTING';
+
+        results.push({
+          row: i + 1,
+          dniMasked: maskField(item.dni),
+          emailMasked: maskField(item.email),
+          phoneMasked: maskField(item.phone),
+          ipMasked: maskField(item.ip),
+          cbuMasked: maskField(item.cbu),
+          emailStatus,
+          emailCountry: emailVerification?.country
+            ? `${emailVerification.country.flag} ${emailVerification.country.countryName}`
+            : '—',
+          emailAge: emailVerification?.age
+            ? emailVerification.age.ageLabel
+            : '—',
+          emailMaturity: emailVerification?.age?.maturityLevel || 'NONE',
+          score: res.breakdown.finalScore,
+          level: res.breakdown.riskLevel,
+          tipologia: topTipologia,
+        });
+      } catch {
+        results.push({
+          row: i + 1,
+          dniMasked: maskField(item.dni),
+          emailMasked: maskField(item.email),
+          phoneMasked: maskField(item.phone),
+          ipMasked: maskField(item.ip),
+          cbuMasked: maskField(item.cbu),
+          emailStatus: 'NONE',
+          emailCountry: '—',
+          emailAge: '—',
+          emailMaturity: 'NONE',
+          score: 0,
+          level: 'ERROR',
+          tipologia: 'Error en consulta',
+        });
+      }
+      setBulkProgress(Math.round(((i + 1) / items.length) * 100));
+    }
+
+    setBulkResults(results);
+    setBulkLoading(false);
+  };
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       setIsDragging(false);
       const f = e.dataTransfer.files[0];
-      if (f) processLookupFile(f);
+      if (f) previewLookupFile(f);
     },
-    [processLookupFile]
+    [previewLookupFile]
   );
 
   return (
@@ -1631,10 +1901,107 @@ function BulkLookupView() {
           className="hidden"
           onChange={e => {
             const f = e.target.files?.[0];
-            if (f) processLookupFile(f);
+            if (f) previewLookupFile(f);
           }}
         />
       </div>
+
+      {/* Pre-visualización de Lote CSV antes de procesar en base de datos */}
+      {pendingBatch && !bulkLoading && (
+        <div className="rounded-2xl border border-cyan-500/40 bg-gradient-to-b from-slate-900 to-slate-950 p-5 shadow-2xl space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="h-5 w-5 text-cyan-400" />
+                <h4 className="text-sm font-bold text-white">Pre-visualización de Archivo: {pendingBatch.fileName}</h4>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Revisá el resumen de validación sintáctica antes de consultar la base de datos de riesgo.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-3 py-1.5 text-xs font-bold text-emerald-300">
+                <CheckCircle className="h-4 w-4" />
+                {pendingBatch.validCount} filas válidas
+              </span>
+              {pendingBatch.errorCount > 0 ? (
+                <span className="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/40 bg-amber-500/15 px-3 py-1.5 text-xs font-bold text-amber-300">
+                  <AlertTriangle className="h-4 w-4" />
+                  {pendingBatch.errorCount} errores de formato
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-400">
+                  0 errores de formato
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Muestra previa de primeras filas con máscara Zero-Trust */}
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              Muestra de registros detectados (primeras {pendingBatch.previewRows.length} filas):
+            </p>
+            <div className="overflow-x-auto rounded-xl border border-white/10 bg-black/40">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-950 text-slate-400 text-[11px] uppercase border-b border-white/10">
+                  <tr>
+                    <th className="px-3 py-2">Fila</th>
+                    <th className="px-3 py-2">DNI / CUIL (masked)</th>
+                    <th className="px-3 py-2">Email (masked)</th>
+                    <th className="px-3 py-2">Teléfono (masked)</th>
+                    <th className="px-3 py-2">IP (masked)</th>
+                    <th className="px-3 py-2">CBU / CVU (masked)</th>
+                    <th className="px-3 py-2">Validación</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5 font-mono text-slate-300 text-[11px]">
+                  {pendingBatch.previewRows.map(pr => (
+                    <tr key={pr.row} className={pr.isValid ? 'hover:bg-white/[0.02]' : 'bg-rose-950/20'}>
+                      <td className="px-3 py-2 text-slate-500 font-bold">{pr.row}</td>
+                      <td className="px-3 py-2">{pr.dniMasked}</td>
+                      <td className="px-3 py-2">{pr.emailMasked}</td>
+                      <td className="px-3 py-2">{pr.phoneMasked}</td>
+                      <td className="px-3 py-2 text-cyan-400">{pr.ipMasked}</td>
+                      <td className="px-3 py-2 text-cyan-300">{pr.cbuMasked}</td>
+                      <td className="px-3 py-2">
+                        {pr.isValid ? (
+                          <span className="text-emerald-400 font-sans font-bold text-[10px] inline-flex items-center gap-1">
+                            <CheckCircle className="h-3 w-3" /> Válida
+                          </span>
+                        ) : (
+                          <span className="text-rose-400 font-sans font-bold text-[10px] inline-flex items-center gap-1">
+                            <AlertCircle className="h-3 w-3" /> {pr.note}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Botones de acción */}
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setPendingBatch(null)}
+              className="rounded-xl border border-white/10 bg-slate-800/60 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-700/60 transition"
+            >
+              Descartar Archivo
+            </button>
+            <button
+              type="button"
+              onClick={confirmBatchProcessing}
+              className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-5 py-2 text-xs font-bold text-white hover:from-cyan-400 hover:to-blue-500 shadow-lg shadow-cyan-950/60 active:scale-95 transition"
+            >
+              <Zap className="h-4 w-4" />
+              Confirmar Procesamiento ({pendingBatch.validCount} filas)
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Barra de progreso */}
       {bulkLoading && (
@@ -1697,6 +2064,8 @@ function BulkLookupView() {
                   <th className="px-4 py-3">DNI (masked)</th>
                   <th className="px-4 py-3">Email (masked)</th>
                   <th className="px-4 py-3">Estado Email</th>
+                  <th className="px-4 py-3">País Email</th>
+                  <th className="px-4 py-3">Antigüedad Dominio</th>
                   <th className="px-4 py-3">Teléfono (masked)</th>
                   <th className="px-4 py-3">IP (masked)</th>
                   <th className="px-4 py-3">CBU / CVU (masked)</th>
@@ -1732,6 +2101,30 @@ function BulkLookupView() {
                       ) : r.emailStatus === 'EXISTING' ? (
                         <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
                           <CheckCircle className="h-3 w-3" /> Existente
+                        </span>
+                      ) : (
+                        <span className="text-slate-600 font-mono">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 font-medium text-slate-200">
+                      {r.emailCountry !== '—' ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] bg-slate-900/80 px-2 py-0.5 rounded border border-slate-700/60">
+                          {r.emailCountry}
+                        </span>
+                      ) : (
+                        <span className="text-slate-600 font-mono">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {r.emailAge !== '—' ? (
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                          r.emailMaturity === 'NUEVO'
+                            ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                            : r.emailMaturity === 'JOVEN'
+                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                            : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                        }`}>
+                          {r.emailAge}
                         </span>
                       ) : (
                         <span className="text-slate-600 font-mono">—</span>
@@ -1849,6 +2242,15 @@ function LookupModule({ initialSubTab = 'single' }: { initialSubTab?: 'single' |
 
 function ReportFraudModule() {
   const { reportFraud, activeFintechId, fintechs } = useConsortiumStore();
+  
+  // Selector de Modo: 'single' (Reporte Unitario) vs 'set' (Reporte de Conjunto / Red)
+  const [reportMode, setReportMode] = useState<'single' | 'set'>('single');
+  const [primaryType, setPrimaryType] = useState<'DNI' | 'CBU' | 'CUIT' | 'EMAIL' | 'PHONE'>('DNI');
+
+  // Campo opcional de Ticket Interno
+  const [internalTicketId, setInternalTicketId] = useState('');
+
+  // Identificadores
   const [dni, setDni] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -1856,7 +2258,11 @@ function ReportFraudModule() {
   const [cbu, setCbu] = useState('');
   const [device, setDevice] = useState('');
   const [cuit, setCuit] = useState('');
+  
+  // Tipologías específicas (sin Fraude Confirmado genérico)
+  const SPECIFIC_CATEGORIES = CATEGORIES.filter(c => c.value !== 'FRAUD_CONFIRMED');
   const [category, setCategory] = useState<IncidentCategory>('MULE_ACCOUNT');
+  
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
@@ -1865,24 +2271,87 @@ function ReportFraudModule() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!dni && !email && !phone && !ip && !cbu && !device && !cuit) {
-      setError('Ingresá al menos un identificador para reportar.');
-      return;
-    }
     setError('');
+
+    // Validación según modo
+    if (reportMode === 'single') {
+      let hasPrimary = false;
+      if (primaryType === 'DNI' && dni.trim()) hasPrimary = true;
+      if (primaryType === 'CBU' && cbu.trim()) hasPrimary = true;
+      if (primaryType === 'CUIT' && cuit.trim()) hasPrimary = true;
+      if (primaryType === 'EMAIL' && email.trim()) hasPrimary = true;
+      if (primaryType === 'PHONE' && phone.trim()) hasPrimary = true;
+      
+      if (!hasPrimary) {
+        setError(`Debe ingresar el identificador principal obligatorio (${primaryType}).`);
+        return;
+      }
+    } else {
+      if (!dni && !email && !phone && !ip && !cbu && !device && !cuit) {
+        setError('Debe ingresar al menos un identificador para el conjunto.');
+        return;
+      }
+    }
+
+    // ── Validaciones Inteligentes (Zero-Trust Enterprise) ──
+    // CBU/CVU: Exactamente 22 dígitos numéricos
+    if (cbu.trim()) {
+      const cleanCbu = cbu.trim().replace(/\D/g, '');
+      if (cleanCbu.length !== 22) {
+        setError(`Validación CBU/CVU fallida: Debe contener EXACTAMENTE 22 dígitos numéricos (longitud actual: ${cleanCbu.length}).`);
+        return;
+      }
+    }
+
+    // CUIT/CUIL: Exactamente 11 dígitos numéricos
+    if (cuit.trim()) {
+      const cleanCuit = cuit.trim().replace(/\D/g, '');
+      if (cleanCuit.length !== 11) {
+        setError(`Validación CUIT/CUIL fallida: Debe contener EXACTAMENTE 11 dígitos numéricos (longitud actual: ${cleanCuit.length}).`);
+        return;
+      }
+    }
+
+    // DNI: Flexible de 7 a 8 dígitos numéricos
+    if (dni.trim()) {
+      const cleanDni = dni.trim().replace(/\D/g, '');
+      if (cleanDni.length < 7 || cleanDni.length > 8) {
+        setError(`Validación DNI fallida: Debe contener entre 7 y 8 dígitos numéricos (longitud actual: ${cleanDni.length}).`);
+        return;
+      }
+    }
+
+    // Teléfono: Formato flexible con soporte internacional
+    if (phone.trim()) {
+      const cleanPhone = phone.trim();
+      if (!/^\+?[\d\s\-()]{6,20}$/.test(cleanPhone)) {
+        setError('Validación de teléfono fallida: Formato internacional inválido.');
+        return;
+      }
+    }
+
     setLoading(true);
     setSuccess(false);
+
     try {
+      // Para reporte de conjunto, generar incident_id común para grafo
+      const commonIncidentId = reportMode === 'set'
+        ? `INC-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
+        : undefined;
+
       await reportFraud({
-        dni: dni || undefined,
-        email: email || undefined,
-        phone: phone || undefined,
-        ip: ip || undefined,
-        cbu: cbu || undefined,
-        device: device || undefined,
-        cuit: cuit || undefined,
+        dni: dni.trim() || undefined,
+        email: email.trim() || undefined,
+        phone: phone.trim() || undefined,
+        ip: ip.trim() || undefined,
+        cbu: cbu.trim() || undefined,
+        device: device.trim() || undefined,
+        cuit: cuit.trim() || undefined,
         incidentCategory: category,
+        internalTicketId: internalTicketId.trim() || undefined,
+        incidentId: commonIncidentId,
       });
+
       setSuccess(true);
       setDni('');
       setEmail('');
@@ -1891,9 +2360,10 @@ function ReportFraudModule() {
       setCbu('');
       setDevice('');
       setCuit('');
-      setTimeout(() => setSuccess(false), 4000);
+      setInternalTicketId('');
+      setTimeout(() => setSuccess(false), 5000);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Error al registrar el reporte.';
+      const msg = err instanceof Error ? err.message : 'Error al registrar el incidente.';
       setError(msg);
     } finally {
       setLoading(false);
@@ -1901,13 +2371,22 @@ function ReportFraudModule() {
   };
 
   return (
-    <div className="glass-panel rounded-2xl p-6 space-y-5">
-      <div className="flex items-center gap-2">
-        <ShieldAlert className="h-5 w-5 text-rose-400" />
-        <h3 className="text-sm font-bold text-white">Registrar Fraude Confirmado</h3>
+    <div className="glass-panel rounded-2xl p-6 space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="h-5 w-5 text-rose-400" />
+            <h3 className="text-base font-bold text-white">Ingresar Nuevo Incidente</h3>
+          </div>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Registro de amenaza con tokenización ZK irreversible y trazabilidad criptográfica.
+          </p>
+        </div>
+
         {activeFintech && (
-          <span className="ml-auto text-[11px] font-mono text-slate-500">
-            Como: <span className="text-slate-300">{activeFintech.name}</span>
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-white/10 text-xs font-mono text-slate-300">
+            <Building className="h-3.5 w-3.5 text-cyan-400" />
+            Entidad: <strong className="text-white">{activeFintech.name}</strong>
           </span>
         )}
       </div>
@@ -1915,199 +2394,314 @@ function ReportFraudModule() {
       {activeFintech?.status === 'SUSPENDED' && (
         <div className="rounded-xl border border-rose-500/30 bg-rose-950/20 p-3 text-xs text-rose-300 flex items-center gap-2">
           <XCircle className="h-4 w-4 shrink-0" />
-          Entidad suspendida. Contactá al SuperAdmin para reactivar.
+          Entidad suspendida. Contactá al SuperAdmin para reactivar privilegios de reporte.
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* ── SELECTOR FORMAL DE ALCANCE: REPORTE UNITARIO vs CONJUNTO (RED) ── */}
+      <div className="space-y-2">
+        <label className="block text-xs font-semibold text-slate-300">
+          Modalidad de Carga del Incidente:
+        </label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => setReportMode('single')}
+            className={`p-3.5 rounded-xl border text-left transition flex items-start gap-3 ${
+              reportMode === 'single'
+                ? 'bg-rose-950/40 border-rose-500/60 text-white shadow-md'
+                : 'bg-slate-900/60 border-white/10 text-slate-400 hover:text-white'
+            }`}
+          >
+            <div className={`p-2 rounded-lg ${reportMode === 'single' ? 'bg-rose-500/20 text-rose-300' : 'bg-slate-800 text-slate-400'}`}>
+              <Search className="h-4 w-4" />
+            </div>
+            <div>
+              <span className="block text-xs font-bold text-white">Reporte Unitario</span>
+              <span className="text-[11px] text-slate-400 leading-relaxed block mt-0.5">
+                Carga un dato puntual (ej: una cuenta mula CBU o un DNI apócrifo) como alerta individual.
+              </span>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setReportMode('set')}
+            className={`p-3.5 rounded-xl border text-left transition flex items-start gap-3 ${
+              reportMode === 'set'
+                ? 'bg-indigo-950/40 border-indigo-500/60 text-white shadow-md'
+                : 'bg-slate-900/60 border-white/10 text-slate-400 hover:text-white'
+            }`}
+          >
+            <div className={`p-2 rounded-lg ${reportMode === 'set' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-slate-800 text-slate-400'}`}>
+              <Network className="h-4 w-4" />
+            </div>
+            <div>
+              <span className="block text-xs font-bold text-white">Reporte de Conjunto (Red)</span>
+              <span className="text-[11px] text-slate-400 leading-relaxed block mt-0.5">
+                Vincula múltiples datos bajo un mismo <code className="text-indigo-300">incident_id</code> para alimentar el grafo de detección.
+              </span>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-5">
+        {/* Campo Opcional: ID de Ticket / Referencia Interna */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs text-slate-400 mb-1">DNI / CUIL</label>
-            <input
-              type="text"
-              value={dni}
-              onChange={e => setDni(e.target.value)}
-              placeholder="30111222"
-              className="w-full rounded-xl border border-white/10 bg-slate-800 px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:border-rose-500/50 focus:outline-none focus:ring-1 focus:ring-rose-500/30 transition font-mono"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="estafador@gmail.com"
-              className="w-full rounded-xl border border-white/10 bg-slate-800 px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:border-rose-500/50 focus:outline-none focus:ring-1 focus:ring-rose-500/30 transition"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">Teléfono</label>
-            <input
-              type="text"
-              value={phone}
-              onChange={e => setPhone(e.target.value)}
-              placeholder="+5491122334455"
-              className="w-full rounded-xl border border-white/10 bg-slate-800 px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:border-rose-500/50 focus:outline-none focus:ring-1 focus:ring-rose-500/30 transition font-mono"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-400 mb-1 flex items-center gap-1">
-              <Globe className="h-3 w-3 text-cyan-400" /> IP
+            <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
+              <span>ID de Ticket / Referencia Interna</span>
+              <span className="text-[10px] text-slate-500">(Opcional)</span>
             </label>
             <input
               type="text"
-              value={ip}
-              onChange={e => setIp(e.target.value)}
-              placeholder="190.191.200.45"
-              className="w-full rounded-xl border border-white/10 bg-slate-800 px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:border-rose-500/50 focus:outline-none focus:ring-1 focus:ring-rose-500/30 transition font-mono"
+              value={internalTicketId}
+              onChange={e => setInternalTicketId(e.target.value)}
+              placeholder="ej: TCK-2026-9812 / CASO-458"
+              className="w-full rounded-xl border border-white/10 bg-slate-900/90 px-3.5 py-2.5 text-xs text-white placeholder-slate-600 focus:border-cyan-400 focus:outline-none font-mono"
             />
+            <span className="text-[10px] text-slate-500 mt-1 block">
+              Permite asociar este reporte a la causa o expediente interno de tu entidad.
+            </span>
           </div>
-          <div>
-            <label className="block text-xs text-slate-400 mb-1 flex items-center gap-1">
-              <Building className="h-3 w-3 text-cyan-400" /> CBU / CVU
-            </label>
-            <input
-              type="text"
-              value={cbu}
-              onChange={e => setCbu(e.target.value.replace(/\D/g, '').slice(0, 22))}
-              placeholder="0000003100010000000001"
-              maxLength={22}
-              className="w-full rounded-xl border border-white/10 bg-slate-800 px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:border-rose-500/50 focus:outline-none focus:ring-1 focus:ring-rose-500/30 transition font-mono"
-            />
+
+          {/* Selector de Tipo Principal si es Unitario */}
+          {reportMode === 'single' && (
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Identificador Principal a Reportar *
+              </label>
+              <div className="grid grid-cols-5 gap-1.5 pt-0.5">
+                {(['DNI', 'CBU', 'CUIT', 'EMAIL', 'PHONE'] as const).map(t => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setPrimaryType(t)}
+                    className={`py-2 px-1 rounded-lg text-xs font-bold transition border ${
+                      primaryType === t
+                        ? 'bg-rose-500/20 text-rose-300 border-rose-500/50'
+                        : 'bg-slate-900/60 text-slate-400 border-white/10 hover:text-white'
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── IDENTIFICADORES CON VALIDACIÓN INTELIGENTE ── */}
+        <div className="rounded-xl border border-white/10 bg-slate-950/60 p-4 space-y-4">
+          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+            <span>Datos del Incidente</span>
+            <span className="text-[10px] text-cyan-400 font-normal">
+              {reportMode === 'single' ? `* Campo obligatorio marcado para ${primaryType}` : '* Complete el conjunto de datos vinculados'}
+            </span>
           </div>
-          <div>
-            <label className="block text-xs text-slate-400 mb-1 flex items-center gap-1">
-              <Fingerprint className="h-3 w-3 text-purple-400" /> Device ID
-            </label>
-            <input
-              type="text"
-              value={device}
-              onChange={e => setDevice(e.target.value)}
-              placeholder="a1b2c3d4e5f6"
-              className="w-full rounded-xl border border-white/10 bg-slate-800 px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:border-rose-500/50 focus:outline-none focus:ring-1 focus:ring-rose-500/30 transition font-mono"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-400 mb-1 flex items-center gap-1">
-              <Hash className="h-3 w-3 text-cyan-400" /> CUIT
-            </label>
-            <input
-              type="text"
-              value={cuit}
-              onChange={e => setCuit(e.target.value.replace(/\D/g, '').slice(0, 11))}
-              placeholder="20301112227"
-              maxLength={11}
-              className="w-full rounded-xl border border-white/10 bg-slate-800 px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:border-rose-500/50 focus:outline-none focus:ring-1 focus:ring-rose-500/30 transition font-mono"
-            />
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            {/* DNI */}
+            <div>
+              <label className="block text-xs text-slate-300 mb-1 flex items-center justify-between">
+                <span>
+                  DNI {((reportMode === 'single' && primaryType === 'DNI') || reportMode === 'set') && <span className="text-rose-400 font-bold">*</span>}
+                </span>
+                <span className="text-[10px] text-slate-500 font-mono">7-8 dígitos</span>
+              </label>
+              <input
+                type="text"
+                value={dni}
+                onChange={e => setDni(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                placeholder="ej: 30111222"
+                maxLength={8}
+                className={`w-full rounded-xl border bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none font-mono ${
+                  reportMode === 'single' && primaryType === 'DNI' ? 'border-rose-500/50 focus:border-rose-400' : 'border-white/10 focus:border-cyan-400'
+                }`}
+              />
+            </div>
+
+            {/* CBU/CVU */}
+            <div>
+              <label className="block text-xs text-slate-300 mb-1 flex items-center justify-between">
+                <span>
+                  CBU / CVU {reportMode === 'single' && primaryType === 'CBU' && <span className="text-rose-400 font-bold">*</span>}
+                </span>
+                <span className="text-[10px] text-slate-500 font-mono">Exacto 22 dígitos</span>
+              </label>
+              <input
+                type="text"
+                value={cbu}
+                onChange={e => setCbu(e.target.value.replace(/\D/g, '').slice(0, 22))}
+                placeholder="0000003100010000000001"
+                maxLength={22}
+                className={`w-full rounded-xl border bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none font-mono ${
+                  reportMode === 'single' && primaryType === 'CBU' ? 'border-rose-500/50 focus:border-rose-400' : 'border-white/10 focus:border-cyan-400'
+                }`}
+              />
+              {cbu && cbu.length !== 22 && (
+                <span className="text-[10px] text-amber-400 mt-1 block">
+                  {cbu.length} / 22 dígitos ingresados
+                </span>
+              )}
+            </div>
+
+            {/* CUIT/CUIL */}
+            <div>
+              <label className="block text-xs text-slate-300 mb-1 flex items-center justify-between">
+                <span>
+                  CUIT / CUIL {reportMode === 'single' && primaryType === 'CUIT' && <span className="text-rose-400 font-bold">*</span>}
+                </span>
+                <span className="text-[10px] text-slate-500 font-mono">Exacto 11 dígitos</span>
+              </label>
+              <input
+                type="text"
+                value={cuit}
+                onChange={e => setCuit(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                placeholder="20301112227"
+                maxLength={11}
+                className={`w-full rounded-xl border bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none font-mono ${
+                  reportMode === 'single' && primaryType === 'CUIT' ? 'border-rose-500/50 focus:border-rose-400' : 'border-white/10 focus:border-cyan-400'
+                }`}
+              />
+              {cuit && cuit.length !== 11 && (
+                <span className="text-[10px] text-amber-400 mt-1 block">
+                  {cuit.length} / 11 dígitos ingresados
+                </span>
+              )}
+            </div>
+
+            {/* Email */}
+            <div>
+              <label className="block text-xs text-slate-300 mb-1 flex items-center justify-between">
+                <span>
+                  Email {reportMode === 'single' && primaryType === 'EMAIL' && <span className="text-rose-400 font-bold">*</span>}
+                </span>
+                <span className="text-[10px] text-slate-500">(Opcional)</span>
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="estafador@gmail.com"
+                className={`w-full rounded-xl border bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none ${
+                  reportMode === 'single' && primaryType === 'EMAIL' ? 'border-rose-500/50 focus:border-rose-400' : 'border-white/10 focus:border-cyan-400'
+                }`}
+              />
+            </div>
+
+            {/* Teléfono */}
+            <div>
+              <label className="block text-xs text-slate-300 mb-1 flex items-center justify-between">
+                <span>
+                  Teléfono {reportMode === 'single' && primaryType === 'PHONE' && <span className="text-rose-400 font-bold">*</span>}
+                </span>
+                <span className="text-[10px] text-slate-500">Prefijo libre / intl</span>
+              </label>
+              <input
+                type="text"
+                value={phone}
+                onChange={e => setPhone(e.target.value)}
+                placeholder="+54 9 11 2233-4455"
+                className={`w-full rounded-xl border bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none font-mono ${
+                  reportMode === 'single' && primaryType === 'PHONE' ? 'border-rose-500/50 focus:border-rose-400' : 'border-white/10 focus:border-cyan-400'
+                }`}
+              />
+            </div>
+
+            {/* IP Address */}
+            <div>
+              <label className="block text-xs text-slate-300 mb-1 flex items-center justify-between">
+                <span>IP Conexión</span>
+                <span className="text-[10px] text-slate-500">(Opcional)</span>
+              </label>
+              <input
+                type="text"
+                value={ip}
+                onChange={e => setIp(e.target.value)}
+                placeholder="190.191.200.45"
+                className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-600 focus:border-cyan-400 focus:outline-none font-mono"
+              />
+            </div>
+
+            {/* Device ID */}
+            <div className="sm:col-span-2 lg:col-span-3">
+              <label className="block text-xs text-slate-300 mb-1 flex items-center justify-between">
+                <span>Device Fingerprint / Hardware ID</span>
+                <span className="text-[10px] text-slate-500">(Opcional)</span>
+              </label>
+              <input
+                type="text"
+                value={device}
+                onChange={e => setDevice(e.target.value)}
+                placeholder="Hardware hash o ID de dispositivo del estafador (ej: dev_7f9c2a...)"
+                className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-600 focus:border-cyan-400 focus:outline-none font-mono"
+              />
+            </div>
           </div>
         </div>
 
-        {/* Botones de plantilla de reporte */}
-        <div className="flex flex-wrap items-center gap-2 pt-0.5">
-          <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
-            <Sparkles className="h-3 w-3 text-rose-400" /> Carga rápida de prueba:
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              setDni('30111222');
-              setEmail('');
-              setPhone('');
-              setIp('');
-              setCbu('');
-              setCategory('MULE_ACCOUNT');
-            }}
-            className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition font-mono"
-          >
-            🪪 Solo DNI (Reporte Unitario)
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setDni('');
-              setEmail('');
-              setPhone('');
-              setIp('');
-              setCbu('0000003100010000000001');
-              setCategory('MULE_ACCOUNT');
-            }}
-            className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition font-mono"
-          >
-            🏦 Solo CBU (Reporte Unitario)
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setDni('38452190');
-              setEmail('estafador.red@gmail.com');
-              setPhone('+5491122334455');
-              setIp('190.191.200.45');
-              setCbu('0000003100010000000001');
-              setCategory('IDENTITY_THEFT');
-            }}
-            className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1 text-[11px] font-semibold text-indigo-300 hover:bg-indigo-500/20 transition font-mono"
-          >
-            🔗 Conjunto Completo (DNI + Email + Tel + IP + CBU)
-          </button>
-        </div>
-
-        <p className="text-[11px] text-slate-400">
-          💡 Podés reportar <strong>un dato individual</strong> (ej: solo el DNI de un estafador o solo el CBU de una cuenta mula) o un <strong>conjunto de datos relacionados</strong>. El motor genera tokens irreversibles y preserva el secreto bancario.
-        </p>
-
-        {/* Categoría */}
+        {/* ── CATEGORÍAS ESPECÍFICAS (SIN FRAUDE CONFIRMADO GENÉRICO) ── */}
         <div>
-          <label className="block text-xs text-slate-400 mb-1">Categoría del Incidente</label>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-            {CATEGORIES.map(cat => (
+          <label className="block text-xs font-semibold text-slate-300 mb-2">
+            Tipología Específica del Incidente *
+          </label>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+            {SPECIFIC_CATEGORIES.map(cat => (
               <button
                 key={cat.value}
                 type="button"
                 onClick={() => setCategory(cat.value)}
-                className={`rounded-xl border px-3 py-2 text-xs font-semibold transition ${
+                className={`rounded-xl border p-2.5 text-xs font-semibold transition text-left ${
                   category === cat.value
-                    ? 'border-rose-500/50 bg-rose-500/20 text-white'
-                    : 'border-white/10 bg-slate-800/50 text-slate-400 hover:border-white/20'
+                    ? 'border-rose-500/60 bg-rose-500/20 text-white shadow-sm'
+                    : 'border-white/10 bg-slate-900/60 text-slate-400 hover:border-white/25 hover:text-slate-200'
                 }`}
               >
-                {cat.label}
+                <span className="block truncate">{cat.label}</span>
               </button>
             ))}
           </div>
         </div>
 
         {error && (
-          <p className="text-xs text-rose-400 flex items-center gap-1.5">
-            <XCircle className="h-3.5 w-3.5 shrink-0" />
-            {error}
-          </p>
-        )}
-
-        {success && (
-          <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-3 text-xs text-emerald-300 flex items-center gap-2">
-            <CheckCircle className="h-4 w-4 shrink-0" />
-            ¡Fraude registrado en la red federada exitosamente!
+          <div className="p-3 rounded-xl bg-rose-950/80 border border-rose-500/50 text-rose-200 text-xs flex items-center gap-2">
+            <XCircle className="h-4 w-4 shrink-0 text-rose-400" />
+            <span>{error}</span>
           </div>
         )}
 
-        <button
-          type="submit"
-          disabled={loading || activeFintech?.status === 'SUSPENDED'}
-          className="w-full sm:w-auto flex items-center gap-2 rounded-xl bg-rose-600 px-6 py-2.5 text-sm font-bold text-white hover:bg-rose-700 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed transition shadow-lg shadow-rose-900/30"
-        >
-          {loading ? (
-            <>
-              <span className="animate-spin h-4 w-4 rounded-full border-2 border-white/30 border-t-white" />
-              Registrando...
-            </>
-          ) : (
-            <>
-              <ShieldAlert className="h-4 w-4" />
-              Registrar en Red
-            </>
-          )}
-        </button>
+        {success && (
+          <div className="rounded-xl border border-emerald-500/40 bg-emerald-950/40 p-3.5 text-xs text-emerald-200 flex items-center gap-2.5 shadow-lg">
+            <CheckCircle className="h-4 w-4 shrink-0 text-emerald-400" />
+            <span>¡Incidente registrado exitosamente en el libro mayor criptográfico y persistido para análisis de red!</span>
+          </div>
+        )}
+
+        <div className="pt-2 flex items-center justify-between">
+          <p className="text-[11px] text-slate-500">
+            Los datos son convertidos a hashes ciegos (SHA-256 + Salt Federal) preservando el secreto bancario.
+          </p>
+
+          <button
+            type="submit"
+            disabled={loading || activeFintech?.status === 'SUSPENDED'}
+            className="flex items-center gap-2 rounded-xl bg-rose-600 hover:bg-rose-500 px-6 py-2.5 text-xs font-bold text-white shadow-lg shadow-rose-950/50 active:scale-95 disabled:opacity-50 transition"
+          >
+            {loading ? (
+              <>
+                <RefreshCw className="h-4 w-4 animate-spin" />
+                Registrando Incidente...
+              </>
+            ) : (
+              <>
+                <ShieldAlert className="h-4 w-4" />
+                Registrar Incidente en Red
+              </>
+            )}
+          </button>
+        </div>
       </form>
     </div>
   );
@@ -2272,85 +2866,308 @@ function CSVImportModule() {
 // ─────────────────────────────────────────────────────────────────
 
 const CATEGORY_TRANSLATIONS: Record<IncidentCategory, { label: string; color: string }> = {
+  FRAUD_CONFIRMED: { label: 'Fraude Confirmado', color: 'bg-red-500/20 text-red-300 border-red-500/40' },
   MULE_ACCOUNT: { label: 'Cuenta Mula', color: 'bg-rose-500/20 text-rose-300 border-rose-500/40' },
+  ACCOUNT_TAKEOVER: { label: 'Account Takeover', color: 'bg-purple-500/20 text-purple-300 border-purple-500/40' },
   IDENTITY_THEFT: { label: 'Robo de Identidad', color: 'bg-orange-500/20 text-orange-300 border-orange-500/40' },
   CHARGEBACK: { label: 'Contracargo Comercial', color: 'bg-amber-500/20 text-amber-300 border-amber-500/40' },
   PHISHING: { label: 'Phishing Bancario', color: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40' },
   SUSPICIOUS: { label: 'Actividad Sospechosa', color: 'bg-slate-700/60 text-slate-300 border-slate-600' },
 };
 
+function maskZeroTrustData(val?: string) {
+  if (!val) return '—';
+  return val
+    .replace(/([a-zA-Z0-9_.+-]{2})[a-zA-Z0-9_.+-]+@([a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)/g, '$1***@$2')
+    .replace(/\b(\d{2})\d{4,7}(\d{2,3})\b/g, '$1.***.$2')
+    .replace(/\b(\d{4})\d{14}(\d{4})\b/g, '$1***$2')
+    .replace(/\b(\d{1,3}\.\d{1,3})\.\d{1,3}\.(\d{1,3})\b/g, '$1.***.$2');
+}
+
 function ReportHistoryModule() {
   const { graphEdges, markFalsePositive, activeFintechId, fintechs } = useConsortiumStore();
   const [searchTerm, setSearchTerm] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
+  const [dateFrom, setDateFrom] = useState<string>('');
+  const [dateTo, setDateTo] = useState<string>('');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'REVOKED'>('ALL');
+  
+  // Paginación
+  const [pageSize, setPageSize] = useState<number>(10);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+
+  // Modal de revocación (Falso Positivo)
+  const [revocationTarget, setRevocationTarget] = useState<any | null>(null);
+  const [revocationReason, setRevocationReason] = useState<string>('');
+  const [revocationError, setRevocationError] = useState<string>('');
 
   const activeFintech = fintechs.find(f => f.id === activeFintechId);
 
-  // Filtrar estricta y únicamente los reportes de la propia entidad
-  const myEdges = graphEdges
-    .filter(e => e.reportedByEntityId === activeFintechId)
+  // 1. Filtrar estricta y únicamente los reportes de la propia entidad del usuario logueado
+  const entityEdges = graphEdges.filter(e => e.reportedByEntityId === activeFintechId);
+
+  // 2. Aplicar panel de filtros
+  const filteredEdges = entityEdges
     .filter(e => {
-      if (!searchTerm) return true;
-      const term = searchTerm.toLowerCase();
-      const cat = (e.incidentCategory || '').toLowerCase();
-      const catLabel = (CATEGORY_TRANSLATIONS[e.incidentCategory]?.label || '').toLowerCase();
-      const fields = (e.uploadedFields || '').toLowerCase();
-      return cat.includes(term) || catLabel.includes(term) || fields.includes(term);
+      // Filtro texto libre
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase();
+        const cat = (e.incidentCategory || '').toLowerCase();
+        const catLabel = (CATEGORY_TRANSLATIONS[e.incidentCategory]?.label || '').toLowerCase();
+        const fields = (e.uploadedFields || '').toLowerCase();
+        const ticket = (e.internalTicketId || '').toLowerCase();
+        const incId = (e.incidentId || '').toLowerCase();
+        const matches = cat.includes(term) || catLabel.includes(term) || fields.includes(term) || ticket.includes(term) || incId.includes(term);
+        if (!matches) return false;
+      }
+
+      // Filtro Categoría
+      if (categoryFilter !== 'ALL' && e.incidentCategory !== categoryFilter) {
+        return false;
+      }
+
+      // Filtro Estado
+      if (statusFilter === 'ACTIVE' && e.isFalsePositive) return false;
+      if (statusFilter === 'REVOKED' && !e.isFalsePositive) return false;
+
+      // Filtro Rango de Fechas
+      if (dateFrom) {
+        const dFrom = new Date(dateFrom + 'T00:00:00');
+        if (new Date(e.timestamp) < dFrom) return false;
+      }
+      if (dateTo) {
+        const dTo = new Date(dateTo + 'T23:59:59');
+        if (new Date(e.timestamp) > dTo) return false;
+      }
+
+      return true;
     })
     .slice()
     .reverse();
 
-  const handleMarkFP = (edgeId: string) => {
-    if (!confirm('¿Confirmar que este reporte fue un falso positivo? Esto revertirá su impacto en el score de red.')) return;
-    markFalsePositive(edgeId);
+  // Reset de página al cambiar filtros
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, categoryFilter, statusFilter, dateFrom, dateTo, pageSize]);
+
+  // Cálculos de paginación
+  const totalItems = filteredEdges.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const startIndex = (safePage - 1) * pageSize;
+  const paginatedEdges = filteredEdges.slice(startIndex, startIndex + pageSize);
+
+  // Exportar a CSV (estrictamente tokenizado)
+  const exportTokenizedCSV = () => {
+    if (!filteredEdges.length) return;
+    const headers = [
+      'ID_Registro',
+      'Identificadores_Tokenizados',
+      'Ticket_Interno',
+      'Incident_ID',
+      'Canal_Carga',
+      'Categoria_Fraude',
+      'Fecha_Hora',
+      'Estado_Red',
+      'Motivo_Revocacion',
+    ];
+
+    const rows = filteredEdges.map((e, idx) => [
+      `REP-${String(filteredEdges.length - idx).padStart(3, '0')}`,
+      `"${maskZeroTrustData(e.uploadedFields || '').replace(/"/g, '""')}"`,
+      `"${(e.internalTicketId || '—').replace(/"/g, '""')}"`,
+      `"${(e.incidentId || '—').replace(/"/g, '""')}"`,
+      e.uploadMethod === 'CSV_BULK' ? 'Carga Masiva CSV' : 'Carga Unitaria',
+      `"${CATEGORY_TRANSLATIONS[e.incidentCategory]?.label || e.incidentCategory}"`,
+      `"${new Date(e.timestamp).toISOString()}"`,
+      e.isFalsePositive ? 'FALSO POSITIVO (Revertido)' : 'ACTIVO EN RED',
+      `"${(e.revocationReason || '—').replace(/"/g, '""')}"`,
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `historial_auditoria_tokenizado_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleOpenRevocation = (edge: any) => {
+    setRevocationTarget(edge);
+    setRevocationReason('');
+    setRevocationError('');
+  };
+
+  const handleConfirmRevocation = () => {
+    if (!revocationReason.trim() || revocationReason.trim().length < 5) {
+      setRevocationError('El motivo de revocación es obligatorio para registrar en la auditoría (mínimo 5 caracteres).');
+      return;
+    }
+    if (revocationTarget) {
+      markFalsePositive(revocationTarget.id, revocationReason.trim());
+      setRevocationTarget(null);
+      setRevocationReason('');
+    }
+  };
+
+  const hasActiveFilters = searchTerm !== '' || categoryFilter !== 'ALL' || statusFilter !== 'ALL' || dateFrom !== '' || dateTo !== '';
+
+  const clearFilters = () => {
+    setSearchTerm('');
+    setCategoryFilter('ALL');
+    setStatusFilter('ALL');
+    setDateFrom('');
+    setDateTo('');
   };
 
   return (
     <div className="glass-panel rounded-2xl p-6 space-y-5">
-      {/* Header con título privado de la propia entidad */}
+      {/* Header con título privado de la entidad y botón Exportar CSV */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
         <div>
           <div className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-amber-400" />
-            <h3 className="text-base font-bold text-white">Historial de Reportes de mi Entidad</h3>
+            <h3 className="text-base font-bold text-white">Historial y Auditoría de Incidentes</h3>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            Registro privado y exclusivo de los reportes subidos por <strong className="text-slate-200">{activeFintech?.name || 'tu entidad'}</strong>.
+            Registro privado y exclusivo de los incidentes gestionados por <strong className="text-slate-200">{activeFintech?.name || 'tu entidad'}</strong>. Datos personales enmascarados bajo estándar Zero-Trust.
           </p>
         </div>
 
-        {activeFintech && (
-          <div className="inline-flex items-center gap-2 rounded-xl bg-cyan-500/10 border border-cyan-500/25 px-3 py-1.5 text-xs font-bold text-cyan-300 self-start sm:self-auto shadow-sm">
-            <Building className="h-3.5 w-3.5" />
-            <span>{activeFintech.name}</span>
-            <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+        <div className="flex items-center gap-3">
+          {activeFintech && (
+            <div className="inline-flex items-center gap-2 rounded-xl bg-cyan-500/10 border border-cyan-500/25 px-3 py-1.5 text-xs font-bold text-cyan-300 shadow-sm">
+              <Building className="h-3.5 w-3.5" />
+              <span>{activeFintech.name}</span>
+              <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={exportTokenizedCSV}
+            className="flex items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-3.5 py-1.5 text-xs font-bold text-emerald-300 hover:bg-emerald-500/25 active:scale-95 transition shadow-md"
+            title="Exportar todos los reportes filtrados en formato CSV tokenizado"
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span>Exportar a CSV</span>
+          </button>
+        </div>
+      </div>
+
+      {/* PANEL DE FILTROS */}
+      <div className="rounded-xl border border-white/10 bg-slate-950/70 p-3.5 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+            <Filter className="h-3.5 w-3.5 text-cyan-400" />
+            Filtros de Auditoría
+          </span>
+          {hasActiveFilters && (
+            <button
+              onClick={clearFilters}
+              className="text-[11px] text-cyan-400 hover:underline"
+            >
+              Limpiar filtros
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+          {/* Búsqueda libre */}
+          <div>
+            <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Buscar</label>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                placeholder="DNI, ticket, tipología..."
+                className="w-full rounded-lg border border-white/10 bg-slate-900 pl-8 pr-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400"
+              />
+            </div>
           </div>
-        )}
+
+          {/* Dropdown Categoría de Fraude */}
+          <div>
+            <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Categoría de Fraude</label>
+            <select
+              value={categoryFilter}
+              onChange={e => setCategoryFilter(e.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-slate-900 px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-400"
+            >
+              <option value="ALL">Todas las categorías</option>
+              {Object.entries(CATEGORY_TRANSLATIONS).map(([key, cfg]) => (
+                <option key={key} value={key}>{cfg.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Rango de Fechas (Desde / Hasta) */}
+          <div>
+            <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Rango de Fechas</label>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={e => setDateFrom(e.target.value)}
+                className="w-1/2 rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white focus:outline-none focus:border-cyan-400"
+                title="Fecha desde"
+              />
+              <span className="text-slate-500 text-xs">-</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={e => setDateTo(e.target.value)}
+                className="w-1/2 rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white focus:outline-none focus:border-cyan-400"
+                title="Fecha hasta"
+              />
+            </div>
+          </div>
+
+          {/* Dropdown Estado */}
+          <div>
+            <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Estado en Red</label>
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value as any)}
+              className="w-full rounded-lg border border-white/10 bg-slate-900 px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-400"
+            >
+              <option value="ALL">Todos los estados</option>
+              <option value="ACTIVE">Activo en Red</option>
+              <option value="REVOKED">Falso Positivo (Revertido)</option>
+            </select>
+          </div>
+        </div>
       </div>
 
-      {/* Buscador de registros y contador */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            placeholder="Buscar en mis reportes (DNI, email, IP, tipología)..."
-            className="w-full rounded-xl border border-white/10 bg-slate-950/60 pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400"
-          />
-        </div>
-
-        <div className="text-xs text-slate-400 font-mono">
-          Mostrando <strong className="text-white">{myEdges.length}</strong> reporte(s) propios
+      {/* Contador de registros */}
+      <div className="flex items-center justify-between text-xs text-slate-400 font-mono">
+        <span>
+          Mostrando <strong className="text-white">{filteredEdges.length}</strong> incidente(s) de <strong className="text-cyan-400">{entityEdges.length}</strong> totales
+        </span>
+        <div className="flex items-center gap-2">
+          <span>Filas por página:</span>
+          <select
+            value={pageSize}
+            onChange={e => setPageSize(Number(e.target.value))}
+            className="rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white focus:outline-none focus:border-cyan-400"
+          >
+            <option value={10}>10</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+          </select>
         </div>
       </div>
 
-      {myEdges.length === 0 ? (
+      {filteredEdges.length === 0 ? (
         <div className="rounded-xl border border-white/10 bg-slate-800/30 py-12 text-center space-y-2">
           <Shield className="h-8 w-8 text-slate-600 mx-auto" />
-          <p className="text-sm font-semibold text-slate-400">No hay reportes registrados por tu entidad.</p>
+          <p className="text-sm font-semibold text-slate-400">No se encontraron reportes con los filtros seleccionados.</p>
           <p className="text-xs text-slate-500">
-            Los reportes que ingreses desde «Reportar Fraude» o «Importación CSV» aparecerán listados aquí.
+            Ajustá los filtros o ingresá un nuevo incidente desde el formulario.
           </p>
         </div>
       ) : (
@@ -2359,16 +3176,17 @@ function ReportHistoryModule() {
             <thead className="bg-slate-950 border-b border-white/10 text-[11px] uppercase text-slate-400 tracking-wider">
               <tr>
                 <th className="px-4 py-3"># Registro</th>
-                <th className="px-4 py-3">Datos e Identificadores Subidos</th>
-                <th className="px-4 py-3">Canal de Carga</th>
-                <th className="px-4 py-3">Categoría de Fraude</th>
+                <th className="px-4 py-3">Datos e Identificadores (Zero-Trust)</th>
+                <th className="px-4 py-3">Ref. Interna / Incidente</th>
+                <th className="px-4 py-3">Canal</th>
+                <th className="px-4 py-3">Tipología</th>
                 <th className="px-4 py-3">Fecha y Hora</th>
                 <th className="px-4 py-3 text-center">Estado de Red</th>
-                <th className="px-4 py-3 text-right">Gestión</th>
+                <th className="px-4 py-3 text-center">Gestión</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5 text-slate-300">
-              {myEdges.map((edge, idx) => {
+              {paginatedEdges.map((edge, idx) => {
                 const catConfig = CATEGORY_TRANSLATIONS[edge.incidentCategory] || {
                   label: edge.incidentCategory,
                   color: 'bg-slate-800 text-slate-300 border-slate-700',
@@ -2385,31 +3203,44 @@ function ReportHistoryModule() {
                   >
                     {/* ID Registro */}
                     <td className="px-4 py-3 font-mono text-slate-400 font-bold whitespace-nowrap">
-                      REP-{String(myEdges.length - idx).padStart(3, '0')}
+                      REP-{String(filteredEdges.length - (startIndex + idx)).padStart(3, '0')}
                     </td>
 
-                    {/* Datos Subidos (Enmascarados) */}
+                    {/* Datos Subidos (Estrictamente Tokenizados) */}
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <Lock className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
                         <span className="font-mono text-slate-200 font-medium">
-                          {edge.uploadedFields || 'DNI: 30.***.222 · Email: estafador.red@***'}
+                          {maskZeroTrustData(edge.uploadedFields || 'DNI: 30.***.222 · Email: estafador.red@***')}
                         </span>
                       </div>
                       <span className="text-[10px] text-slate-500 block pl-5 mt-0.5">
-                        Protegido en Red (Hash Blindado Zero-Knowledge)
+                        Tokenizado Zero-Trust (Sin revelación en crudo)
                       </span>
+                    </td>
+
+                    {/* Referencia Interna / ID Incidente */}
+                    <td className="px-4 py-3 font-mono text-[11px] whitespace-nowrap">
+                      {edge.internalTicketId ? (
+                        <span className="inline-flex items-center gap-1 text-cyan-300 bg-cyan-950/40 px-2 py-0.5 rounded border border-cyan-800/40 font-semibold">
+                          #{edge.internalTicketId}
+                        </span>
+                      ) : edge.incidentId ? (
+                        <span className="text-slate-400 text-[10px]">{edge.incidentId}</span>
+                      ) : (
+                        <span className="text-slate-600">—</span>
+                      )}
                     </td>
 
                     {/* Canal de Carga */}
                     <td className="px-4 py-3 whitespace-nowrap">
                       {edge.uploadMethod === 'CSV_BULK' ? (
                         <span className="inline-flex items-center gap-1 rounded-md bg-indigo-500/15 border border-indigo-500/30 px-2 py-0.5 text-[10px] font-bold text-indigo-300">
-                          <FileSpreadsheet className="h-3 w-3" /> Carga Masiva CSV
+                          <FileSpreadsheet className="h-3 w-3" /> Masivo CSV
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
-                          <Upload className="h-3 w-3" /> Carga Unitaria
+                          <Upload className="h-3 w-3" /> Unitaria
                         </span>
                       )}
                     </td>
@@ -2436,7 +3267,7 @@ function ReportHistoryModule() {
                     <td className="px-4 py-3 text-center whitespace-nowrap">
                       {edge.isFalsePositive ? (
                         <span className="rounded-lg bg-amber-500/20 px-2.5 py-1 text-[10px] font-bold text-amber-400 border border-amber-500/30">
-                          FALSO POSITIVO (Revertido)
+                          FALSO POSITIVO
                         </span>
                       ) : (
                         <span className="rounded-lg bg-rose-500/20 px-2.5 py-1 text-[10px] font-bold text-rose-400 border border-rose-500/30">
@@ -2445,18 +3276,24 @@ function ReportHistoryModule() {
                       )}
                     </td>
 
-                    {/* Gestión */}
-                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                    {/* Gestión con menú de 3 puntos (⋮) */}
+                    <td className="px-4 py-3 text-center whitespace-nowrap">
                       {!edge.isFalsePositive ? (
                         <button
-                          onClick={() => handleMarkFP(edge.id)}
-                          className="rounded-xl border border-amber-500/30 bg-amber-950/40 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-900/50 hover:text-white active:scale-95 transition"
-                          title="Desactivar este reporte si fue resuelto o es un cliente legítimo"
+                          type="button"
+                          onClick={() => handleOpenRevocation(edge)}
+                          className="p-1.5 rounded-lg border border-white/10 hover:border-amber-400/50 bg-slate-900/60 hover:bg-amber-950/30 text-slate-400 hover:text-amber-300 transition active:scale-95"
+                          title="Opciones de registro / Revocar como Falso Positivo"
                         >
-                          Falso Positivo
+                          <MoreVertical className="h-4 w-4" />
                         </button>
                       ) : (
-                        <span className="text-[11px] text-slate-500 italic">Revertido</span>
+                        <span
+                          className="text-[11px] text-slate-500 italic cursor-help"
+                          title={edge.revocationReason ? `Motivo: ${edge.revocationReason}` : 'Reporte revocado'}
+                        >
+                          Revocado
+                        </span>
                       )}
                     </td>
                   </tr>
@@ -2464,6 +3301,107 @@ function ReportHistoryModule() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* CONTROLES DE PAGINACIÓN */}
+      {filteredEdges.length > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-white/10 pt-4 text-xs">
+          <span className="text-slate-400">
+            Mostrando página <strong className="text-white">{safePage}</strong> de <strong className="text-white">{totalPages}</strong>
+          </span>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={safePage <= 1}
+              className="flex items-center gap-1 rounded-xl border border-white/10 bg-slate-900 px-3 py-1.5 font-semibold text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" /> Anterior
+            </button>
+
+            <span className="px-2 font-mono text-cyan-400 font-bold">
+              {safePage} / {totalPages}
+            </span>
+
+            <button
+              type="button"
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={safePage >= totalPages}
+              className="flex items-center gap-1 rounded-xl border border-white/10 bg-slate-900 px-3 py-1.5 font-semibold text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition"
+            >
+              Siguiente <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE REVOCACIÓN (FALSO POSITIVO) CON MOTIVO OBLIGATORIO */}
+      {revocationTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="relative w-full max-w-md rounded-2xl border border-amber-500/40 bg-slate-900 p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/40">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-white">Revocar Incidente (Falso Positivo)</h4>
+                <p className="text-xs text-slate-400">Esta acción revertirá el impacto del reporte en el score de red.</p>
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-black/40 p-3 border border-white/5 space-y-1 text-xs font-mono">
+              <p className="text-slate-400">
+                <span className="text-slate-500">Registro:</span> REP-{revocationTarget.id.slice(0, 8)}
+              </p>
+              <p className="text-slate-400">
+                <span className="text-slate-500">Datos:</span> {maskZeroTrustData(revocationTarget.uploadedFields)}
+              </p>
+              <p className="text-slate-400">
+                <span className="text-slate-500">Tipología:</span> {CATEGORY_TRANSLATIONS[revocationTarget.incidentCategory]?.label || revocationTarget.incidentCategory}
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-200">
+                Motivo de revocación <span className="text-rose-400">* (Obligatorio para auditoría regulatoria)</span>
+              </label>
+              <textarea
+                value={revocationReason}
+                onChange={e => {
+                  setRevocationReason(e.target.value);
+                  setRevocationError('');
+                }}
+                rows={3}
+                placeholder="Describí por qué este reporte fue clasificado como falso positivo (ej. Titular acreditó titularidad legítima con DNI físico / Error de digitación)..."
+                className="w-full rounded-xl border border-white/10 bg-slate-950 p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+              />
+              {revocationError && (
+                <p className="text-rose-400 text-[11px] font-semibold flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3 shrink-0" />
+                  {revocationError}
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setRevocationTarget(null)}
+                className="rounded-xl border border-white/10 bg-slate-800 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-700 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmRevocation}
+                className="rounded-xl bg-gradient-to-r from-amber-500 to-rose-600 px-4 py-2 text-xs font-bold text-white hover:from-amber-400 hover:to-rose-500 transition shadow-lg shadow-amber-950/50"
+              >
+                Confirmar Revocación
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

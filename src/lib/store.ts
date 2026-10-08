@@ -33,6 +33,7 @@ import {
   clearSupabaseConfig,
   testSupabaseConnection,
 } from './supabaseClient';
+import { verifyTOTP, generateTOTPSecret } from './totp';
 
 // ─────────────────────────────────────────────────────────────────
 // DATOS SEMILLA (del spec)
@@ -354,7 +355,7 @@ export const SEED_APP_USERS: AppUser[] = [
     entityId: 'CONSORCIO',
     entityName: 'Gobernanza Central',
     status: 'ACTIVE',
-    totpEnrolled: true,
+    totpEnrolled: false,
     createdAt: '2026-09-01T10:00:00Z',
     lastLogin: new Date().toISOString(),
   },
@@ -365,7 +366,7 @@ export const SEED_APP_USERS: AppUser[] = [
     entityId: 'CONSORCIO',
     entityName: 'Gobernanza Central',
     status: 'ACTIVE',
-    totpEnrolled: true,
+    totpEnrolled: false,
     createdAt: '2026-09-01T10:00:00Z',
     lastLogin: new Date().toISOString(),
   },
@@ -540,9 +541,11 @@ interface ConsortiumStore {
     device?: string;
     cuit?: string;
     incidentCategory: IncidentCategory;
+    internalTicketId?: string;
+    incidentId?: string;
   }) => Promise<void>;
 
-  markFalsePositive: (edgeId: string) => void;
+  markFalsePositive: (edgeId: string, reason?: string) => void;
 
   importCSV: (csvText: string) => Promise<{ imported: number; errors: number }>;
 
@@ -587,7 +590,7 @@ interface ConsortiumStore {
   updateUserRole: (userId: string, role: 'admin' | 'usuario') => Promise<{ success: boolean; message: string }>;
   toggleUserStatus: (userId: string) => Promise<{ success: boolean; message: string }>;
   updateUserTotp: (userId: string, enrolled: boolean, secret?: string) => Promise<void>;
-  complete2FAEnrollment: (email: string, code: string) => Promise<{ success: boolean; message: string }>;
+  complete2FAEnrollment: (email: string, secret: string, code: string) => Promise<{ success: boolean; message: string }>;
 
   // ── Auditoría Histórica de Scores ──────────────────────────────
   scoringAuditRecords: ScoringAuditRecord[];
@@ -1055,7 +1058,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         return result;
       },
 
-      reportFraud: async ({ dni, email, phone, ip, cbu, device, cuit, incidentCategory }) => {
+      reportFraud: async ({ dni, email, phone, ip, cbu, device, cuit, incidentCategory, internalTicketId, incidentId }) => {
         const state = get();
         const fintechId = state.activeFintechId;
         const fintech = state.fintechs.find(f => f.id === fintechId);
@@ -1103,6 +1106,12 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           scope: state.activeService,
         });
 
+        // Asignar ticket interno e incidentId común para análisis de grafos
+        newEdges.forEach(e => {
+          e.internalTicketId = internalTicketId;
+          e.incidentId = incidentId;
+        });
+
         // Registrar device-CUIT link si ambos están presentes
         let newDeviceCUITLinks = state.deviceCUITLinks;
         if (deviceHash && cuitHash) {
@@ -1138,7 +1147,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             state2.auditLogs,
             actorName,
             'FRAUD_REPORT',
-            `[${state.activeService}] Reporte ${incidentCategory} ingresado — ${identifiers} (${newEdges.length} aristas creadas)`
+            `[${state.activeService}] Reporte ${incidentCategory} ingresado ${internalTicketId ? `(Ticket: ${internalTicketId})` : ''} — ${identifiers} (${newEdges.length} aristas creadas)`
           ),
         }));
 
@@ -1162,12 +1171,13 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         }
       },
 
-      markFalsePositive: (edgeId: string) => {
+      markFalsePositive: (edgeId: string, reason?: string) => {
         set(state => {
           const edge = state.graphEdges.find(e => e.id === edgeId);
           if (!edge) return state;
 
           const fintech = state.fintechs.find(f => f.id === edge.reportedByEntityId);
+          const actorName = fintech?.name || edge.reportedByEntityId;
 
           if (SupabaseService.isAvailable()) {
             SupabaseService.markFalsePositive(edgeId, fintech?.id || '').catch(err =>
@@ -1177,7 +1187,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
 
           return {
             graphEdges: state.graphEdges.map(e =>
-              e.id === edgeId ? { ...e, isFalsePositive: true } : e
+              e.id === edgeId ? { ...e, isFalsePositive: true, revocationReason: reason } : e
             ),
             fintechs: state.fintechs.map(f =>
               f.id === edge.reportedByEntityId
@@ -1186,9 +1196,9 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             ),
             auditLogs: addAuditEntry(
               state.auditLogs,
-              fintech?.name || edge.reportedByEntityId,
-              'FALSE_POSITIVE_MARKED',
-              `Arista ${edgeId} marcada como falso positivo — impacto revertido en el score de red`
+              actorName,
+              'REPORT_REVOKED',
+              `Reporte ${edgeId} marcado como falso positivo/revocado. Motivo: ${reason || 'Revocación por analista de compliance'}`
             ),
           };
         });
@@ -1612,15 +1622,31 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         // Inicialmente y por defecto solo andresalaniz8@gmail.com y alan.morales778@gmail.com
         // O usuarios registrados en appUsers con rol 'admin'
         const state = get();
-        const existingUser = state.appUsers.find(u => u.email.toLowerCase() === cleanEmail);
+        let existingUser = state.appUsers.find(u => u.email.toLowerCase() === cleanEmail);
         const isDefaultAdmin = cleanEmail === 'andresalaniz8@gmail.com' || cleanEmail === 'alan.morales778@gmail.com';
         const hasAdminRole = existingUser ? existingUser.role === 'admin' && existingUser.status === 'ACTIVE' : isDefaultAdmin;
 
         if (!hasAdminRole) {
           return {
             success: false,
-            message: 'Acceso no autorizado: Solo administradores autorizados (andresalaniz8@gmail.com, alan.morales778@gmail.com) tienen acceso a este panel.',
+            message: 'Acceso no autorizado: El correo ingresado no cuenta con privilegios de SuperAdmin autorizados en el consorcio.',
           };
+        }
+
+        // Si es un admin por defecto que aún no está en appUsers, crearlo
+        if (!existingUser && isDefaultAdmin) {
+          const newAdmin: AppUser = {
+            id: `usr-admin-${Date.now()}`,
+            email: cleanEmail,
+            role: 'admin',
+            entityId: 'CONSORCIO',
+            entityName: 'Gobernanza Central',
+            status: 'ACTIVE',
+            totpEnrolled: false,
+            createdAt: new Date().toISOString(),
+          };
+          set(s => ({ appUsers: [...s.appUsers, newAdmin] }));
+          existingUser = newAdmin;
         }
 
         // 2. Validación de Master Key o Contraseña (>= 6 caracteres)
@@ -1641,7 +1667,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         }
 
         // 3. Verificación de Enrolamiento 2FA (Google Authenticator / TOTP)
-        if (existingUser && !existingUser.totpEnrolled && !totpCode) {
+        if (!existingUser || !existingUser.totpEnrolled || !existingUser.totpSecret) {
           return {
             success: false,
             requires2FAEnroll: true,
@@ -1649,12 +1675,12 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           };
         }
 
-        // Si requiere código 2FA y no se suministró
+        // Si el usuario ya completó el enrolamiento, exigir el código dinámico de 6 dígitos
         if (!totpCode || totpCode.trim().length < 6) {
           return {
             success: false,
             requires2FACode: true,
-            message: 'Ingrese el código de 6 dígitos generado por Google Authenticator.',
+            message: 'Ingrese el código dinámico de 6 dígitos generado por Google Authenticator.',
           };
         }
 
@@ -1664,6 +1690,16 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             success: false,
             requires2FACode: true,
             message: 'Código 2FA inválido. Debe contener exactamente 6 dígitos.',
+          };
+        }
+
+        // Validación criptográfica real del token con el secreto del usuario
+        const isCodeValid = await verifyTOTP(cleanCode, existingUser.totpSecret, 1);
+        if (!isCodeValid) {
+          return {
+            success: false,
+            requires2FACode: true,
+            message: 'Código de verificación 2FA incorrecto o expirado. Verifique la hora en Google Authenticator e intente con el código dinámico actual.',
           };
         }
 
@@ -1686,7 +1722,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             s.auditLogs,
             cleanEmail,
             'ADMIN_LOGIN',
-            `Sesión de Gobernanza iniciada por ${cleanEmail} (2FA TOTP verificado exitosamente)`
+            `Sesión de Gobernanza iniciada por ${cleanEmail} (2FA TOTP RFC 6238 verificado criptográficamente)`
           ),
         }));
 
@@ -1696,22 +1732,33 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         };
       },
 
-      complete2FAEnrollment: async (email: string, code: string) => {
+      complete2FAEnrollment: async (email: string, secret: string, code: string) => {
         const cleanEmail = email.trim().toLowerCase();
         const cleanCode = code.trim().replace(/\s/g, '');
+        const cleanSecret = secret.trim().replace(/\s/g, '');
+
         if (!/^\d{6}$/.test(cleanCode)) {
-          return { success: false, message: 'El código de 6 dígitos no es válido.' };
+          return { success: false, message: 'El código de verificación debe contener exactamente 6 dígitos.' };
+        }
+
+        // Validación criptográfica real del token con el secreto
+        const isValid = await verifyTOTP(cleanCode, cleanSecret, 1);
+        if (!isValid) {
+          return {
+            success: false,
+            message: 'El código ingresado no coincide con el secreto del código QR. Verifique que la hora de su teléfono esté sincronizada e intente con el código actual de Google Authenticator.',
+          };
         }
 
         set(state => {
           let updatedUsers = state.appUsers.map(u => {
             if (u.email.toLowerCase() === cleanEmail) {
-              return { ...u, totpEnrolled: true, lastLogin: new Date().toISOString() };
+              return { ...u, totpEnrolled: true, totpSecret: cleanSecret, lastLogin: new Date().toISOString() };
             }
             return u;
           });
 
-          // Si el usuario no existía aún en appUsers (ej: admin por defecto), crearlo
+          // Si el usuario no existía aún en appUsers, crearlo
           if (!updatedUsers.some(u => u.email.toLowerCase() === cleanEmail)) {
             updatedUsers.push({
               id: `usr-${Date.now()}`,
@@ -1721,23 +1768,37 @@ export const useConsortiumStore = create<ConsortiumStore>()(
               entityName: 'Gobernanza Central',
               status: 'ACTIVE',
               totpEnrolled: true,
+              totpSecret: cleanSecret,
               createdAt: new Date().toISOString(),
               lastLogin: new Date().toISOString(),
             });
           }
 
+          const session: AdminSession = {
+            isAuthenticated: true,
+            email: cleanEmail,
+            name: cleanEmail.split('@')[0].toUpperCase(),
+            role: 'SUPER_ADMIN',
+            token: `adm_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+            loginTime: new Date().toISOString(),
+            is2FAVerified: true,
+          };
+
           return {
+            adminSession: session,
+            activeRole: 'ADMIN',
+            currentRoute: 'admin-portal',
             appUsers: updatedUsers,
             auditLogs: addAuditEntry(
               state.auditLogs,
               cleanEmail,
               '2FA_ENROLL',
-              `Enrolamiento 2FA (Google Authenticator) completado exitosamente para ${cleanEmail}`
+              `Enrolamiento 2FA (Google Authenticator) vinculado y verificado criptográficamente para ${cleanEmail}`
             ),
           };
         });
 
-        return { success: true, message: 'Google Authenticator vinculado correctamente.' };
+        return { success: true, message: 'Google Authenticator vinculado y verificado correctamente.' };
       },
 
       addUser: async ({ email, role, entityId = 'CONSORCIO', entityName = 'Gobernanza Central', tempPassword }) => {

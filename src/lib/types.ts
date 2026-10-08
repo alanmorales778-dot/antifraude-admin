@@ -61,6 +61,9 @@ export interface SpecGraphEdge {
   uploadMethod?: 'MANUAL' | 'CSV_BULK' | 'API';
   entityName?: string;
   scope?: ServiceScope; // Internal vs Consortium
+  internalTicketId?: string;
+  incidentId?: string;
+  revocationReason?: string;
 }
 
 export interface StoreAuditLog {
@@ -87,6 +90,8 @@ export interface IdentifierMatchDetail {
   scope?: ServiceScope;
   lastSeenDaysAgo?: number;
   decayedScore?: number;
+  lastReportedAt?: string;
+  internalTicketId?: string;
 }
 
 export interface ScoreBreakdown {
