@@ -28,6 +28,7 @@ import { useConsortiumStore } from '@/lib/store';
 import { UserRole } from '@/lib/types';
 import { getSupabaseBrowserClient } from '@/lib/supabaseClient';
 import { generateTOTPSecret, generateTOTPUri, generateQRCodeSvg } from '@/lib/totp';
+import ConsortiumLogo from '@/components/ConsortiumLogo';
 
 interface PartnerLoginProps {
   onSuccess?: () => void;
@@ -214,17 +215,21 @@ export default function PartnerLogin({
       <header className="border-b border-[#17253d] bg-[#0c1628]/95 backdrop-blur-md px-6 py-4 sticky top-0 z-30">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#1d4ed8] to-[#0f2756] text-white flex items-center justify-center font-serif font-bold text-base shadow-[0_0_15px_rgba(29,78,216,0.35)] border border-[#3b82f6]/40">
-              B
-            </div>
-            <div>
-              <span className="block text-xs font-bold tracking-wider text-white uppercase">
-                Portal de Entidades Financieras
-              </span>
-              <span className="block text-[11px] text-[#60a5fa] font-mono">
-                Bancos · Billeteras Virtuales · Neobancos
-              </span>
-            </div>
+            <button
+              type="button"
+              onClick={onNavigateHome || (() => setCurrentRoute('landing'))}
+              className="flex items-center gap-3 text-left group"
+            >
+              <ConsortiumLogo size="md" showGlow={true} className="group-hover:scale-105 transition-all" />
+              <div>
+                <span className="block text-xs font-bold tracking-wider text-white uppercase group-hover:text-blue-300 transition-colors">
+                  Portal de Entidades Financieras
+                </span>
+                <span className="block text-[11px] text-[#60a5fa] font-mono">
+                  Bancos · Billeteras Virtuales · Neobancos
+                </span>
+              </div>
+            </button>
           </div>
 
           <div className="flex items-center gap-3">
@@ -392,8 +397,20 @@ export default function PartnerLogin({
                       type="email"
                       required
                       value={operatorEmail}
-                      onChange={e => setOperatorEmail(e.target.value)}
-                      placeholder="analista@banco.com.ar"
+                      onChange={e => {
+                        const val = e.target.value;
+                        setOperatorEmail(val);
+                        const clean = val.trim().toLowerCase();
+                        const matchedUser = appUsers.find(u => u.email.toLowerCase() === clean);
+                        if (matchedUser && matchedUser.entityId) {
+                          const matchedEntity = fintechs.find(f => f.id === matchedUser.entityId);
+                          if (matchedEntity) {
+                            setSelectedEntityId(matchedEntity.id);
+                            setApiKey(matchedEntity.apiKey);
+                          }
+                        }
+                      }}
+                      placeholder="analista@alpha.com.ar"
                       className="w-full px-3.5 py-2.5 pl-10 bg-[#060c17] border border-[#1e365b] rounded-lg text-xs text-white placeholder-[#475569] focus:outline-none focus:border-[#3b82f6] transition-all font-mono"
                     />
                     <Mail className="w-4 h-4 text-[#64748b] absolute left-3.5 top-3" />

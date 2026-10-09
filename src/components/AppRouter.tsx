@@ -3,6 +3,7 @@
 import React, { useEffect } from 'react';
 import { useConsortiumStore } from '@/lib/store';
 import { AppRoute } from '@/lib/types';
+import InstitutionalGateway from '@/components/InstitutionalGateway';
 import AdminLogin from '@/components/AdminLogin';
 import AdminConsortiumPortal from '@/components/AdminConsortiumPortal';
 import PartnerLogin from '@/components/PartnerLogin';
@@ -35,6 +36,12 @@ export default function AppRouter() {
       const queryRoute = (params.get('route') || params.get('path') || '').toLowerCase();
       const host = window.location.hostname.toLowerCase();
 
+      // Rutas explícitas de aterrizaje institucional oficial
+      if (hash === 'landing' || queryRoute === 'landing') {
+        setCurrentRoute('landing');
+        return;
+      }
+
       // Si el subdominio/host o la ruta contiene 'admin':
       const isAdminContext =
         host.includes('admin') ||
@@ -48,13 +55,35 @@ export default function AppRouter() {
         } else {
           setCurrentRoute('admin-login');
         }
-      } else {
-        // Portal de Empresas / Bancos / Fintechs por defecto en la URL de empresas
+        return;
+      }
+
+      // Contexto explícito de empresa / banco / participante
+      const isPartnerContext =
+        hash.includes('partner') ||
+        hash.includes('banco') ||
+        hash.includes('empresa') ||
+        queryRoute.includes('partner') ||
+        queryRoute.includes('banco') ||
+        queryRoute.includes('empresa');
+
+      if (isPartnerContext) {
         if (hash === 'partner-portal' || queryRoute === 'partner-portal' || (partnerSession?.isAuthenticated && !hash.includes('login'))) {
           setCurrentRoute('partner-portal');
         } else {
           setCurrentRoute('partner-login');
         }
+        return;
+      }
+
+      // En la raíz sin parámetros específicos:
+      if (adminSession?.isAuthenticated) {
+        setCurrentRoute('admin-portal');
+      } else if (partnerSession?.isAuthenticated) {
+        setCurrentRoute('partner-portal');
+      } else {
+        // Portal Institucional Oficial como pantalla principal
+        setCurrentRoute('landing');
       }
     };
 
@@ -63,13 +92,23 @@ export default function AppRouter() {
     return () => window.removeEventListener('hashchange', handleLocationChange);
   }, [setCurrentRoute, adminSession?.isAuthenticated, partnerSession?.isAuthenticated]);
 
+  // ── ROUTE: Landing Oficial (Institutional Gateway) ──
+  if (currentRoute === 'landing') {
+    return (
+      <InstitutionalGateway
+        onSelectAdmin={() => setCurrentRoute('admin-login')}
+        onSelectPartner={() => setCurrentRoute('partner-login')}
+      />
+    );
+  }
+
   // ── ROUTE: Admin Login ──
   if (currentRoute === 'admin-login') {
     return (
       <AdminLogin
         onSuccess={() => setCurrentRoute('admin-portal')}
         onNavigatePartner={() => setCurrentRoute('partner-login')}
-        onNavigateHome={() => setCurrentRoute('admin-login')}
+        onNavigateHome={() => setCurrentRoute('landing')}
         showPartnerLink={true}
       />
     );
@@ -83,7 +122,7 @@ export default function AppRouter() {
         <AdminLogin
           onSuccess={() => setCurrentRoute('admin-portal')}
           onNavigatePartner={() => setCurrentRoute('partner-login')}
-          onNavigateHome={() => setCurrentRoute('admin-login')}
+          onNavigateHome={() => setCurrentRoute('landing')}
           showPartnerLink={true}
         />
       );
@@ -93,7 +132,7 @@ export default function AppRouter() {
       <AdminConsortiumPortal
         onLogout={() => {
           logoutAdmin();
-          setCurrentRoute('admin-login');
+          setCurrentRoute('landing');
         }}
       />
     );
@@ -105,7 +144,7 @@ export default function AppRouter() {
       <PartnerLogin
         onSuccess={() => setCurrentRoute('partner-portal')}
         onNavigateAdmin={() => setCurrentRoute('admin-login')}
-        onNavigateHome={() => setCurrentRoute('partner-login')}
+        onNavigateHome={() => setCurrentRoute('landing')}
         showAdminLink={true}
       />
     );
@@ -119,7 +158,7 @@ export default function AppRouter() {
         <PartnerLogin
           onSuccess={() => setCurrentRoute('partner-portal')}
           onNavigateAdmin={() => setCurrentRoute('admin-login')}
-          onNavigateHome={() => setCurrentRoute('partner-login')}
+          onNavigateHome={() => setCurrentRoute('landing')}
           showAdminLink={true}
         />
       );
@@ -130,19 +169,17 @@ export default function AppRouter() {
         fintechId={partnerSession.entityId}
         onLogout={() => {
           logoutPartner();
-          setCurrentRoute('partner-login');
+          setCurrentRoute('landing');
         }}
       />
     );
   }
 
-  // Default fallback: Partner Login
+  // Default fallback: Portal Institucional Oficial
   return (
-    <PartnerLogin
-      onSuccess={() => setCurrentRoute('partner-portal')}
-      onNavigateAdmin={() => setCurrentRoute('admin-login')}
-      onNavigateHome={() => setCurrentRoute('partner-login')}
-      showAdminLink={false}
+    <InstitutionalGateway
+      onSelectAdmin={() => setCurrentRoute('admin-login')}
+      onSelectPartner={() => setCurrentRoute('partner-login')}
     />
   );
 }

@@ -41,15 +41,26 @@ import { verifyTOTP, generateTOTPSecret } from './totp';
 
 // Hashes pre-computados de los casos del spec usando el salt del consorcio.
 // Se calculan en runtime al inicializar el store si no existen en storage.
-// Base de datos limpia iniciada desde 0 sin bancos ni listas negras mock
-export const SEED_FINTECHS: FintechEntity[] = [];
+// Entorno limpio iniciado desde 0 para pruebas oficiales: Banco Alpha como entidad única con contadores en blanco
+export const SEED_FINTECHS: FintechEntity[] = [
+  {
+    id: 'fintech-alpha',
+    name: 'Fintech Alpha',
+    apiKey: 'antf_live_alpha_a1b2c3d4e5f6',
+    trustWeight: 1.0,
+    status: 'ACTIVE',
+    queriesCount: 0,
+    reportsCount: 0,
+    falsePositivesCount: 0,
+  },
+];
 
 const SEED_AUDIT_LOGS: StoreAuditLog[] = [
   {
     timestamp: new Date().toISOString(),
     actor: 'Sistema Central',
     action: 'INIT',
-    details: 'Base de datos y motor ZK inicializados para pruebas operativas desde 0',
+    details: 'Entorno inicializado desde cero para pruebas oficiales (Banco Alpha activo con contadores en 0)',
   },
 ];
 
@@ -87,24 +98,15 @@ export const SEED_APP_USERS: AppUser[] = [
     lastLogin: new Date().toISOString(),
   },
   {
-    id: 'usr-op-1',
-    email: 'analista.seguridad@fintechalpha.com',
+    id: 'usr-alpha-1',
+    email: 'riesgo@alpha.com.ar',
     role: 'usuario',
     entityId: 'fintech-alpha',
     entityName: 'Fintech Alpha',
     status: 'ACTIVE',
     totpEnrolled: false,
-    createdAt: '2026-09-15T12:00:00Z',
-  },
-  {
-    id: 'usr-op-2',
-    email: 'riesgo.operativo@bancobeta.com.ar',
-    role: 'usuario',
-    entityId: 'banco-beta',
-    entityName: 'Banco Beta',
-    status: 'ACTIVE',
-    totpEnrolled: false,
-    createdAt: '2026-09-20T14:30:00Z',
+    createdAt: '2026-09-01T10:00:00Z',
+    lastLogin: new Date().toISOString(),
   },
 ];
 
@@ -219,6 +221,7 @@ interface ConsortiumStore {
   resetScoringConfig: () => void;
   applyScoringPreset: (presetName: 'BALANCED' | 'STRICT' | 'PERMISSIVE') => void;
   setScoreOverride: (overrides: { manualEntityScore?: number | null; manualConsortiumScore?: number | null; enabled?: boolean }) => void;
+  resetEnvironmentToCleanAlpha: () => Promise<void>;
 }
 
 
@@ -251,31 +254,67 @@ function addAuditEntry(
 }
 
 // ─────────────────────────────────────────────────────────────────
+// MOTOR DE SINCRONIZACIÓN EN TIEMPO REAL MULTI-SESIÓN
+// ─────────────────────────────────────────────────────────────────
+
+const SYNC_CHANNEL_NAME = 'antifraude_consortium_realtime_bus';
+let localSyncChannel: BroadcastChannel | null = null;
+if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+  try {
+    localSyncChannel = new BroadcastChannel(SYNC_CHANNEL_NAME);
+  } catch (e) {
+    console.warn('[Sync] BroadcastChannel no disponible:', e);
+  }
+}
+
+export function broadcastRealtimeChange(changeSlice: any) {
+  if (typeof window === 'undefined') return;
+
+  // 1. Difundir inter-pestañas / inter-sesiones en el mismo navegador (0ms latencia)
+  if (localSyncChannel) {
+    try {
+      localSyncChannel.postMessage({
+        type: 'REALTIME_STATE_MUTATION',
+        timestamp: Date.now(),
+        payload: changeSlice,
+      });
+    } catch {}
+  }
+
+  // 2. Difundir a clientes remotos vía WebSocket de Supabase
+  if (SupabaseService.isAvailable()) {
+    try {
+      SupabaseService.broadcastRealtimeChange(changeSlice);
+    } catch {}
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
 // STORE ZUSTAND CON PERSIST
 // ─────────────────────────────────────────────────────────────────
 
 export const useConsortiumStore = create<ConsortiumStore>()(
   persist(
     (set, get) => ({
-      // ── Estado inicial 100% limpio para pruebas desde cero ───
-      fintechs: [],
+      // ── Estado inicial 100% limpio para pruebas desde cero (Solo Banco Alpha) ───
+      fintechs: SEED_FINTECHS,
       identityNodes: [],
       graphEdges: [],
       auditLogs: SEED_AUDIT_LOGS,
       networkAlerts: SEED_NETWORK_ALERTS,
       lastLookupResult: null,
-      seedReady: false,
+      seedReady: true,
       deviceCUITLinks: [],
       scoringConfig: DEFAULT_SCORING_CONFIG,
       appUsers: SEED_APP_USERS,
       scoringAuditRecords: SEED_SCORING_AUDIT_RECORDS,
 
       activeRole: 'ADMIN',
-      activeFintechId: '',
+      activeFintechId: 'fintech-alpha',
       activeService: 'CONSORTIUM',
 
       // ── Sesiones y Rutas Independientes ────────────────────────
-      currentRoute: 'admin-login',
+      currentRoute: 'landing',
       adminSession: null,
       partnerSession: null,
 
@@ -284,38 +323,115 @@ export const useConsortiumStore = create<ConsortiumStore>()(
       supabaseLatencyMs: null,
       supabaseError: null,
 
+      // ── Reseteo Completo a 0 (Limpieza Total de Entorno) ────────
+      resetEnvironmentToCleanAlpha: async () => {
+        const cleanFintech: FintechEntity = {
+          id: 'fintech-alpha',
+          name: 'Fintech Alpha',
+          apiKey: 'antf_live_alpha_a1b2c3d4e5f6',
+          trustWeight: 1.0,
+          status: 'ACTIVE',
+          queriesCount: 0,
+          reportsCount: 0,
+          falsePositivesCount: 0,
+        };
+
+        const resetLog: StoreAuditLog = {
+          timestamp: new Date().toISOString(),
+          actor: get().adminSession?.email || 'Sistema Central',
+          action: 'ENV_RESET_ZERO',
+          details: 'Entorno reseteado a 0 para inicio de pruebas oficiales. Banco Alpha inicializado con contadores en blanco.',
+        };
+
+        const cleanState = {
+          fintechs: [cleanFintech],
+          identityNodes: [],
+          graphEdges: [],
+          networkAlerts: [],
+          auditLogs: [resetLog],
+          deviceCUITLinks: [],
+          scoringAuditRecords: [],
+          lastLookupResult: null,
+          activeFintechId: 'fintech-alpha',
+          scoringConfig: DEFAULT_SCORING_CONFIG,
+        };
+
+        set(cleanState);
+        broadcastRealtimeChange(cleanState);
+
+        if (SupabaseService.isAvailable()) {
+          try {
+            await SupabaseService.resetDatabaseToCleanAlpha();
+          } catch (e) {
+            console.error('[Store] Error reseteando Supabase:', e);
+          }
+        }
+      },
+
       // ── Inicialización de semillas async ──────────────────────
       initSeedData: async () => {
-        if (get().seedReady) return;
-
-        // 1. Si Supabase está disponible, intentar cargar datos remotos
+        // Siempre sincronizar con los datos reales vigentes de Supabase
         if (SupabaseService.isAvailable()) {
           try {
             set({ supabaseStatus: 'SYNCING' });
             const remoteData = await SupabaseService.loadAllData(get().activeService);
             if (remoteData) {
+              // Filtrar estrictamente cualquier entidad residual de banco beta o pruebas
+              let cleanEntities = (remoteData.fintechs || []).filter(
+                f => f.id !== 'banco-beta' && f.name !== 'Banco Beta'
+              );
+              // Garantizar que Banco Alpha permanezca como entidad única primaria
+              if (!cleanEntities.some(f => f.id === 'fintech-alpha')) {
+                cleanEntities = [SEED_FINTECHS[0], ...cleanEntities];
+              }
+
+              const cleanEdges = (remoteData.graphEdges || []).filter(
+                e => e.reportedByEntityId !== 'banco-beta'
+              );
+              const cleanUsers = (remoteData.appUsers && remoteData.appUsers.length > 0 ? remoteData.appUsers : get().appUsers).filter(
+                u => u.entityId !== 'banco-beta'
+              );
+
               set({
-                fintechs: remoteData.fintechs,
-                identityNodes: remoteData.identityNodes,
-                graphEdges: remoteData.graphEdges,
-                networkAlerts: remoteData.networkAlerts,
+                fintechs: cleanEntities,
+                identityNodes: remoteData.identityNodes || [],
+                graphEdges: cleanEdges,
+                networkAlerts: remoteData.networkAlerts || [],
                 auditLogs: remoteData.auditLogs.length > 0 ? remoteData.auditLogs : get().auditLogs,
-                deviceCUITLinks: remoteData.deviceCUITLinks,
-                appUsers: remoteData.appUsers && remoteData.appUsers.length > 0 ? remoteData.appUsers : get().appUsers,
+                deviceCUITLinks: remoteData.deviceCUITLinks || [],
+                appUsers: cleanUsers,
+                activeFintechId: cleanEntities[0]?.id || 'fintech-alpha',
                 seedReady: true,
                 supabaseStatus: 'CONNECTED',
               });
               return;
             }
           } catch (e) {
-            console.warn('[Store] Supabase no disponible al iniciar, usando memoria local:', e);
+            console.warn('[Store] Error sincronizando con Supabase:', e);
           }
         }
 
-        set({ fintechs: [], identityNodes: [], graphEdges: [], networkAlerts: [], deviceCUITLinks: [], seedReady: true });
+        // Fallback local garantizado con Banco Alpha activo y contadores en 0
+        set(s => {
+          let cleanFintechs = (s.fintechs.length > 0 ? s.fintechs : SEED_FINTECHS).filter(
+            f => f.id !== 'banco-beta' && f.name !== 'Banco Beta'
+          );
+          if (!cleanFintechs.some(f => f.id === 'fintech-alpha')) {
+            cleanFintechs = [SEED_FINTECHS[0], ...cleanFintechs];
+          }
+          return {
+            fintechs: cleanFintechs,
+            identityNodes: [],
+            graphEdges: [],
+            networkAlerts: [],
+            deviceCUITLinks: [],
+            activeFintechId: cleanFintechs[0]?.id || 'fintech-alpha',
+            seedReady: true,
+          };
+        });
       },
 
-      // ── Acciones Admin ────────────────────────────────────────
+      // ── Acciones Admin (Con Impacto Instantáneo en Tiempo Real) ──
 
       addFintech: (name: string) => {
         const newFintech: FintechEntity = {
@@ -329,15 +445,23 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           falsePositivesCount: 0,
         };
 
-        set(state => ({
-          fintechs: [...state.fintechs, newFintech],
-          auditLogs: addAuditEntry(
-            state.auditLogs,
-            'SuperAdmin',
-            'FINTECH_ADDED',
-            `Nueva entidad registrada: ${name}`
-          ),
-        }));
+        const updatedFintechs = [...get().fintechs, newFintech];
+        const updatedLogs = addAuditEntry(
+          get().auditLogs,
+          'SuperAdmin',
+          'FINTECH_ADDED',
+          `Nueva entidad registrada: ${name}`
+        );
+
+        set({
+          fintechs: updatedFintechs,
+          auditLogs: updatedLogs,
+        });
+
+        broadcastRealtimeChange({
+          fintechs: updatedFintechs,
+          auditLogs: updatedLogs,
+        });
 
         if (SupabaseService.isAvailable()) {
           SupabaseService.persistFintech(newFintech).catch(console.error);
@@ -349,17 +473,26 @@ export const useConsortiumStore = create<ConsortiumStore>()(
 
       updateTrustWeight: (id: string, weight: number) => {
         const clamped = Math.min(1, Math.max(0, weight));
-        set(state => ({
-          fintechs: state.fintechs.map(f =>
-            f.id === id ? { ...f, trustWeight: clamped } : f
-          ),
-          auditLogs: addAuditEntry(
-            state.auditLogs,
-            'SuperAdmin',
-            'TRUST_WEIGHT_UPDATED',
-            `${state.fintechs.find(f => f.id === id)?.name || id}: trustWeight → ${clamped.toFixed(2)}`
-          ),
-        }));
+        const updatedFintechs = get().fintechs.map(f =>
+          f.id === id ? { ...f, trustWeight: clamped } : f
+        );
+        const entityName = get().fintechs.find(f => f.id === id)?.name || id;
+        const updatedLogs = addAuditEntry(
+          get().auditLogs,
+          'SuperAdmin',
+          'TRUST_WEIGHT_UPDATED',
+          `${entityName}: trustWeight → ${clamped.toFixed(2)}`
+        );
+
+        set({
+          fintechs: updatedFintechs,
+          auditLogs: updatedLogs,
+        });
+
+        broadcastRealtimeChange({
+          fintechs: updatedFintechs,
+          auditLogs: updatedLogs,
+        });
 
         if (SupabaseService.isAvailable()) {
           SupabaseService.updateTrustWeight(id, clamped).catch(console.error);
@@ -368,28 +501,33 @@ export const useConsortiumStore = create<ConsortiumStore>()(
       },
 
       toggleFintechStatus: (id: string) => {
-        set(state => {
-          const fintech = state.fintechs.find(f => f.id === id);
-          if (!fintech) return state;
-          const newStatus = fintech.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
+        const fintech = get().fintechs.find(f => f.id === id);
+        if (!fintech) return;
+        const newStatus = fintech.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
+        const updatedFintechs = get().fintechs.map(f =>
+          f.id === id ? { ...f, status: newStatus } : f
+        );
+        const updatedLogs = addAuditEntry(
+          get().auditLogs,
+          'SuperAdmin',
+          'STATUS_CHANGED',
+          `${fintech.name}: ${fintech.status} → ${newStatus}`
+        );
 
-          if (SupabaseService.isAvailable()) {
-            SupabaseService.toggleFintechStatus(id, newStatus).catch(console.error);
-            SupabaseService.recordAuditLog('SuperAdmin', 'STATUS_CHANGED', `${fintech.name}: ${fintech.status} → ${newStatus}`).catch(console.error);
-          }
-
-          return {
-            fintechs: state.fintechs.map(f =>
-              f.id === id ? { ...f, status: newStatus } : f
-            ),
-            auditLogs: addAuditEntry(
-              state.auditLogs,
-              'SuperAdmin',
-              'STATUS_CHANGED',
-              `${fintech.name}: ${fintech.status} → ${newStatus}`
-            ),
-          };
+        set({
+          fintechs: updatedFintechs,
+          auditLogs: updatedLogs,
         });
+
+        broadcastRealtimeChange({
+          fintechs: updatedFintechs,
+          auditLogs: updatedLogs,
+        });
+
+        if (SupabaseService.isAvailable()) {
+          SupabaseService.toggleFintechStatus(id, newStatus).catch(console.error);
+          SupabaseService.recordAuditLog('SuperAdmin', 'STATUS_CHANGED', `${fintech.name}: ${fintech.status} → ${newStatus}`).catch(console.error);
+        }
       },
 
       // ── Acciones Fintech ──────────────────────────────────────
@@ -1585,55 +1723,68 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         set({ activeService: service });
       },
 
-      // ── Acciones de Configuración de Scoring Dual ────────────
+      // ── Acciones de Configuración de Scoring Dual (Con Difusión Instantánea) ────
       updateScoringConfig: (newConfig: Partial<ScoringConfig>) => {
-        set(state => {
-          const updated: ScoringConfig = {
-            ...state.scoringConfig,
-            ...newConfig,
-            severityBase: {
-              ...state.scoringConfig.severityBase,
-              ...(newConfig.severityBase || {}),
-            },
-            decayFloor: {
-              ...state.scoringConfig.decayFloor,
-              ...(newConfig.decayFloor || {}),
-            },
-            multiEntityMultipliers: {
-              ...state.scoringConfig.multiEntityMultipliers,
-              ...(newConfig.multiEntityMultipliers || {}),
-            },
-            emailPenalties: {
-              ...state.scoringConfig.emailPenalties,
-              ...(newConfig.emailPenalties || {}),
-            },
-            scoreOverrides: {
-              ...state.scoringConfig.scoreOverrides,
-              ...(newConfig.scoreOverrides || {}),
-            },
-          };
-          return {
-            scoringConfig: updated,
-            auditLogs: addAuditEntry(
-              state.auditLogs,
-              state.adminSession?.email || 'Gobernanza Central',
-              'SCORING_CONFIG_UPDATED',
-              'Parámetros del motor de scoring dual actualizados por el Administrador.'
-            ),
-          };
+        const state = get();
+        const updated: ScoringConfig = {
+          ...state.scoringConfig,
+          ...newConfig,
+          severityBase: {
+            ...state.scoringConfig.severityBase,
+            ...(newConfig.severityBase || {}),
+          },
+          decayFloor: {
+            ...state.scoringConfig.decayFloor,
+            ...(newConfig.decayFloor || {}),
+          },
+          multiEntityMultipliers: {
+            ...state.scoringConfig.multiEntityMultipliers,
+            ...(newConfig.multiEntityMultipliers || {}),
+          },
+          emailPenalties: {
+            ...state.scoringConfig.emailPenalties,
+            ...(newConfig.emailPenalties || {}),
+          },
+          scoreOverrides: {
+            ...state.scoringConfig.scoreOverrides,
+            ...(newConfig.scoreOverrides || {}),
+          },
+        };
+        const updatedLogs = addAuditEntry(
+          state.auditLogs,
+          state.adminSession?.email || 'Gobernanza Central',
+          'SCORING_CONFIG_UPDATED',
+          'Parámetros del motor de scoring dual actualizados por el Administrador.'
+        );
+
+        set({
+          scoringConfig: updated,
+          auditLogs: updatedLogs,
+        });
+
+        broadcastRealtimeChange({
+          scoringConfig: updated,
+          auditLogs: updatedLogs,
         });
       },
 
       resetScoringConfig: () => {
-        set(state => ({
+        const updatedLogs = addAuditEntry(
+          get().auditLogs,
+          get().adminSession?.email || 'Gobernanza Central',
+          'SCORING_CONFIG_RESET',
+          'Configuración de scoring restablecida a valores recomendados estándar.'
+        );
+
+        set({
           scoringConfig: DEFAULT_SCORING_CONFIG,
-          auditLogs: addAuditEntry(
-            state.auditLogs,
-            state.adminSession?.email || 'Gobernanza Central',
-            'SCORING_CONFIG_RESET',
-            'Configuración de scoring restablecida a valores recomendados estándar.'
-          ),
-        }));
+          auditLogs: updatedLogs,
+        });
+
+        broadcastRealtimeChange({
+          scoringConfig: DEFAULT_SCORING_CONFIG,
+          auditLogs: updatedLogs,
+        });
       },
 
       applyScoringPreset: (presetName: 'BALANCED' | 'STRICT' | 'PERMISSIVE') => {
@@ -1666,30 +1817,40 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             multiEntityMultipliers: { two: 1.25, three: 1.50, fourOrMore: 1.80 },
           };
         }
-        set(state => ({
-          scoringConfig: {
-            ...state.scoringConfig,
-            ...preset,
-          },
-          auditLogs: addAuditEntry(
-            state.auditLogs,
-            state.adminSession?.email || 'Gobernanza Central',
-            'SCORING_PRESET_APPLIED',
-            `Perfil de scoring aplicado: ${presetName}`
-          ),
-        }));
+
+        const updatedConfig = {
+          ...get().scoringConfig,
+          ...preset,
+        };
+
+        const updatedLogs = addAuditEntry(
+          get().auditLogs,
+          get().adminSession?.email || 'Gobernanza Central',
+          'SCORING_PRESET_APPLIED',
+          `Perfil de scoring aplicado: ${presetName}`
+        );
+
+        set({
+          scoringConfig: updatedConfig,
+          auditLogs: updatedLogs,
+        });
+
+        broadcastRealtimeChange({
+          scoringConfig: updatedConfig,
+          auditLogs: updatedLogs,
+        });
       },
 
       setScoreOverride: (overrides) => {
-        set(state => ({
-          scoringConfig: {
-            ...state.scoringConfig,
-            scoreOverrides: {
-              ...state.scoringConfig.scoreOverrides,
-              ...overrides,
-            },
+        const updatedConfig = {
+          ...get().scoringConfig,
+          scoreOverrides: {
+            ...get().scoringConfig.scoreOverrides,
+            ...overrides,
           },
-        }));
+        };
+        set({ scoringConfig: updatedConfig });
+        broadcastRealtimeChange({ scoringConfig: updatedConfig });
       },
     }),
     {
@@ -1717,4 +1878,40 @@ export const useConsortiumStore = create<ConsortiumStore>()(
     }
   )
 );
+
+// ─────────────────────────────────────────────────────────────────
+// ESCUCHA REACTIVA MULTI-VENTANA Y MULTI-DISPOSITIVO (SIN RECARGA)
+// ─────────────────────────────────────────────────────────────────
+
+if (typeof window !== 'undefined') {
+  // 1. Canal local de alta velocidad (BroadcastChannel) para todas las pestañas abiertas
+  if (localSyncChannel) {
+    localSyncChannel.onmessage = (event) => {
+      if (event.data?.type === 'REALTIME_STATE_MUTATION' && event.data.payload) {
+        useConsortiumStore.setState(event.data.payload);
+      }
+    };
+  }
+
+  // 2. Event listener de 'storage' para soporte universal si el navegador no soporta BroadcastChannel
+  window.addEventListener('storage', (event) => {
+    if (event.key === 'antifraude-consortium-store-v2' && event.newValue) {
+      try {
+        const parsed = JSON.parse(event.newValue);
+        if (parsed?.state) {
+          useConsortiumStore.setState(parsed.state);
+        }
+      } catch {}
+    }
+  });
+
+  // 3. Suscripción WebSocket a Supabase Realtime para cambios multi-dispositivo/remotos
+  if (SupabaseService.isAvailable()) {
+    SupabaseService.subscribeToRealtimeChanges((payload) => {
+      if (payload) {
+        useConsortiumStore.setState(payload);
+      }
+    });
+  }
+}
 

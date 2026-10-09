@@ -8,7 +8,7 @@ import {
   ServiceScope,
   AppUser,
 } from './types';
-import { supabaseFetch, getSupabaseConfig } from './supabaseClient';
+import { supabaseFetch, getSupabaseConfig, getSupabaseBrowserClient } from './supabaseClient';
 
 /**
  * Servicio de sincronización y persistencia con Supabase
@@ -659,5 +659,99 @@ export class SupabaseService {
       };
     }
   }
+
+  /**
+   * Resetea la base de datos de Supabase a 0:
+   * - Elimina todo reporte de prueba, arista, nodo, alerta y vínculo device-cuit
+   * - Elimina entidades ajenas a 'fintech-alpha' (incluyendo banco beta y pruebas)
+   * - Restablece Banco Alpha con contadores a 0
+   * - Inserta log de auditoría inicial de arranque
+   */
+  static async resetDatabaseToCleanAlpha(): Promise<boolean> {
+    if (!this.isAvailable()) return false;
+    try {
+      await Promise.all([
+        supabaseFetch('graph_edges?id=neq.none', { method: 'DELETE' }),
+        supabaseFetch('identity_nodes?hash=neq.none', { method: 'DELETE' }),
+        supabaseFetch('network_alerts?id=neq.none', { method: 'DELETE' }),
+        supabaseFetch('device_cuit_links?token_device=neq.none', { method: 'DELETE' }),
+        supabaseFetch('audit_logs?id=neq.none', { method: 'DELETE' }),
+        supabaseFetch('fintech_entities?id=neq.fintech-alpha', { method: 'DELETE' }),
+      ]);
+
+      // Insertar log inicial inmutable
+      await supabaseFetch('audit_logs', {
+        method: 'POST',
+        body: [{
+          actor: 'Sistema Central',
+          action: 'INIT',
+          details: 'Entorno reseteado a 0 para inicio de pruebas oficiales. Banco Alpha inicializado con contadores en blanco.',
+          scope: 'CONSORTIUM',
+        }],
+      });
+
+      // Asegurar Banco Alpha limpio en fintech_entities
+      await supabaseFetch('fintech_entities', {
+        method: 'POST',
+        headers: { Prefer: 'resolution=merge-duplicates' },
+        body: [{
+          id: 'fintech-alpha',
+          name: 'Fintech Alpha',
+          api_key: 'antf_live_alpha_a1b2c3d4e5f6',
+          trust_weight: 1.0,
+          status: 'ACTIVE',
+          queries_count: 0,
+          reports_count: 0,
+          false_positives_count: 0,
+        }],
+      });
+
+      return true;
+    } catch (err) {
+      console.error('[SupabaseService] Error reseteando base de datos a 0:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Canal de broadcast en tiempo real vía Supabase Realtime WebSocket
+   */
+  private static _realtimeChannel: any = null;
+
+  static broadcastRealtimeChange(payload: any): void {
+    if (!this.isAvailable()) return;
+    try {
+      const client = getSupabaseBrowserClient();
+      if (!this._realtimeChannel) {
+        this._realtimeChannel = client.channel('consortium_realtime_broadcast');
+        this._realtimeChannel.subscribe();
+      }
+      this._realtimeChannel.send({
+        type: 'broadcast',
+        event: 'CONSORTIUM_STATE_SYNC',
+        payload,
+      });
+    } catch (e) {
+      console.warn('[Supabase Realtime Broadcast Error]:', e);
+    }
+  }
+
+  static subscribeToRealtimeChanges(onMessage: (payload: any) => void): void {
+    if (!this.isAvailable()) return;
+    try {
+      const client = getSupabaseBrowserClient();
+      if (!this._realtimeChannel) {
+        this._realtimeChannel = client.channel('consortium_realtime_broadcast');
+      }
+      this._realtimeChannel
+        .on('broadcast', { event: 'CONSORTIUM_STATE_SYNC' }, ({ payload }: any) => {
+          onMessage(payload);
+        })
+        .subscribe();
+    } catch (e) {
+      console.warn('[Supabase Realtime Subscribe Error]:', e);
+    }
+  }
 }
+
 

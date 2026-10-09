@@ -25,13 +25,10 @@ import {
 import FintechDashboard from '@/components/FintechDashboard';
 import DashboardKPIs from '@/components/DashboardKPIs';
 import ThreatAnalytics from '@/components/ThreatAnalytics';
-import ApiDocsAndKeys from '@/components/ApiDocsAndKeys';
-import WebhooksCenter from '@/components/WebhooksCenter';
-import AuditLogViewer from '@/components/AuditLogViewer';
 import AICopilotDrawer from '@/components/AICopilotDrawer';
-import { INITIAL_TENANTS } from '@/lib/data-seed';
+import ConsortiumLogo from '@/components/ConsortiumLogo';
 import { useConsortiumStore } from '@/lib/store';
-import { ServiceScope } from '@/lib/types';
+import { ServiceScope, FintechEntity } from '@/lib/types';
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, description: 'KPIs y estadísticas' },
@@ -142,7 +139,6 @@ export default function EntityPortal({
     reportsCount: 0,
     falsePositivesCount: 0,
   };
-  const currentTenant = INITIAL_TENANTS[0];
 
   // RBAC: Ocultar 'API & Webhooks' para rol 'Analista'. Solo visible para Administradores.
   const isAnalyst = Boolean(
@@ -201,16 +197,13 @@ export default function EntityPortal({
         {/* Logo + entidad activa */}
         <div className="px-4 py-5 border-b border-[#17253d]">
           <div className="flex items-center gap-3 mb-3">
-            <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 border transition-colors ${
-              isInternal
-                ? 'bg-[#15263a] border-[#294260] text-[#a8c5e5]'
-                : 'bg-[#18342e] border-[#2a554a] text-[#a2d6cb]'
-            }`}>
-              {isInternal
-                ? <Building2 className="h-4.5 w-4.5" />
-                : <Shield className="h-4.5 w-4.5" />
-              }
-            </div>
+            {isInternal ? (
+              <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0 border bg-[#15263a] border-[#294260] text-[#a8c5e5]">
+                <Building2 className="h-4.5 w-4.5" />
+              </div>
+            ) : (
+              <ConsortiumLogo size="sm" showGlow={true} />
+            )}
             <div className="min-w-0">
               <p className="text-xs font-bold text-white truncate">
                 {activeFintech?.name || 'Entidad'}
@@ -358,15 +351,29 @@ export default function EntityPortal({
 
         {/* Content */}
         <main className="flex-1 p-5 lg:p-7 overflow-auto">
+          {activeFintech?.status === 'SUSPENDED' && (
+            <div className="mb-6 rounded-xl border border-rose-500/50 bg-rose-950/40 p-4 text-rose-200 flex items-start gap-3 backdrop-blur-md shadow-lg shadow-rose-950/20">
+              <ShieldAlert className="h-5 w-5 text-rose-400 shrink-0 mt-0.5" />
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-rose-300">
+                  Entidad en Cuarentena Administrativa en Tiempo Real
+                </h4>
+                <p className="text-xs text-rose-200/90 mt-1">
+                  La administración central ha suspendido temporalmente a <strong className="text-white">{activeFintech.name}</strong>. Las consultas federadas y la emisión de reportes quedan restringidas inmediatamente sin necesidad de recargar la sesión.
+                </p>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'dashboard' && (
             <DashboardKPIs
               stats={stats}
-              tenants={INITIAL_TENANTS}
+              tenants={fintechs}
               onNavigateTab={setActiveTab}
             />
           )}
 
-          {/* Lookup, Reporte, CSV e Historial usan FintechDashboard con mÃ³dulo activo */}
+          {/* Lookup, Reporte, CSV e Historial usan FintechDashboard con módulo activo */}
           {isFintechModule && (
             <FintechDashboard activeModule={TAB_TO_MODULE[activeTab]} />
           )}
@@ -374,9 +381,44 @@ export default function EntityPortal({
           {activeTab === 'analytics' && <ThreatAnalytics />}
 
           {activeTab === 'api' && (
-            <div className="space-y-6">
-              <ApiDocsAndKeys currentTenant={currentTenant} />
-              <WebhooksCenter currentTenant={currentTenant} />
+            <div className="space-y-6 max-w-5xl">
+              <div className="rounded-xl border border-cyan-500/30 bg-[#0c1527] p-6 shadow-xl">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                    <Key className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">Credenciales & Clave API de {activeFintech.name}</h3>
+                    <p className="text-xs text-slate-400">Utilice esta clave en la cabecera <code className="text-cyan-300 font-mono">x-consortium-api-key</code> para integraciones de backend.</p>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-lg bg-[#060b14] border border-slate-800 flex items-center justify-between gap-4 font-mono text-xs">
+                  <div className="truncate text-slate-300">
+                    <span className="text-slate-500 mr-2">API Key:</span>
+                    <span className="text-emerald-400 font-bold">{activeFintech.apiKey || 'antf_live_alpha_a1b2c3d4e5f6'}</span>
+                  </div>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(activeFintech.apiKey || 'antf_live_alpha_a1b2c3d4e5f6')}
+                    className="px-3 py-1.5 rounded-md bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 text-[11px] font-sans font-semibold border border-cyan-500/30 transition-all shrink-0"
+                  >
+                    Copiar Clave
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-800 bg-[#0c1527] p-6 shadow-xl space-y-4">
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-emerald-400" />
+                  Endpoint de Consulta Federada en Tiempo Real (REST)
+                </h3>
+                <div className="bg-[#050912] p-4 rounded-lg border border-slate-800/80 font-mono text-[11px] text-slate-300 overflow-x-auto leading-relaxed">
+                  <span className="text-purple-400">curl</span> -X POST https://api.antifraude.consorcio.ar/v1/risk/lookup \<br />
+                  &nbsp;&nbsp;-H <span className="text-amber-300">"Content-Type: application/json"</span> \<br />
+                  &nbsp;&nbsp;-H <span className="text-amber-300">"x-consortium-api-key: {activeFintech.apiKey || 'antf_live_alpha_a1b2c3d4e5f6'}"</span> \<br />
+                  &nbsp;&nbsp;-d '<span className="text-emerald-300">{"{"}"cuit": "20345678901", "dni": "34567890", "serviceScope": "{activeService}"{"}"}</span>'
+                </div>
+              </div>
             </div>
           )}
         </main>

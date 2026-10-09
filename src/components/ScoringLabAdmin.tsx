@@ -481,7 +481,7 @@ export default function ScoringLabAdmin() {
             operationId: edge.id || `OP-${idx + 1000}`,
             timestamp: edge.timestamp || new Date(Date.now() - idx * 3600000).toISOString(),
             entityId: edge.reportedByEntityId,
-            entityName: edge.entityName || (edge.reportedByEntityId === 'fintech-alpha' ? 'Fintech Alpha' : 'Banco Beta'),
+            entityName: edge.entityName || (edge.reportedByEntityId === 'fintech-alpha' ? 'Fintech Alpha' : 'Entidad Federada'),
             identifierPreview: edge.targetHash ? `${edge.targetHash.slice(0, 8)}...${edge.targetHash.slice(-6)}` : 'Hash anonimizado',
             internalScore: severity,
             consortiumScore: Math.min(100, Math.round(severity * (edge.scope === 'INTERNAL' ? 1.0 : 1.15))),

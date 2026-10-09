@@ -16,6 +16,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useConsortiumStore } from '@/lib/store';
+import ConsortiumLogo from '@/components/ConsortiumLogo';
 
 interface InstitutionalGatewayProps {
   onSelectAdmin: () => void;
@@ -34,9 +35,7 @@ export default function InstitutionalGateway({
       <header className="border-b border-[#e2dfd5] bg-[#faf9f5]/90 backdrop-blur-sm px-6 py-4 sticky top-0 z-20">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-[#0f2132] text-[#f7f6f2] flex items-center justify-center font-serif font-bold text-base shadow-sm border border-[#233547]">
-              C
-            </div>
+            <ConsortiumLogo size="sm" showGlow={true} />
             <div>
               <span className="block text-xs font-semibold tracking-wider text-[#1e2e3e] uppercase">
                 Consorcio Federal de Prevención de Fraude
@@ -59,7 +58,9 @@ export default function InstitutionalGateway({
       {/* ── Hero & Gateway Portals ── */}
       <main className="flex-1 max-w-6xl mx-auto w-full px-6 py-12 flex flex-col justify-center">
         {/* Intro */}
-        <div className="text-center max-w-2xl mx-auto space-y-4 mb-12">
+        <div className="text-center max-w-2xl mx-auto space-y-4 mb-12 flex flex-col items-center">
+          <ConsortiumLogo size="hero" showGlow={true} className="mb-2 hover:scale-105 transition-transform duration-300 drop-shadow-xl" />
+
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white border border-[#dedad0] text-xs font-medium text-[#4a5568] shadow-2xs">
             <ShieldCheck className="w-3.5 h-3.5 text-[#1b3b36]" />
             <span>Infraestructura de Inteligencia Colaborativa</span>

@@ -17,12 +17,14 @@ import {
   Key,
   Database,
   ExternalLink,
+  RotateCcw,
 } from 'lucide-react';
 import { useConsortiumStore } from '@/lib/store';
 
 import ScoringLabAdmin from '@/components/ScoringLabAdmin';
 import RegulatoryAuditTable from '@/components/RegulatoryAuditTable';
 import AdminUsersManagement from '@/components/AdminUsersManagement';
+import ConsortiumLogo from '@/components/ConsortiumLogo';
 
 interface AdminConsortiumPortalProps {
   onLogout: () => void;
@@ -39,12 +41,30 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
     toggleFintechStatus,
     supabaseStatus,
     supabaseLatencyMs,
+    resetEnvironmentToCleanAlpha,
   } = useConsortiumStore();
 
   const [activeTab, setActiveTab] = useState<'entities' | 'audit' | 'network' | 'scoring-lab' | 'users'>('entities');
   const [newEntityName, setNewEntityName] = useState('');
   const [filterQuery, setFilterQuery] = useState('');
   const [isAdding, setIsAdding] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+
+  const handleResetToZero = async () => {
+    const ok = window.confirm(
+      '¿Desea resetear el entorno a 0 para pruebas oficiales?\\n\\nEsta acción:\\n- Purgará todas las transacciones, consultas, reportes y listas negras de prueba.\\n- Mantendrá únicamente Banco Alpha con todos sus contadores en 0.\\n- Sincronizará la limpieza de inmediato en Supabase y en todas las sesiones activas.'
+    );
+    if (!ok) return;
+    setIsResetting(true);
+    try {
+      await resetEnvironmentToCleanAlpha();
+      alert('Entorno reiniciado exitosamente a 0. Banco Alpha listo con contadores en blanco.');
+    } catch (err) {
+      alert('Error reiniciando entorno: ' + String(err));
+    } finally {
+      setIsResetting(false);
+    }
+  };
 
   // Auto-seleccionar pestaña si está en la URL (ej: #scoring, ?tab=scoring)
   React.useEffect(() => {
@@ -75,9 +95,7 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
       <header className="border-b border-[#17253d] bg-[#0c1628]/95 backdrop-blur-md px-6 py-4 sticky top-0 z-30 shadow-lg">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#1d4ed8] to-[#0f2756] text-white flex items-center justify-center font-serif font-bold text-base shadow-[0_0_15px_rgba(29,78,216,0.35)] border border-[#3b82f6]/40">
-              G
-            </div>
+            <ConsortiumLogo size="md" showGlow={true} />
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold tracking-wider text-white uppercase">
@@ -108,6 +126,16 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
               <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse ml-0.5" />
             </button>
 
+            {/* Resetear Entorno a 0 */}
+            <button
+              onClick={handleResetToZero}
+              disabled={isResetting}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all bg-[#240e13] border-[#5e1923] text-[#fca5a5] hover:bg-[#381119] shadow-sm"
+              title="Restablecer el entorno desde cero: mantiene únicamente Banco Alpha con contadores en blanco."
+            >
+              <RotateCcw className={`w-3.5 h-3.5 ${isResetting ? 'animate-spin text-rose-400' : 'text-rose-400'}`} />
+              <span>{isResetting ? 'Limpiando...' : 'Resetear Entorno a 0'}</span>
+            </button>
 
             {/* Logout */}
             <button

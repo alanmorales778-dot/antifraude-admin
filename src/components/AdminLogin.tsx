@@ -27,6 +27,7 @@ import {
 import { useConsortiumStore } from '@/lib/store';
 import { supabaseAuthResetPassword, supabaseAuthUpdatePassword, getSupabaseBrowserClient } from '@/lib/supabaseClient';
 import { generateTOTPSecret, generateTOTPUri, generateQRCodeDataUrl, generateQRCodeSvg } from '@/lib/totp';
+import ConsortiumLogo from '@/components/ConsortiumLogo';
 
 interface AdminLoginProps {
   onSuccess?: () => void;
@@ -116,17 +117,12 @@ export default function AdminLogin({
     }
   };
 
-  // Enrolar al montar el componente
+  // Enrolar únicamente al cambiar a modo 2FA_ENROLL
   useEffect(() => {
-    init2FAEnrollment(email);
-  }, []);
-
-  // Enrolar al cambiar a modo 2FA_ENROLL
-  useEffect(() => {
-    if (viewMode === '2FA_ENROLL') {
-      init2FAEnrollment(email);
+    if (viewMode === '2FA_ENROLL' && email.trim()) {
+      init2FAEnrollment(email.trim());
     }
-  }, [viewMode]);
+  }, [viewMode, email]);
 
   // Submit Login
   const handleSubmitLogin = async (e: React.FormEvent) => {
@@ -278,9 +274,7 @@ export default function AdminLogin({
               onClick={onNavigateHome || (() => setCurrentRoute('admin-portal'))}
               className="flex items-center gap-3 text-left group"
             >
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#1d4ed8] to-[#0f2756] text-white flex items-center justify-center font-serif font-bold text-base shadow-[0_0_15px_rgba(29,78,216,0.35)] border border-[#3b82f6]/40 group-hover:scale-105 transition-all">
-                G
-              </div>
+              <ConsortiumLogo size="md" showGlow={true} className="group-hover:scale-105 transition-all" />
               <div>
                 <span className="block text-xs font-bold tracking-wider text-white uppercase group-hover:text-blue-300 transition-colors">
                   Consorcio Federal Antifraude

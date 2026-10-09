@@ -12,12 +12,12 @@ import {
   ArrowRight,
   Sparkles,
 } from 'lucide-react';
-import { Tenant } from '@/lib/types';
+import { FintechEntity } from '@/lib/types';
 import { useConsortiumStore } from '@/lib/store';
 
 interface DashboardKPIsProps {
   stats: any;
-  tenants: Tenant[];
+  tenants?: FintechEntity[];
   onNavigateTab: (tab: string) => void;
 }
 
