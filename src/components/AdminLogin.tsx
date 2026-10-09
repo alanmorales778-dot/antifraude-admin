@@ -298,10 +298,11 @@ export default function AdminLogin({
       {/* ── Main Login Container ── */}
       <main className="flex-1 flex items-center justify-center px-4 py-12">
         <div className="w-full max-w-[480px]">
-          {/* Header Card */}
           <div className="bg-[#0d182e] border border-[#1e365b] rounded-2xl shadow-[0_8px_32px_rgba(3,7,18,0.6)] overflow-hidden">
-            <div className="bg-gradient-to-b from-[#0f203c] to-[#0a1528] px-8 pt-8 pb-7 border-b border-[#1b3152]">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-[#13233e] border border-[#203c68] text-[11px] font-mono text-[#93c5fd] uppercase tracking-wider mb-4">
+            <div className="bg-gradient-to-b from-[#0f203c] to-[#0a1528] px-8 pt-8 pb-7 border-b border-[#1b3152] flex flex-col items-center text-center">
+              <ConsortiumLogo size="lg" showGlow={true} className="mb-4 hover:scale-105 transition-transform" />
+
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-[#13233e] border border-[#203c68] text-[11px] font-mono text-[#93c5fd] uppercase tracking-wider mb-3">
                 <ShieldCheck className="w-3.5 h-3.5 text-[#34d399]" />
                 Acceso Reservado SuperAdmin
               </div>
