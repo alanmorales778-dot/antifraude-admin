@@ -208,29 +208,10 @@ EXCEPTION
 END $$;
 
 -- =====================================================================
--- 10. DATOS SEMILLA INICIALES
+-- 10. ESTADO INICIAL
 -- =====================================================================
-INSERT INTO public.fintech_entities (id, name, api_key, trust_weight, status, queries_count, reports_count, false_positives_count)
-VALUES
-    ('fintech-alpha', 'Fintech Alpha', 'antf_live_alpha_a1b2c3d4e5f6', 1.00, 'ACTIVE', 142, 3, 0),
-    ('banco-beta', 'Banco Beta', 'antf_live_beta_f6e5d4c3b2a1', 0.80, 'ACTIVE', 87, 1, 0),
-    ('neobank-gamma', 'NeoBank Gamma', 'antf_live_gamma_9988776655', 0.90, 'ACTIVE', 54, 2, 0)
-ON CONFLICT (id) DO UPDATE SET
-    trust_weight = EXCLUDED.trust_weight,
-    status = EXCLUDED.status;
-
--- Alerta Semilla Crítica
-INSERT INTO public.network_alerts (id, code, title, category, severity, status, entities_involved, risk_score, created_at, scope)
-VALUES
-    ('alt-001', 'ALT-2026-9041', 'Triangulación Inmediata mediante Cuentas Mula Correlativas', 'MULE_ACCOUNT', 'CRITICAL', 'OPEN', ARRAY['Fintech Alpha', 'Banco Beta'], 96, NOW() - INTERVAL '15 minutes', 'CONSORTIUM'),
-    ('alt-002', 'ALT-2026-8812', 'Dispositivo Compartido Detectado en Múltiples Solicitudes de Crédito', 'IDENTITY_THEFT', 'HIGH', 'IN_REVIEW', ARRAY['Fintech Alpha'], 82, NOW() - INTERVAL '2 hours', 'CONSORTIUM')
-ON CONFLICT (id) DO NOTHING;
-
--- Log de auditoría inicial
-INSERT INTO public.audit_logs (actor, action, details, scope)
-VALUES
-    ('Sistema Central', 'DB_INIT', 'Base de datos Supabase conectada e inicializada para el consorcio v2', 'CONSORTIUM')
-ON CONFLICT DO NOTHING;
+-- Esquema limpio desde 0 para preproducción y recepción de datos reales.
+-- Las entidades y casos se dan de alta dinámicamente desde el panel central.
 
 -- =====================================================================
 -- 11. TABLA: app_users (Gestión de Usuarios, Roles RBAC y Supabase MFA)

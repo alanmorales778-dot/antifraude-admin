@@ -41,7 +41,7 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
     toggleFintechStatus,
     supabaseStatus,
     supabaseLatencyMs,
-    resetEnvironmentToCleanAlpha,
+    resetEnvironmentToZero,
   } = useConsortiumStore();
 
   const [activeTab, setActiveTab] = useState<'entities' | 'audit' | 'network' | 'scoring-lab' | 'users'>('entities');
@@ -52,13 +52,13 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
 
   const handleResetToZero = async () => {
     const ok = window.confirm(
-      '¿Desea resetear el entorno a 0 para pruebas oficiales?\\n\\nEsta acción:\\n- Purgará todas las transacciones, consultas, reportes y listas negras de prueba.\\n- Mantendrá únicamente Banco Alpha con todos sus contadores en 0.\\n- Sincronizará la limpieza de inmediato en Supabase y en todas las sesiones activas.'
+      '¿Desea resetear el entorno a 0 para comenzar con datos reales?\\n\\nEsta acción:\\n- Purgará todas las entidades bancarias de prueba (incluyendo Fintech Alpha y Banco Beta).\\n- Purgará todas las transacciones, consultas, reportes, alertas y registros de prueba.\\n- Dejará el sistema completamente en 0, listo para dar de alta entidades e importar casos reales.\\n- Sincronizará la limpieza de inmediato en Supabase y en todas las sesiones activas.'
     );
     if (!ok) return;
     setIsResetting(true);
     try {
-      await resetEnvironmentToCleanAlpha();
-      alert('Entorno reiniciado exitosamente a 0. Banco Alpha listo con contadores en blanco.');
+      await resetEnvironmentToZero();
+      alert('Entorno reiniciado exitosamente a 0. Todas las entidades de prueba y registros han sido purgados.');
     } catch (err) {
       alert('Error reiniciando entorno: ' + String(err));
     } finally {
@@ -127,12 +127,12 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
             </button>
 
             {/* Resetear Entorno a 0 */}
-            <button
-              onClick={handleResetToZero}
-              disabled={isResetting}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all bg-[#240e13] border-[#5e1923] text-[#fca5a5] hover:bg-[#381119] shadow-sm"
-              title="Restablecer el entorno desde cero: mantiene únicamente Banco Alpha con contadores en blanco."
-            >
+              <button
+                onClick={handleResetToZero}
+                disabled={isResetting}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all bg-[#240e13] border-[#5e1923] text-[#fca5a5] hover:bg-[#381119] shadow-sm"
+                title="Restablecer el entorno desde cero: purga entidades de prueba y deja el sistema completamente limpio."
+              >
               <RotateCcw className={`w-3.5 h-3.5 ${isResetting ? 'animate-spin text-rose-400' : 'text-rose-400'}`} />
               <span>{isResetting ? 'Limpiando...' : 'Resetear Entorno a 0'}</span>
             </button>

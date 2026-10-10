@@ -41,28 +41,10 @@ import { verifyTOTP, generateTOTPSecret } from './totp';
 
 // Hashes pre-computados de los casos del spec usando el salt del consorcio.
 // Se calculan en runtime al inicializar el store si no existen en storage.
-// Entorno limpio iniciado desde 0 para pruebas oficiales: Banco Alpha como entidad única con contadores en blanco
-export const SEED_FINTECHS: FintechEntity[] = [
-  {
-    id: 'fintech-alpha',
-    name: 'Fintech Alpha',
-    apiKey: 'antf_live_alpha_a1b2c3d4e5f6',
-    trustWeight: 1.0,
-    status: 'ACTIVE',
-    queriesCount: 0,
-    reportsCount: 0,
-    falsePositivesCount: 0,
-  },
-];
+// Entorno limpio iniciado desde 0 para pruebas oficiales: sin entidades ni datos de prueba residuales
+export const SEED_FINTECHS: FintechEntity[] = [];
 
-const SEED_AUDIT_LOGS: StoreAuditLog[] = [
-  {
-    timestamp: new Date().toISOString(),
-    actor: 'Sistema Central',
-    action: 'INIT',
-    details: 'Entorno inicializado desde cero para pruebas oficiales (Banco Alpha activo con contadores en 0)',
-  },
-];
+const SEED_AUDIT_LOGS: StoreAuditLog[] = [];
 
 // ─────────────────────────────────────────────────────────────────
 // ALERTAS DE RED SEMILLA
@@ -92,17 +74,6 @@ export const SEED_APP_USERS: AppUser[] = [
     role: 'admin',
     entityId: 'CONSORCIO',
     entityName: 'Gobernanza Central',
-    status: 'ACTIVE',
-    totpEnrolled: false,
-    createdAt: '2026-09-01T10:00:00Z',
-    lastLogin: new Date().toISOString(),
-  },
-  {
-    id: 'usr-alpha-1',
-    email: 'riesgo@alpha.com.ar',
-    role: 'usuario',
-    entityId: 'fintech-alpha',
-    entityName: 'Fintech Alpha',
     status: 'ACTIVE',
     totpEnrolled: false,
     createdAt: '2026-09-01T10:00:00Z',
@@ -221,6 +192,7 @@ interface ConsortiumStore {
   resetScoringConfig: () => void;
   applyScoringPreset: (presetName: 'BALANCED' | 'STRICT' | 'PERMISSIVE') => void;
   setScoreOverride: (overrides: { manualEntityScore?: number | null; manualConsortiumScore?: number | null; enabled?: boolean }) => void;
+  resetEnvironmentToZero: () => Promise<void>;
   resetEnvironmentToCleanAlpha: () => Promise<void>;
 }
 
@@ -310,7 +282,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
       scoringAuditRecords: SEED_SCORING_AUDIT_RECORDS,
 
       activeRole: 'ADMIN',
-      activeFintechId: 'fintech-alpha',
+      activeFintechId: '',
       activeService: 'CONSORTIUM',
 
       // ── Sesiones y Rutas Independientes ────────────────────────
@@ -324,27 +296,16 @@ export const useConsortiumStore = create<ConsortiumStore>()(
       supabaseError: null,
 
       // ── Reseteo Completo a 0 (Limpieza Total de Entorno) ────────
-      resetEnvironmentToCleanAlpha: async () => {
-        const cleanFintech: FintechEntity = {
-          id: 'fintech-alpha',
-          name: 'Fintech Alpha',
-          apiKey: 'antf_live_alpha_a1b2c3d4e5f6',
-          trustWeight: 1.0,
-          status: 'ACTIVE',
-          queriesCount: 0,
-          reportsCount: 0,
-          falsePositivesCount: 0,
-        };
-
+      resetEnvironmentToZero: async () => {
         const resetLog: StoreAuditLog = {
           timestamp: new Date().toISOString(),
           actor: get().adminSession?.email || 'Sistema Central',
           action: 'ENV_RESET_ZERO',
-          details: 'Entorno reseteado a 0 para inicio de pruebas oficiales. Banco Alpha inicializado con contadores en blanco.',
+          details: 'Entorno reseteado a 0. Sistema en blanco sin datos residuales, listo para pruebas reales.',
         };
 
         const cleanState = {
-          fintechs: [cleanFintech],
+          fintechs: [],
           identityNodes: [],
           graphEdges: [],
           networkAlerts: [],
@@ -352,7 +313,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           deviceCUITLinks: [],
           scoringAuditRecords: [],
           lastLookupResult: null,
-          activeFintechId: 'fintech-alpha',
+          activeFintechId: '',
           scoringConfig: DEFAULT_SCORING_CONFIG,
         };
 
@@ -361,35 +322,44 @@ export const useConsortiumStore = create<ConsortiumStore>()(
 
         if (SupabaseService.isAvailable()) {
           try {
-            await SupabaseService.resetDatabaseToCleanAlpha();
+            await SupabaseService.resetDatabaseToZero();
           } catch (e) {
             console.error('[Store] Error reseteando Supabase:', e);
           }
         }
       },
 
+      resetEnvironmentToCleanAlpha: async () => {
+        return get().resetEnvironmentToZero();
+      },
+
       // ── Inicialización de semillas async ──────────────────────
       initSeedData: async () => {
+        // Limpieza proactiva de cachés de versiones anteriores en localStorage
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.removeItem('antifraude-consortium-store-v2');
+            localStorage.removeItem('antifraude-consortium-store-v1');
+            localStorage.removeItem('antifraude-consortium-store');
+          } catch {}
+        }
+
         // Siempre sincronizar con los datos reales vigentes de Supabase
         if (SupabaseService.isAvailable()) {
           try {
             set({ supabaseStatus: 'SYNCING' });
             const remoteData = await SupabaseService.loadAllData(get().activeService);
             if (remoteData) {
-              // Filtrar estrictamente cualquier entidad residual de banco beta o pruebas
-              let cleanEntities = (remoteData.fintechs || []).filter(
-                f => f.id !== 'banco-beta' && f.name !== 'Banco Beta'
+              // Filtrar estrictamente cualquier entidad residual de bancos de prueba
+              const cleanEntities = (remoteData.fintechs || []).filter(
+                f => f.id !== 'banco-beta' && f.name !== 'Banco Beta' && f.id !== 'fintech-alpha' && f.name !== 'Fintech Alpha'
               );
-              // Garantizar que Banco Alpha permanezca como entidad única primaria
-              if (!cleanEntities.some(f => f.id === 'fintech-alpha')) {
-                cleanEntities = [SEED_FINTECHS[0], ...cleanEntities];
-              }
 
               const cleanEdges = (remoteData.graphEdges || []).filter(
-                e => e.reportedByEntityId !== 'banco-beta'
+                e => e.reportedByEntityId !== 'banco-beta' && e.reportedByEntityId !== 'fintech-alpha'
               );
               const cleanUsers = (remoteData.appUsers && remoteData.appUsers.length > 0 ? remoteData.appUsers : get().appUsers).filter(
-                u => u.entityId !== 'banco-beta'
+                u => u.entityId !== 'banco-beta' && u.entityId !== 'fintech-alpha'
               );
 
               set({
@@ -397,10 +367,10 @@ export const useConsortiumStore = create<ConsortiumStore>()(
                 identityNodes: remoteData.identityNodes || [],
                 graphEdges: cleanEdges,
                 networkAlerts: remoteData.networkAlerts || [],
-                auditLogs: remoteData.auditLogs.length > 0 ? remoteData.auditLogs : get().auditLogs,
+                auditLogs: remoteData.auditLogs || [],
                 deviceCUITLinks: remoteData.deviceCUITLinks || [],
                 appUsers: cleanUsers,
-                activeFintechId: cleanEntities[0]?.id || 'fintech-alpha',
+                activeFintechId: cleanEntities[0]?.id || '',
                 seedReady: true,
                 supabaseStatus: 'CONNECTED',
               });
@@ -411,21 +381,18 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           }
         }
 
-        // Fallback local garantizado con Banco Alpha activo y contadores en 0
+        // Fallback local garantizado completamente en 0
         set(s => {
-          let cleanFintechs = (s.fintechs.length > 0 ? s.fintechs : SEED_FINTECHS).filter(
-            f => f.id !== 'banco-beta' && f.name !== 'Banco Beta'
+          const cleanFintechs = (s.fintechs || []).filter(
+            f => f.id !== 'banco-beta' && f.name !== 'Banco Beta' && f.id !== 'fintech-alpha' && f.name !== 'Fintech Alpha'
           );
-          if (!cleanFintechs.some(f => f.id === 'fintech-alpha')) {
-            cleanFintechs = [SEED_FINTECHS[0], ...cleanFintechs];
-          }
           return {
             fintechs: cleanFintechs,
             identityNodes: [],
             graphEdges: [],
             networkAlerts: [],
             deviceCUITLinks: [],
-            activeFintechId: cleanFintechs[0]?.id || 'fintech-alpha',
+            activeFintechId: cleanFintechs[0]?.id || '',
             seedReady: true,
           };
         });
@@ -697,7 +664,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
 
       reportFraud: async ({ dni, email, phone, ip, cbu, device, cuit, incidentCategory, internalTicketId, incidentId }) => {
         const state = get();
-        const fintechId = state.partnerSession?.entityId || state.activeFintechId || (state.fintechs[0]?.id) || 'fintech-alpha';
+        const fintechId = state.partnerSession?.entityId || state.activeFintechId || (state.fintechs[0]?.id) || 'entidad-emisora';
         const fintech = state.fintechs.find(f => f.id === fintechId);
 
         if (fintech?.status === 'SUSPENDED') {
@@ -713,7 +680,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         const deviceHash = device ? await computeHash('DEVICE', device) : null;
         const cuitHash = cuit ? await computeHash('CUIT', cuit) : null;
 
-        const actorName = fintech?.name || state.partnerSession?.entityName || 'Fintech Alpha';
+        const actorName = fintech?.name || state.partnerSession?.entityName || 'Entidad Emisora';
         const identifiers = [
           dni ? `DNI: ${dni.slice(0, 2)}***${dni.slice(-3)}` : null,
           email ? `Email: ${email.slice(0, 3)}***@${email.split('@')[1] || ''}` : null,
@@ -1854,7 +1821,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
       },
     }),
     {
-      name: 'antifraude-consortium-store-v2',
+      name: 'antifraude-consortium-store-v3',
       storage: createJSONStorage(() => localStorage),
       // Serializar todo excepto `lastLookupResult` para no inflar el storage
       partialize: state => ({
@@ -1884,6 +1851,13 @@ export const useConsortiumStore = create<ConsortiumStore>()(
 // ─────────────────────────────────────────────────────────────────
 
 if (typeof window !== 'undefined') {
+  // Limpieza inicial garantizada de persistencias obsoletas
+  try {
+    localStorage.removeItem('antifraude-consortium-store-v2');
+    localStorage.removeItem('antifraude-consortium-store-v1');
+    localStorage.removeItem('antifraude-consortium-store');
+  } catch {}
+
   // 1. Canal local de alta velocidad (BroadcastChannel) para todas las pestañas abiertas
   if (localSyncChannel) {
     localSyncChannel.onmessage = (event) => {
@@ -1895,7 +1869,7 @@ if (typeof window !== 'undefined') {
 
   // 2. Event listener de 'storage' para soporte universal si el navegador no soporta BroadcastChannel
   window.addEventListener('storage', (event) => {
-    if (event.key === 'antifraude-consortium-store-v2' && event.newValue) {
+    if (event.key === 'antifraude-consortium-store-v3' && event.newValue) {
       try {
         const parsed = JSON.parse(event.newValue);
         if (parsed?.state) {
