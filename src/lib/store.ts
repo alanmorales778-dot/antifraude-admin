@@ -107,7 +107,15 @@ interface ConsortiumStore {
   activeService: ServiceScope;
 
   // ── Acciones Admin ─────────────────────────────────────────────
-  addFintech: (name: string) => FintechEntity;
+  addFintech: (params: {
+    name: string;
+    contactName?: string;
+    contactEmail?: string;
+    trustWeight?: number;
+    authorizedEmails?: string[];
+  } | string) => FintechEntity;
+  deleteFintech: (id: string) => Promise<{ success: boolean; message: string }>;
+  addAuthorizedUserToFintech: (fintechId: string, email: string, role?: 'admin' | 'usuario') => Promise<{ success: boolean; message: string }>;
   updateTrustWeight: (id: string, weight: number) => void;
   toggleFintechStatus: (id: string) => void;
 
@@ -400,42 +408,205 @@ export const useConsortiumStore = create<ConsortiumStore>()(
 
       // ── Acciones Admin (Con Impacto Instantáneo en Tiempo Real) ──
 
-      addFintech: (name: string) => {
+      addFintech: (params: {
+        name: string;
+        contactName?: string;
+        contactEmail?: string;
+        trustWeight?: number;
+        authorizedEmails?: string[];
+      } | string) => {
+        const name = typeof params === 'string' ? params.trim() : params.name.trim();
+        const contactName = typeof params === 'object' ? params.contactName?.trim() : undefined;
+        const contactEmail = typeof params === 'object' ? params.contactEmail?.trim().toLowerCase() : undefined;
+        const trustWeight = typeof params === 'object' && typeof params.trustWeight === 'number' ? params.trustWeight : 1.0;
+        const rawAuthEmails = typeof params === 'object' && Array.isArray(params.authorizedEmails)
+          ? params.authorizedEmails.map(e => e.trim().toLowerCase()).filter(Boolean)
+          : [];
+
+        // Generar ID amigable: banco-nombre o fintech-nombre
+        const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+        const entityId = slug ? `${slug}-${Date.now().toString().slice(-4)}` : `fintech-${Date.now()}`;
+
+        // Consolidar lista única de accesos autorizados
+        const emailSet = new Set<string>();
+        if (contactEmail) emailSet.add(contactEmail);
+        rawAuthEmails.forEach(e => emailSet.add(e));
+        const finalAuthorizedList = Array.from(emailSet);
+
         const newFintech: FintechEntity = {
-          id: `fintech-${Date.now()}`,
+          id: entityId,
           name,
           apiKey: generateApiKey(name),
-          trustWeight: 0.7,
+          trustWeight: Math.min(1, Math.max(0, trustWeight)),
           status: 'ACTIVE',
           queriesCount: 0,
           reportsCount: 0,
           falsePositivesCount: 0,
+          contactName: contactName || undefined,
+          contactEmail: contactEmail || undefined,
+          authorizedEmails: finalAuthorizedList,
+          createdAt: new Date().toISOString(),
         };
 
         const updatedFintechs = [...get().fintechs, newFintech];
+
+        // Crear automáticamente los usuarios AppUser con rol 'usuario' para este banco
+        const newUsers: AppUser[] = [];
+        finalAuthorizedList.forEach((email, idx) => {
+          if (!get().appUsers.some(u => u.email.toLowerCase() === email)) {
+            newUsers.push({
+              id: `usr-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+              email,
+              role: 'usuario',
+              entityId: newFintech.id,
+              entityName: newFintech.name,
+              status: 'ACTIVE',
+              totpEnrolled: false,
+              createdAt: new Date().toISOString(),
+            });
+          }
+        });
+
+        const updatedUsers = [...get().appUsers, ...newUsers];
+
         const updatedLogs = addAuditEntry(
           get().auditLogs,
-          'SuperAdmin',
+          get().adminSession?.email || 'SuperAdmin',
           'FINTECH_ADDED',
-          `Nueva entidad registrada: ${name}`
+          `Nueva entidad registrada: ${name} (ID: ${newFintech.id}) - Responsable: ${contactName || 'No especificado'} (${contactEmail || 'Sin email principal'}) - Accesos creados: ${finalAuthorizedList.length}`
         );
 
         set({
           fintechs: updatedFintechs,
+          appUsers: updatedUsers,
           auditLogs: updatedLogs,
+          activeFintechId: get().activeFintechId || newFintech.id,
         });
 
         broadcastRealtimeChange({
           fintechs: updatedFintechs,
+          appUsers: updatedUsers,
           auditLogs: updatedLogs,
         });
 
         if (SupabaseService.isAvailable()) {
           SupabaseService.persistFintech(newFintech).catch(console.error);
-          SupabaseService.recordAuditLog('SuperAdmin', 'FINTECH_ADDED', `Nueva entidad registrada: ${name}`).catch(console.error);
+          newUsers.forEach(u => SupabaseService.persistUser(u).catch(console.error));
+          SupabaseService.recordAuditLog(
+            get().adminSession?.email || 'SuperAdmin',
+            'FINTECH_ADDED',
+            `Nueva entidad registrada: ${name} (${newFintech.id})`
+          ).catch(console.error);
         }
 
         return newFintech;
+      },
+
+      deleteFintech: async (id: string) => {
+        const entity = get().fintechs.find(f => f.id === id);
+        if (!entity) return { success: false, message: 'Entidad financiera no encontrada.' };
+
+        const updatedFintechs = get().fintechs.filter(f => f.id !== id);
+        const updatedUsers = get().appUsers.filter(u => u.entityId !== id);
+        const updatedEdges = get().graphEdges.filter(e => e.reportedByEntityId !== id);
+
+        const updatedLogs = addAuditEntry(
+          get().auditLogs,
+          get().adminSession?.email || 'SuperAdmin',
+          'FINTECH_DELETED',
+          `Entidad eliminada del consorcio: ${entity.name} (ID: ${id}). Accesos revocados.`
+        );
+
+        const nextActiveId = get().activeFintechId === id ? (updatedFintechs[0]?.id || '') : get().activeFintechId;
+
+        set({
+          fintechs: updatedFintechs,
+          appUsers: updatedUsers,
+          graphEdges: updatedEdges,
+          auditLogs: updatedLogs,
+          activeFintechId: nextActiveId,
+        });
+
+        broadcastRealtimeChange({
+          fintechs: updatedFintechs,
+          appUsers: updatedUsers,
+          graphEdges: updatedEdges,
+          auditLogs: updatedLogs,
+          activeFintechId: nextActiveId,
+        });
+
+        if (SupabaseService.isAvailable()) {
+          try {
+            await SupabaseService.deleteFintech(id);
+            await SupabaseService.recordAuditLog(
+              get().adminSession?.email || 'SuperAdmin',
+              'FINTECH_DELETED',
+              `Entidad eliminada del consorcio: ${entity.name} (ID: ${id})`
+            );
+          } catch (err) {
+            console.error('[Store] Error eliminando entidad en Supabase:', err);
+          }
+        }
+
+        return { success: true, message: `Entidad ${entity.name} eliminada exitosamente.` };
+      },
+
+      addAuthorizedUserToFintech: async (fintechId: string, email: string, role: 'admin' | 'usuario' = 'usuario') => {
+        const cleanEmail = email.trim().toLowerCase();
+        if (!cleanEmail) return { success: false, message: 'El correo electrónico es requerido.' };
+
+        const entity = get().fintechs.find(f => f.id === fintechId);
+        if (!entity) return { success: false, message: 'Entidad bancaria no encontrada.' };
+
+        if (get().appUsers.some(u => u.email.toLowerCase() === cleanEmail)) {
+          return { success: false, message: `El correo ${cleanEmail} ya cuenta con acceso registrado en la plataforma.` };
+        }
+
+        const newUser: AppUser = {
+          id: `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          email: cleanEmail,
+          role,
+          entityId: entity.id,
+          entityName: entity.name,
+          status: 'ACTIVE',
+          totpEnrolled: false,
+          createdAt: new Date().toISOString(),
+        };
+
+        const currentAuth = entity.authorizedEmails || [];
+        const updatedAuth = currentAuth.includes(cleanEmail) ? currentAuth : [...currentAuth, cleanEmail];
+        const updatedFintechs = get().fintechs.map(f => f.id === fintechId ? { ...f, authorizedEmails: updatedAuth } : f);
+        const updatedUsers = [...get().appUsers, newUser];
+
+        const updatedLogs = addAuditEntry(
+          get().auditLogs,
+          get().adminSession?.email || 'SuperAdmin',
+          'USER_ACCESS_GRANTED',
+          `Nuevo acceso otorgado a ${cleanEmail} en la entidad ${entity.name}`
+        );
+
+        set({
+          fintechs: updatedFintechs,
+          appUsers: updatedUsers,
+          auditLogs: updatedLogs,
+        });
+
+        broadcastRealtimeChange({
+          fintechs: updatedFintechs,
+          appUsers: updatedUsers,
+          auditLogs: updatedLogs,
+        });
+
+        if (SupabaseService.isAvailable()) {
+          SupabaseService.persistUser(newUser).catch(console.error);
+          SupabaseService.recordAuditLog(
+            get().adminSession?.email || 'SuperAdmin',
+            'USER_ACCESS_GRANTED',
+            `Nuevo acceso otorgado a ${cleanEmail} en ${entity.name}`
+          ).catch(console.error);
+        }
+
+        return { success: true, message: `Acceso otorgado exitosamente a ${cleanEmail} para ${entity.name}.` };
       },
 
       updateTrustWeight: (id: string, weight: number) => {

@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState } from 'react';
 import {
@@ -18,6 +18,12 @@ import {
   Database,
   ExternalLink,
   RotateCcw,
+  Trash2,
+  Mail,
+  UserPlus,
+  X,
+  UserCheck,
+  BadgeCheck,
 } from 'lucide-react';
 import { useConsortiumStore } from '@/lib/store';
 
@@ -37,6 +43,8 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
     auditLogs,
     appUsers,
     addFintech,
+    deleteFintech,
+    addAuthorizedUserToFintech,
     updateTrustWeight,
     toggleFintechStatus,
     supabaseStatus,
@@ -45,10 +53,22 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
   } = useConsortiumStore();
 
   const [activeTab, setActiveTab] = useState<'entities' | 'audit' | 'network' | 'scoring-lab' | 'users'>('entities');
-  const [newEntityName, setNewEntityName] = useState('');
   const [filterQuery, setFilterQuery] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+
+  // Estados enriquecidos para alta completa de entidad
+  const [newEntityName, setNewEntityName] = useState('');
+  const [newContactName, setNewContactName] = useState('');
+  const [newContactEmail, setNewContactEmail] = useState('');
+  const [newTrustWeight, setNewTrustWeight] = useState(1.0);
+  const [additionalEmails, setAdditionalEmails] = useState<string[]>([]);
+  const [tempEmailInput, setTempEmailInput] = useState('');
+
+  // Gestión inline de accesos por banco
+  const [inlineAddUserId, setInlineAddUserId] = useState<string | null>(null);
+  const [inlineNewUserEmail, setInlineNewUserEmail] = useState('');
+  const [actionFeedback, setActionFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const handleResetToZero = async () => {
     const ok = window.confirm(
@@ -76,12 +96,111 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
     }
   }, []);
 
-  const handleCreateEntity = (e: React.FormEvent) => {
+  const handleAddAdditionalEmail = (e?: React.MouseEvent | React.KeyboardEvent) => {
+    if (e) e.preventDefault();
+    const clean = tempEmailInput.trim().toLowerCase();
+    if (!clean) return;
+    if (!clean.includes('@') || !clean.includes('.')) {
+      alert('Por favor ingrese un formato de correo electrónico válido.');
+      return;
+    }
+    if (clean === newContactEmail.trim().toLowerCase()) {
+      alert('Este correo ya está ingresado como el contacto principal.');
+      return;
+    }
+    if (additionalEmails.includes(clean)) {
+      alert('Este correo ya fue agregado a la lista.');
+      return;
+    }
+    setAdditionalEmails([...additionalEmails, clean]);
+    setTempEmailInput('');
+  };
+
+  const handleRemoveAdditionalEmail = (emailToRemove: string) => {
+    setAdditionalEmails(additionalEmails.filter(e => e !== emailToRemove));
+  };
+
+  const handleCreateEntity = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newEntityName.trim()) return;
-    addFintech(newEntityName.trim());
-    setNewEntityName('');
-    setIsAdding(false);
+    if (!newEntityName.trim()) {
+      alert('El nombre de la entidad es obligatorio.');
+      return;
+    }
+    if (!newContactEmail.trim()) {
+      alert('El correo electrónico del responsable es obligatorio para generar los accesos.');
+      return;
+    }
+
+    try {
+      const created = addFintech({
+        name: newEntityName.trim(),
+        contactName: newContactName.trim() || undefined,
+        contactEmail: newContactEmail.trim(),
+        trustWeight: newTrustWeight,
+        authorizedEmails: additionalEmails,
+      });
+
+      setNewEntityName('');
+      setNewContactName('');
+      setNewContactEmail('');
+      setNewTrustWeight(1.0);
+      setAdditionalEmails([]);
+      setTempEmailInput('');
+      setIsAdding(false);
+
+      setActionFeedback({
+        type: 'success',
+        message: `¡Entidad "${created.name}" creada exitosamente con sus accesos emitidos!`,
+      });
+      setTimeout(() => setActionFeedback(null), 5000);
+    } catch (err: any) {
+      alert('Error creando entidad: ' + (err?.message || String(err)));
+    }
+  };
+
+  const handleDeleteEntity = async (fintech: { id: string; name: string }) => {
+    const ok = window.confirm(
+      `¿Está seguro de eliminar definitivamente a "${fintech.name}" (ID: ${fintech.id})?\n\nEsta acción revocará su API Key, eliminará sus credenciales y desvinculará a los operadores asignados a esta entidad.`
+    );
+    if (!ok) return;
+
+    try {
+      const res = await deleteFintech(fintech.id);
+      if (res.success) {
+        setActionFeedback({
+          type: 'success',
+          message: res.message,
+        });
+        setTimeout(() => setActionFeedback(null), 5000);
+      } else {
+        alert(res.message);
+      }
+    } catch (err: any) {
+      alert('Error eliminando entidad: ' + (err?.message || String(err)));
+    }
+  };
+
+  const handleInlineAddUser = async (fintechId: string) => {
+    const clean = inlineNewUserEmail.trim().toLowerCase();
+    if (!clean) return;
+    if (!clean.includes('@') || !clean.includes('.')) {
+      alert('Por favor ingrese un correo electrónico válido.');
+      return;
+    }
+
+    try {
+      const res = await addAuthorizedUserToFintech(fintechId, clean, 'usuario');
+      if (res.success) {
+        setInlineNewUserEmail('');
+        setInlineAddUserId(null);
+        setActionFeedback({ type: 'success', message: res.message });
+        setTimeout(() => setActionFeedback(null), 4000);
+      } else {
+        alert(res.message);
+      }
+    } catch (err: any) {
+      alert('Error otorgando acceso: ' + (err?.message || String(err)));
+    }
   };
 
   const filteredEntities = fintechs.filter(f =>
@@ -226,35 +345,195 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
           )}
         </div>
 
-        {/* Formulario Añadir Entidad */}
+        {/* Banner de Feedback / Notificaciones de Acción */}
+        {actionFeedback && (
+          <div
+            className={`p-4 rounded-xl border flex items-center justify-between animate-in fade-in duration-200 ${
+              actionFeedback.type === 'success'
+                ? 'bg-[#062c1d] border-[#0f5132] text-[#86efac]'
+                : 'bg-[#2e0909] border-[#661616] text-[#fca5a5]'
+            }`}
+          >
+            <div className="flex items-center gap-2.5 text-xs font-medium">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>{actionFeedback.message}</span>
+            </div>
+            <button
+              onClick={() => setActionFeedback(null)}
+              className="text-xs hover:opacity-80 p-1"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Formulario Enriquecido: Añadir Entidad Financiera */}
         {isAdding && (
-          <div className="p-5 bg-[#0d182e] border border-[#1e365b] rounded-xl shadow-lg animate-in fade-in duration-200">
-            <h3 className="text-xs font-bold text-white uppercase tracking-wide mb-3 flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-[#60a5fa]" />
-              <span>Adhesión de Nueva Entidad Financiera al Consorcio</span>
-            </h3>
-            <form onSubmit={handleCreateEntity} className="flex flex-wrap items-center gap-3">
-              <input
-                type="text"
-                required
-                value={newEntityName}
-                onChange={e => setNewEntityName(e.target.value)}
-                placeholder="Nombre de la entidad (ej: Banco Santander, Ualá, Naranja X)..."
-                className="flex-1 min-w-[280px] px-3.5 py-2.5 bg-[#060c17] border border-[#1e365b] rounded-lg text-xs text-white placeholder-[#475569] focus:outline-none focus:border-[#3b82f6]"
-              />
-              <button
-                type="submit"
-                className="px-4 py-2.5 rounded-lg bg-[#1d4ed8] hover:bg-[#2563eb] text-white text-xs font-semibold shadow-sm border border-[#3b82f6]/50"
-              >
-                Generar Credenciales y Adherir
-              </button>
+          <div className="p-6 bg-[#0d182e] border border-[#1e365b] rounded-2xl shadow-2xl animate-in fade-in duration-200 space-y-5">
+            <div className="flex items-start justify-between border-b border-[#17253d] pb-4">
+              <div>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wide flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-[#60a5fa]" />
+                  <span>Adhesión de Nueva Entidad Financiera y Configuración de Accesos</span>
+                </h3>
+                <p className="text-xs text-[#94a3b8] mt-1">
+                  Configure los datos institucionales, el responsable legal y los correos autorizados para operar la plataforma.
+                </p>
+              </div>
               <button
                 type="button"
                 onClick={() => setIsAdding(false)}
-                className="px-3.5 py-2.5 rounded-lg bg-[#13233e] text-[#94a3b8] text-xs font-medium hover:bg-[#1a3052] border border-[#203c68]"
+                className="text-[#94a3b8] hover:text-white p-1 rounded-lg hover:bg-[#13233e] transition-colors"
               >
-                Cancelar
+                <X className="w-4 h-4" />
               </button>
+            </div>
+
+            <form onSubmit={handleCreateEntity} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* 1. Nombre de la Entidad */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-[#cbd5e1]">
+                    Razón Social / Nombre de la Entidad <span className="text-rose-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newEntityName}
+                    onChange={e => setNewEntityName(e.target.value)}
+                    placeholder="ej: Banco Santander, Banco Galicia, Ualá, Mercado Pago..."
+                    className="w-full px-3.5 py-2.5 bg-[#060c17] border border-[#1e365b] rounded-lg text-xs text-white placeholder-[#475569] focus:outline-none focus:border-[#3b82f6]"
+                  />
+                </div>
+
+                {/* 2. Nombre del Responsable */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-[#cbd5e1]">
+                    Nombre del Responsable / Funcionario
+                  </label>
+                  <input
+                    type="text"
+                    value={newContactName}
+                    onChange={e => setNewContactName(e.target.value)}
+                    placeholder="ej: Dra. Sofía Albarracín - Jefa de Ciberdelito y Prevención"
+                    className="w-full px-3.5 py-2.5 bg-[#060c17] border border-[#1e365b] rounded-lg text-xs text-white placeholder-[#475569] focus:outline-none focus:border-[#3b82f6]"
+                  />
+                </div>
+
+                {/* 3. Email Principal del Responsable */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-[#cbd5e1]">
+                    Email Principal del Responsable <span className="text-rose-400">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={newContactEmail}
+                    onChange={e => setNewContactEmail(e.target.value)}
+                    placeholder="ej: sofia.albarracin@banco.com.ar"
+                    className="w-full px-3.5 py-2.5 bg-[#060c17] border border-[#1e365b] rounded-lg text-xs text-white placeholder-[#475569] focus:outline-none focus:border-[#3b82f6]"
+                  />
+                  <p className="text-[11px] text-[#64748b]">
+                    Este correo se creará automáticamente como Operador con acceso al Portal de Entidades.
+                  </p>
+                </div>
+
+                {/* 4. Peso de Confianza Inicial */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center text-xs">
+                    <label className="font-semibold text-[#cbd5e1]">Peso de Confianza Inicial (Trust Weight)</label>
+                    <span className="font-mono font-bold text-[#60a5fa]">{(newTrustWeight * 100).toFixed(0)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="1"
+                    step="0.05"
+                    value={newTrustWeight}
+                    onChange={e => setNewTrustWeight(parseFloat(e.target.value))}
+                    className="w-full accent-blue-500 cursor-pointer mt-2"
+                  />
+                  <p className="text-[11px] text-[#64748b]">
+                    Calibra la ponderación de sus reportes en el grafo federal (recomendado 100% para bancos regulados).
+                  </p>
+                </div>
+              </div>
+
+              {/* 5. Múltiples Accesos Adicionales */}
+              <div className="p-4 rounded-xl bg-[#060c17] border border-[#17253d] space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-[#cbd5e1] flex items-center gap-1.5">
+                    <UserPlus className="w-3.5 h-3.5 text-[#60a5fa]" />
+                    <span>Accesos Adicionales Autorizados (Operadores / Analistas)</span>
+                  </label>
+                  <span className="text-[11px] text-[#94a3b8]">
+                    {additionalEmails.length} adicionales añadidos
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="email"
+                    value={tempEmailInput}
+                    onChange={e => setTempEmailInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddAdditionalEmail();
+                      }
+                    }}
+                    placeholder="ej: analista_riesgo@banco.com.ar (Presione Enter o Sumar)"
+                    className="flex-1 px-3 py-2 bg-[#0d182e] border border-[#1e365b] rounded-lg text-xs text-white placeholder-[#475569] focus:outline-none focus:border-[#3b82f6]"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddAdditionalEmail}
+                    className="px-3.5 py-2 rounded-lg bg-[#1e3a6a] hover:bg-[#254985] text-cyan-200 text-xs font-semibold transition-all border border-[#2b5394]"
+                  >
+                    + Sumar Acceso
+                  </button>
+                </div>
+
+                {/* Lista de tags de correos adicionales */}
+                {additionalEmails.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-2 border-t border-[#14233c]">
+                    {additionalEmails.map(email => (
+                      <span
+                        key={email}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#13233e] text-[#93c5fd] border border-[#203c68] text-xs font-mono"
+                      >
+                        <Mail className="w-3 h-3 text-[#60a5fa]" />
+                        <span>{email}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveAdditionalEmail(email)}
+                          className="text-[#f87171] hover:text-white ml-1"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Botones de Acción */}
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#17253d]">
+                <button
+                  type="button"
+                  onClick={() => setIsAdding(false)}
+                  className="px-4 py-2.5 rounded-lg bg-[#13233e] text-[#94a3b8] text-xs font-medium hover:bg-[#1a3052] border border-[#203c68]"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-lg bg-[#1d4ed8] hover:bg-[#2563eb] text-white text-xs font-semibold shadow-md border border-[#3b82f6]/50 flex items-center gap-2"
+                >
+                  <Building2 className="w-4 h-4" />
+                  <span>Adherir Entidad & Otorgar Accesos</span>
+                </button>
+              </div>
             </form>
           </div>
         )}
@@ -268,7 +547,7 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
                 type="text"
                 value={filterQuery}
                 onChange={e => setFilterQuery(e.target.value)}
-                placeholder="Filtrar por nombre o identificador..."
+                placeholder="Filtrar por nombre, identificador o responsable..."
                 className="w-full px-3.5 py-2 pl-9 bg-[#060c17] border border-[#1e365b] rounded-lg text-xs text-white placeholder-[#475569] focus:outline-none focus:border-[#3b82f6]"
               />
               <Search className="w-3.5 h-3.5 text-[#64748b] absolute left-3 top-2.5" />
@@ -284,7 +563,7 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
                   <h3 className="text-base font-bold text-white">No hay entidades financieras registradas</h3>
                   <p className="text-xs text-[#94a3b8] leading-relaxed">
                     La plataforma se encuentra completamente limpia y lista para preproducción.
-                    Haga clic en <strong className="text-white">"Adherir Nueva Entidad"</strong> para dar de alta su primer banco o fintech y comenzar a realizar pruebas.
+                    Haga clic en <strong className="text-white">"Adherir Nueva Entidad"</strong> para dar de alta su primer banco o fintech con sus operadores autorizados.
                   </p>
                 </div>
                 <button
@@ -297,100 +576,206 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredEntities.map(fintech => (
-                <div
-                  key={fintech.id}
-                  className={`border rounded-xl p-5 shadow-lg transition-all flex flex-col justify-between ${
-                    fintech.status === 'SUSPENDED'
-                      ? 'border-[#5c1d24] bg-[#1a0c14]'
-                      : 'border-[#1e365b] bg-[#0d182e] hover:border-[#254575]'
-                  }`}
-                >
-                  <div className="space-y-3">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h4 className="text-sm font-bold text-white flex items-center gap-1.5">
-                          {fintech.name}
-                        </h4>
-                        <p className="text-[11px] text-[#60a5fa] font-mono mt-0.5">ID: {fintech.id}</p>
-                      </div>
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider ${
-                          fintech.status === 'ACTIVE'
-                            ? 'bg-[#062c1d] text-[#34d399] border-[#0f5132]'
-                            : 'bg-[#2e0909] text-[#f87171] border-[#661616]'
-                        }`}
-                      >
-                        {fintech.status === 'ACTIVE' ? 'Activo' : 'Suspendido (Cuarentena)'}
-                      </span>
-                    </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {filteredEntities.map(fintech => {
+                // Obtener todos los operadores asignados a esta entidad
+                const entityUsers = appUsers.filter(u => u.entityId === fintech.id);
+                const allAuthorized = Array.from(new Set([
+                  ...(fintech.authorizedEmails || []),
+                  ...(fintech.contactEmail ? [fintech.contactEmail] : []),
+                  ...entityUsers.map(u => u.email),
+                ])).filter(Boolean);
 
-                    {/* API Key */}
-                    <div className="p-2.5 rounded-lg bg-[#060c17] border border-[#17253d]">
-                      <div className="text-[10px] font-semibold text-[#94a3b8] flex items-center justify-between">
-                        <span>Partner API Key</span>
-                        <Key className="w-3 h-3 text-[#64748b]" />
-                      </div>
-                      <code className="text-[11px] font-mono text-[#93c5fd] block truncate mt-1">
-                        {fintech.apiKey}
-                      </code>
-                    </div>
-
-                    {/* Trust Weight Slider */}
-                    <div className="space-y-1.5 pt-1">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-semibold text-[#cbd5e1]">Peso de Confianza (Trust):</span>
-                        <span className="font-mono font-bold text-[#60a5fa]">
-                          {(fintech.trustWeight * 100).toFixed(0)}%
+                return (
+                  <div
+                    key={fintech.id}
+                    className={`border rounded-xl p-5 shadow-lg transition-all flex flex-col justify-between ${
+                      fintech.status === 'SUSPENDED'
+                        ? 'border-[#5c1d24] bg-[#1a0c14]'
+                        : 'border-[#1e365b] bg-[#0d182e] hover:border-[#254575]'
+                    }`}
+                  >
+                    <div className="space-y-3.5">
+                      {/* Header de la Tarjeta */}
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <h4 className="text-sm font-bold text-white flex items-center gap-1.5">
+                            {fintech.name}
+                          </h4>
+                          <p className="text-[11px] text-[#60a5fa] font-mono mt-0.5">ID: {fintech.id}</p>
+                        </div>
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider ${
+                            fintech.status === 'ACTIVE'
+                              ? 'bg-[#062c1d] text-[#34d399] border-[#0f5132]'
+                              : 'bg-[#2e0909] text-[#f87171] border-[#661616]'
+                          }`}
+                        >
+                          {fintech.status === 'ACTIVE' ? 'Activo' : 'En Cuarentena'}
                         </span>
                       </div>
-                      <input
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.05"
-                        value={fintech.trustWeight}
-                        onChange={e => updateTrustWeight(fintech.id, parseFloat(e.target.value))}
-                        className="w-full accent-blue-500 cursor-pointer"
-                      />
-                      <p className="text-[10px] text-[#64748b]">
-                        Calibra el impacto ponderado de los reportes emitidos por esta entidad en el grafo Zero-Knowledge.
-                      </p>
+
+                      {/* Partner API Key */}
+                      <div className="p-2.5 rounded-lg bg-[#060c17] border border-[#17253d]">
+                        <div className="text-[10px] font-semibold text-[#94a3b8] flex items-center justify-between">
+                          <span>Partner API Key</span>
+                          <Key className="w-3 h-3 text-[#64748b]" />
+                        </div>
+                        <code className="text-[11px] font-mono text-[#93c5fd] block truncate mt-1">
+                          {fintech.apiKey}
+                        </code>
+                      </div>
+
+                      {/* Responsable Institucional */}
+                      <div className="p-2.5 rounded-lg bg-[#060c17] border border-[#17253d] space-y-1">
+                        <span className="text-[10px] font-semibold text-[#94a3b8] block uppercase tracking-wider">
+                          Responsable Institucional
+                        </span>
+                        <p className="text-xs font-medium text-white truncate">
+                          {fintech.contactName || 'No especificado'}
+                        </p>
+                        <p className="text-[11px] text-[#60a5fa] font-mono flex items-center gap-1.5 truncate">
+                          <Mail className="w-3 h-3 shrink-0" />
+                          <span>{fintech.contactEmail || 'Sin email principal'}</span>
+                        </p>
+                      </div>
+
+                      {/* Operadores y Accesos Autorizados */}
+                      <div className="p-2.5 rounded-lg bg-[#060c17] border border-[#17253d] space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-semibold text-[#94a3b8] flex items-center gap-1 uppercase tracking-wider">
+                            <Users className="w-3 h-3 text-[#60a5fa]" />
+                            <span>Accesos Autorizados ({allAuthorized.length})</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (inlineAddUserId === fintech.id) {
+                                setInlineAddUserId(null);
+                              } else {
+                                setInlineAddUserId(fintech.id);
+                                setInlineNewUserEmail('');
+                              }
+                            }}
+                            className="text-[11px] text-cyan-300 hover:text-white font-medium hover:underline flex items-center gap-1"
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>Sumar Acceso</span>
+                          </button>
+                        </div>
+
+                        {/* Lista de badges de operadores */}
+                        <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto pr-1">
+                          {allAuthorized.length === 0 ? (
+                            <span className="text-[11px] text-[#64748b] italic">Sin operadores adicionales</span>
+                          ) : (
+                            allAuthorized.map(em => (
+                              <span
+                                key={em}
+                                className="px-2 py-0.5 rounded bg-[#101f38] text-[#93c5fd] border border-[#1d3863] text-[10px] font-mono truncate max-w-full"
+                                title={em}
+                              >
+                                {em}
+                              </span>
+                            ))
+                          )}
+                        </div>
+
+                        {/* Input inline para sumar acceso */}
+                        {inlineAddUserId === fintech.id && (
+                          <div className="pt-2 border-t border-[#17253d] flex items-center gap-1.5 animate-in fade-in duration-150">
+                            <input
+                              type="email"
+                              value={inlineNewUserEmail}
+                              onChange={e => setInlineNewUserEmail(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  handleInlineAddUser(fintech.id);
+                                }
+                              }}
+                              placeholder="correo@entidad.com..."
+                              className="flex-1 px-2 py-1 bg-[#0c1628] border border-[#1e365b] rounded text-xs text-white placeholder-[#475569] focus:outline-none focus:border-[#3b82f6]"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleInlineAddUser(fintech.id)}
+                              className="px-2.5 py-1 rounded bg-[#1d4ed8] hover:bg-[#2563eb] text-white text-xs font-semibold"
+                            >
+                              Dar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setInlineAddUserId(null)}
+                              className="p-1 text-[#94a3b8] hover:text-white"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Trust Weight Slider */}
+                      <div className="space-y-1.5 pt-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-semibold text-[#cbd5e1]">Peso de Confianza (Trust):</span>
+                          <span className="font-mono font-bold text-[#60a5fa]">
+                            {(fintech.trustWeight * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          value={fintech.trustWeight}
+                          onChange={e => updateTrustWeight(fintech.id, parseFloat(e.target.value))}
+                          className="w-full accent-blue-500 cursor-pointer"
+                        />
+                      </div>
+
+                      {/* Métricas */}
+                      <div className="grid grid-cols-3 gap-2 pt-2 border-t border-[#17253d] text-center text-[10px]">
+                        <div className="p-2 rounded bg-[#060c17] border border-[#142238]">
+                          <span className="block font-bold text-white text-xs">{fintech.queriesCount}</span>
+                          <span className="text-[#94a3b8]">Consultas</span>
+                        </div>
+                        <div className="p-2 rounded bg-[#060c17] border border-[#142238]">
+                          <span className="block font-bold text-[#f87171] text-xs">{fintech.reportsCount}</span>
+                          <span className="text-[#94a3b8]">Reportes</span>
+                        </div>
+                        <div className="p-2 rounded bg-[#060c17] border border-[#142238]">
+                          <span className="block font-bold text-[#60a5fa] text-xs">{fintech.falsePositivesCount}</span>
+                          <span className="text-[#94a3b8]">Falsos Pos.</span>
+                        </div>
+                      </div>
                     </div>
 
-                    {/* Métricas */}
-                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-[#17253d] text-center text-[10px]">
-                      <div className="p-2 rounded bg-[#060c17] border border-[#142238]">
-                        <span className="block font-bold text-white text-xs">{fintech.queriesCount}</span>
-                        <span className="text-[#94a3b8]">Consultas</span>
-                      </div>
-                      <div className="p-2 rounded bg-[#060c17] border border-[#142238]">
-                        <span className="block font-bold text-[#f87171] text-xs">{fintech.reportsCount}</span>
-                        <span className="text-[#94a3b8]">Reportes</span>
-                      </div>
-                      <div className="p-2 rounded bg-[#060c17] border border-[#142238]">
-                        <span className="block font-bold text-[#60a5fa] text-xs">{fintech.falsePositivesCount}</span>
-                        <span className="text-[#94a3b8]">Falsos Pos.</span>
-                      </div>
+                    {/* Acciones Inferiores (Cuarentena & Eliminar) */}
+                    <div className="pt-4 mt-3 border-t border-[#17253d] flex items-center justify-between gap-2">
+                      <button
+                        onClick={() => handleDeleteEntity(fintech)}
+                        className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-[#5e1923] bg-[#240e13] text-[#fca5a5] hover:bg-[#381119] transition-all flex items-center gap-1.5"
+                        title={`Eliminar definitivamente a ${fintech.name}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                        <span>Eliminar Banco</span>
+                      </button>
+
+                      <button
+                        onClick={() => toggleFintechStatus(fintech.id)}
+                        className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-all ${
+                          fintech.status === 'ACTIVE'
+                            ? 'border-[#661616] text-[#f87171] hover:bg-[#2e0909]'
+                            : 'border-[#0f5132] text-[#34d399] hover:bg-[#062c1d]'
+                        }`}
+                      >
+                        {fintech.status === 'ACTIVE' ? 'Poner en Cuarentena' : 'Reactivar'}
+                      </button>
                     </div>
                   </div>
-
-                  {/* Acciones */}
-                  <div className="pt-4 mt-3 border-t border-[#17253d] flex items-center justify-end">
-                    <button
-                      onClick={() => toggleFintechStatus(fintech.id)}
-                      className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-all ${
-                        fintech.status === 'ACTIVE'
-                          ? 'border-[#661616] text-[#f87171] hover:bg-[#2e0909]'
-                          : 'border-[#0f5132] text-[#34d399] hover:bg-[#062c1d]'
-                      }`}
-                    >
-                      {fintech.status === 'ACTIVE' ? 'Poner en Cuarentena' : 'Reactivar Entidad'}
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
           </div>

@@ -445,6 +445,23 @@ export class SupabaseService {
   }
 
   /**
+   * Elimina una entidad financiera y sus usuarios asociados en Supabase
+   */
+  static async deleteFintech(id: string): Promise<boolean> {
+    if (!this.isAvailable()) return false;
+    try {
+      await Promise.all([
+        supabaseFetch(`fintech_entities?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' }),
+        supabaseFetch(`app_users?entity_id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' }),
+      ]);
+      return true;
+    } catch (err) {
+      console.error('[SupabaseService] Error eliminando fintech:', err);
+      return false;
+    }
+  }
+
+  /**
    * Persiste un registro de auditoría individual en Supabase
    */
   static async recordAuditLog(

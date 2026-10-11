@@ -38,6 +38,10 @@ export interface FintechEntity {
   queriesCount: number;
   reportsCount: number;
   falsePositivesCount: number;
+  contactName?: string;
+  contactEmail?: string;
+  authorizedEmails?: string[];
+  createdAt?: string;
 }
 
 export interface IdentityNode {
