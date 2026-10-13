@@ -11,7 +11,7 @@ import {
   GraphNode,
   GraphEdge,
   DeviceFingerprintHash,
-} from './types';
+} from '@/lib/types';
 import {
   INITIAL_TENANTS,
   SEED_ENTITIES,

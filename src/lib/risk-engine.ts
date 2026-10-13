@@ -1,8 +1,8 @@
-import { IdentifierType, RiskEvaluationResult, RiskLevel, Recommendation, RiskMatrixFactors, FraudTypology } from './types';
-import { computeBlindHashSync, generateCryptographicProof } from './crypto';
-import { db } from './db';
+import { IdentifierType, RiskEvaluationResult, RiskLevel, Recommendation, RiskMatrixFactors, FraudTypology } from '@/lib/types';
+import { computeBlindHashSync, generateCryptographicProof } from '@/lib/crypto';
+import { db } from '@/lib/db';
 import { redis } from './redis';
-import { verifyEmailExistence } from './emailVerifier';
+import { verifyEmailExistence } from '@/lib/emailVerifier';
 
 /**
  * Mapeo de severidad base según la tipología delictiva (Factor Gravedad 25%)

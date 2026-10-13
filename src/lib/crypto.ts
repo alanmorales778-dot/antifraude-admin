@@ -1,4 +1,4 @@
-import { IdentifierType } from './types';
+import { IdentifierType } from '@/lib/types';
 
 export const CONSORTIUM_SALT =
   process.env.CONSORTIUM_SALT || 'ARG_CONSORTIUM_SECRET_SALT_ZERO_KNOWLEDGE_2026_V1';

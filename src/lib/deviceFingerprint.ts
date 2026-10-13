@@ -6,7 +6,7 @@
 // que sobrevive modo incógnito y borrado de cookies.
 // ─────────────────────────────────────────────────────────────────
 
-import { hashData, CONSORTIUM_SALT, normalizeIdentifier } from './crypto';
+import { hashData, CONSORTIUM_SALT, normalizeIdentifier } from '@/lib/crypto';
 
 export interface DeviceSignals {
   canvas: string;

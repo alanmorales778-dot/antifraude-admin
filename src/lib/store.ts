@@ -24,16 +24,17 @@ import {
   DEFAULT_SCORING_CONFIG,
   AppUser,
   ScoringAuditRecord,
-} from './types';
-import { computeHash, evaluateRisk, upsertIdentityNode, buildEdgesFromReport } from './fraudEngine';
-import { SupabaseService } from './supabaseService';
+} from '@/lib/types';
+import { computeHash, evaluateRisk, upsertIdentityNode, buildEdgesFromReport } from '@/lib/fraudEngine';
+import { cuckooFilterService } from '@/lib/cuckooFilterService';
+import { SupabaseService } from '@/lib/supabaseService';
 import {
   getSupabaseConfig,
   saveSupabaseConfig,
   clearSupabaseConfig,
   testSupabaseConnection,
-} from './supabaseClient';
-import { verifyTOTP, generateTOTPSecret } from './totp';
+} from '@/lib/supabaseClient';
+import { verifyTOTP, generateTOTPSecret } from '@/lib/totp';
 
 // ─────────────────────────────────────────────────────────────────
 // DATOS SEMILLA (del spec)
@@ -182,6 +183,16 @@ interface ConsortiumStore {
   loginPartner: (credentials: { entityId: string; apiKey: string; operatorEmail: string; operatorRole?: UserRole; totpCode?: string }) => Promise<{ success: boolean; message: string; requires2FAEnroll?: boolean; requires2FACode?: boolean }>;
   logoutPartner: () => void;
 
+  // ── Login Unificado con RBAC y 2FA Automático (Paso a Producción) ─
+  loginUnified: (credentials: { email: string; password?: string; totpCode?: string }) => Promise<{
+    success: boolean;
+    message: string;
+    requires2FAEnroll?: boolean;
+    requires2FACode?: boolean;
+    role?: 'admin' | 'usuario';
+    targetRoute?: AppRoute;
+  }>;
+
   // ── Gestión de Usuarios y Roles (Supabase Auth / RBAC) ────────
   appUsers: AppUser[];
   addUser: (user: { email: string; role: 'admin' | 'usuario'; entityId?: string; entityName?: string; tempPassword?: string }) => Promise<{ success: boolean; message: string }>;
@@ -200,6 +211,8 @@ interface ConsortiumStore {
   resetScoringConfig: () => void;
   applyScoringPreset: (presetName: 'BALANCED' | 'STRICT' | 'PERMISSIVE') => void;
   setScoreOverride: (overrides: { manualEntityScore?: number | null; manualConsortiumScore?: number | null; enabled?: boolean }) => void;
+  saveScoringConfigToSupabase: (diffs?: { field: string; oldValue: any; newValue: any }[]) => Promise<{ success: boolean; message: string }>;
+  applyHeuristicAdjustment: (category: IncidentCategory, reduction?: number) => Promise<{ success: boolean; message: string }>;
   resetEnvironmentToZero: () => Promise<void>;
   resetEnvironmentToCleanAlpha: () => Promise<void>;
 }
@@ -370,6 +383,8 @@ export const useConsortiumStore = create<ConsortiumStore>()(
                 u => u.entityId !== 'banco-beta' && u.entityId !== 'fintech-alpha'
               );
 
+              cuckooFilterService.syncFromGraphEdges(cleanEdges);
+
               set({
                 fintechs: cleanEntities,
                 identityNodes: remoteData.identityNodes || [],
@@ -378,6 +393,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
                 auditLogs: remoteData.auditLogs || [],
                 deviceCUITLinks: remoteData.deviceCUITLinks || [],
                 appUsers: cleanUsers,
+                scoringConfig: remoteData.scoringConfig || get().scoringConfig,
                 activeFintechId: cleanEntities[0]?.id || '',
                 seedReady: true,
                 supabaseStatus: 'CONNECTED',
@@ -953,6 +969,11 @@ export const useConsortiumStore = create<ConsortiumStore>()(
 
           const fintech = state.fintechs.find(f => f.id === edge.reportedByEntityId);
           const actorName = fintech?.name || edge.reportedByEntityId;
+
+          // Capa de Velocidad: Borrado O(1) en Cuckoo Filter (CF.DEL) al revocar Falso Positivo
+          cuckooFilterService.deleteHash('cbu_blacklist', edge.sourceHash);
+          cuckooFilterService.deleteHash('dni_blacklist', edge.sourceHash);
+          if (edge.targetHash) cuckooFilterService.deleteHash('device_blacklist', edge.targetHash);
 
           if (SupabaseService.isAvailable()) {
             SupabaseService.markFalsePositive(edgeId, fintech?.id || '').catch(err =>
@@ -1847,6 +1868,198 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         }));
       },
 
+      loginUnified: async ({ email, password = '', totpCode }) => {
+        const cleanEmail = email.trim().toLowerCase();
+        if (!cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+          return { success: false, message: 'Ingrese un correo corporativo válido.' };
+        }
+
+        const state = get();
+        let existingUser = state.appUsers.find(u => u.email.toLowerCase() === cleanEmail);
+        const isDefaultAdmin = cleanEmail === 'andresalaniz8@gmail.com' || cleanEmail === 'alan.morales778@gmail.com';
+
+        // 1. Control de acceso: Solo cuentas creadas previamente por el Admin
+        if (!existingUser && !isDefaultAdmin) {
+          return {
+            success: false,
+            message: 'Acceso no autorizado: Esta cuenta no ha sido dada de alta por la Administración Central del Consorcio.',
+          };
+        }
+
+        if (existingUser && existingUser.status === 'SUSPENDED') {
+          return {
+            success: false,
+            message: 'Cuenta suspendida o en cuarentena por la Gobernanza Central.',
+          };
+        }
+
+        // Si es un admin por defecto que aún no está en appUsers, crearlo
+        if (!existingUser && isDefaultAdmin) {
+          const newAdmin: AppUser = {
+            id: `usr-admin-${Date.now()}`,
+            email: cleanEmail,
+            role: 'admin',
+            entityId: 'CONSORCIO',
+            entityName: 'Gobernanza Central',
+            status: 'ACTIVE',
+            totpEnrolled: false,
+            createdAt: new Date().toISOString(),
+          };
+          set(s => ({ appUsers: [...s.appUsers, newAdmin] }));
+          existingUser = newAdmin;
+        }
+
+        // 2. Validación de contraseña (mínimo 6 caracteres)
+        const cleanPass = password.trim();
+        if (cleanPass.length < 6) {
+          return {
+            success: false,
+            message: 'La contraseña ingresada debe contener al menos 6 caracteres.',
+          };
+        }
+
+        // 3. Verificación de Enrolamiento 2FA (Google Authenticator / TOTP RFC 6238)
+        if (!existingUser?.totpEnrolled || !existingUser?.totpSecret) {
+          return {
+            success: false,
+            requires2FAEnroll: true,
+            message: 'Enrolamiento 2FA obligatorio: Vincule Google Authenticator para continuar.',
+          };
+        }
+
+        // 4. Verificación de Código Dinámico 2FA
+        if (!totpCode || totpCode.trim().length < 6) {
+          return {
+            success: false,
+            requires2FACode: true,
+            message: 'Ingrese el código dinámico de 6 dígitos generado por Google Authenticator.',
+          };
+        }
+
+        const cleanCode = totpCode.trim().replace(/\s/g, '');
+        if (!/^\d{6}$/.test(cleanCode)) {
+          return {
+            success: false,
+            requires2FACode: true,
+            message: 'Código 2FA inválido. Debe contener exactamente 6 dígitos numéricos.',
+          };
+        }
+
+        // Validación criptográfica real del token con el secreto del usuario
+        const isCodeValid = await verifyTOTP(cleanCode, existingUser.totpSecret, 1);
+        if (!isCodeValid) {
+          return {
+            success: false,
+            requires2FACode: true,
+            message: 'Código 2FA incorrecto o expirado. Verifique la hora en su dispositivo móvil e intente con el código actual.',
+          };
+        }
+
+        // 5. Lectura de Rol en Supabase (RBAC) y Redirección Automática
+        const isAdmin = existingUser.role === 'admin';
+        const lastLogin = new Date().toISOString();
+
+        if (isAdmin) {
+          const adminSession: AdminSession = {
+            isAuthenticated: true,
+            email: cleanEmail,
+            name: cleanEmail.split('@')[0].toUpperCase(),
+            role: 'SUPER_ADMIN',
+            token: `adm_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+            loginTime: lastLogin,
+            is2FAVerified: true,
+          };
+
+          set(s => ({
+            adminSession,
+            activeRole: 'ADMIN',
+            currentRoute: 'admin-portal',
+            appUsers: s.appUsers.map(u => u.email.toLowerCase() === cleanEmail ? { ...u, lastLogin } : u),
+            auditLogs: addAuditEntry(
+              s.auditLogs,
+              cleanEmail,
+              'SSO_ADMIN_LOGIN',
+              `Sesión de Gobernanza iniciada por ${cleanEmail} (2FA TOTP RFC 6238 verificado criptográficamente)`
+            ),
+          }));
+
+          if (SupabaseService.isAvailable()) {
+            SupabaseService.recordAuditLog(
+              cleanEmail,
+              'SSO_ADMIN_LOGIN',
+              `Sesión de Gobernanza iniciada por ${cleanEmail} (2FA verificado)`,
+              'CONSORTIUM'
+            ).catch(console.error);
+          }
+
+          return {
+            success: true,
+            role: 'admin',
+            targetRoute: 'admin-portal',
+            message: 'Autenticación de Gobernanza confirmada. Redirigiendo al Panel Central...',
+          };
+        } else {
+          // Analista / Usuario de Entidad Financiera
+          const entity = state.fintechs.find(f => f.id === existingUser?.entityId) || state.fintechs[0] || {
+            id: existingUser?.entityId || 'entidad-bancaria',
+            name: existingUser?.entityName || 'Entidad Bancaria Participante',
+            apiKey: '',
+            trustWeight: 1.0,
+            status: 'ACTIVE',
+            queriesCount: 0,
+            reportsCount: 0,
+            falsePositivesCount: 0,
+          };
+
+          if (entity.status === 'SUSPENDED') {
+            return {
+              success: false,
+              message: 'La entidad financiera asignada a este usuario se encuentra suspendida o en cuarentena por la Gobernanza.',
+            };
+          }
+
+          const partnerSession: PartnerSession = {
+            isAuthenticated: true,
+            entityId: entity.id,
+            entityName: entity.name,
+            operatorEmail: cleanEmail,
+            operatorRole: 'ANALYST_L2',
+            token: `ptn_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+            loginTime: lastLogin,
+          };
+
+          set(s => ({
+            partnerSession,
+            activeRole: 'FINTECH',
+            activeFintechId: entity.id,
+            currentRoute: 'partner-portal',
+            appUsers: s.appUsers.map(u => u.email.toLowerCase() === cleanEmail ? { ...u, lastLogin } : u),
+            auditLogs: addAuditEntry(
+              s.auditLogs,
+              entity.name,
+              'SSO_ANALYST_LOGIN',
+              `Ingreso al Workspace de ${entity.name} por ${cleanEmail} (2FA TOTP RFC 6238 verificado)`
+            ),
+          }));
+
+          if (SupabaseService.isAvailable()) {
+            SupabaseService.recordAuditLog(
+              entity.name,
+              'SSO_ANALYST_LOGIN',
+              `Sesión de Analista iniciada por ${cleanEmail} en ${entity.name}`,
+              'INTERNAL'
+            ).catch(console.error);
+          }
+
+          return {
+            success: true,
+            role: 'usuario',
+            targetRoute: 'partner-portal',
+            message: `Autenticación exitosa. Redirigiendo a tu espacio de trabajo en ${entity.name}...`,
+          };
+        }
+      },
+
       // ── Acciones UI ──────────────────────────────────────────
 
       setActiveRole: (role: ActiveRole) => {
@@ -1989,6 +2202,69 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         };
         set({ scoringConfig: updatedConfig });
         broadcastRealtimeChange({ scoringConfig: updatedConfig });
+      },
+
+      saveScoringConfigToSupabase: async (diffs = []) => {
+        const state = get();
+        const adminEmail = state.adminSession?.email || 'admin@antifraude.ar';
+
+        if (SupabaseService.isAvailable()) {
+          const success = await SupabaseService.saveScoringConfig(state.scoringConfig, adminEmail, diffs);
+          return {
+            success,
+            message: success
+              ? 'Umbrales y baseline guardados y auditados en Supabase con éxito.'
+              : 'Error guardando en Supabase; configuración activa en memoria local.',
+          };
+        }
+
+        return {
+          success: true,
+          message: 'Configuración actualizada en memoria local (Supabase desconectado).',
+        };
+      },
+
+      applyHeuristicAdjustment: async (category: IncidentCategory, reduction: number = 5) => {
+        const state = get();
+        const currentBase = state.scoringConfig.severityBase?.[category] ?? 40;
+        const newBase = Math.max(15, currentBase - reduction);
+
+        const updatedConfig: ScoringConfig = {
+          ...state.scoringConfig,
+          severityBase: {
+            ...state.scoringConfig.severityBase,
+            [category]: newBase,
+          },
+        };
+
+        const actor = state.adminSession?.email || 'Motor Heurístico Autónomo';
+        const detail = `Calibración heurística autónoma por alta tasa de falsos positivos en [${category}]: severidad ajustada de ${currentBase} pts a ${newBase} pts (-${reduction} pts)`;
+        const updatedLogs = addAuditEntry(state.auditLogs, actor, 'HEURISTIC_LEARNING_ADAPTATION', detail);
+
+        set({
+          scoringConfig: updatedConfig,
+          auditLogs: updatedLogs,
+        });
+
+        broadcastRealtimeChange({
+          scoringConfig: updatedConfig,
+          auditLogs: updatedLogs,
+        });
+
+        if (SupabaseService.isAvailable()) {
+          try {
+            await SupabaseService.saveScoringConfig(updatedConfig, actor, [
+              { field: `Severidad Heurística: ${category}`, oldValue: `${currentBase} pts`, newValue: `${newBase} pts` },
+            ]);
+          } catch (e) {
+            console.warn('[Store] Error guardando ajuste heurístico en Supabase:', e);
+          }
+        }
+
+        return {
+          success: true,
+          message: `Ajuste heurístico aplicado exitosamente. El peso de ${category} fue calibrado a ${newBase} pts (-${reduction} pts).`,
+        };
       },
     }),
     {

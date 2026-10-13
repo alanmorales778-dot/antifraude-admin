@@ -11,9 +11,12 @@ import {
   DeviceCUITLink,
   ScoringConfig,
   DEFAULT_SCORING_CONFIG,
-} from './types';
-import { normalizeIdentifier, hashData, CONSORTIUM_SALT } from './crypto';
-import { verifyEmailExistence } from './emailVerifier';
+  TypologyHeuristicMetric,
+} from '@/lib/types';
+import { normalizeIdentifier, hashData, CONSORTIUM_SALT } from '@/lib/crypto';
+import { verifyEmailExistence } from '@/lib/emailVerifier';
+import { cuckooFilterService } from '@/lib/cuckooFilterService';
+import { blindGraphEngine } from '@/lib/blindGraphEngine';
 
 // ─────────────────────────────────────────────────────────────────
 // CONSTANTES DE SCORING v2 — 4 DIMENSIONES
@@ -613,6 +616,51 @@ export async function evaluateRisk(params: {
   checkIdentifier('DEVICE', device, deviceHash);
   checkIdentifier('CUIT', cuit, cuitHash);
 
+  // ── CAPA 1: VELOCIDAD EN MEMORIA (CUCKOO FILTER / REDISBLOOM <1MS) ──
+  const primaryHash = cbuHash || dniHash || cuitHash || emailHash || deviceHash || phoneHash || ipHash || null;
+  const primaryType = cbu ? 'CBU' : dni ? 'DNI' : cuit ? 'CUIT' : email ? 'EMAIL' : device ? 'DEVICE' : phone ? 'PHONE' : ip ? 'IP' : 'DNI';
+  let speedLayer = undefined;
+
+  if (primaryHash) {
+    const filterName = cuckooFilterService.mapIdentifierToFilter(primaryType);
+    const speedCheck = await cuckooFilterService.checkHash(filterName, primaryHash);
+    speedLayer = {
+      filterHit: speedCheck.exists,
+      filterType: speedCheck.filterType,
+      filterName: speedCheck.filterName,
+      latencyMs: speedCheck.latencyMs,
+      source: speedCheck.source,
+    };
+  }
+
+  // ── CAPA 2: INTELIGENCIA DE GRAFOS SOBRE NODOS CIEGOS (1-3 SALTOS) ──
+  let graphIntelligence = undefined;
+  if (primaryHash) {
+    const traversal = blindGraphEngine.traverseGraph(graphEdges, primaryHash, 3);
+    graphIntelligence = {
+      rootHash: traversal.rootHash,
+      maxDepthReached: traversal.maxDepthReached,
+      totalConnectedNodes: traversal.totalConnectedNodes,
+      totalEdgesTraversed: traversal.totalEdgesTraversed,
+      hasTriangularCycle: traversal.hasTriangularCycle,
+      sharedDevicesCount: traversal.sharedDevicesCount,
+      detectedMuleAccountsCount: traversal.detectedMuleAccountsCount,
+      isBridgeNode: traversal.isBridgeNode,
+      centralityScore: traversal.centralityScore,
+      latencyMs: traversal.latencyMs,
+      engine: traversal.engine,
+      cypherQuery: traversal.cypherQuery,
+      sqlRecursiveCTE: traversal.sqlRecursiveCTE,
+    };
+
+    if (traversal.hasTriangularCycle || traversal.detectedMuleAccountsCount > 0) {
+      if (!reasonCodes.includes('MULE_NETWORK_CLUSTER')) reasonCodes.push('MULE_NETWORK_CLUSTER');
+    }
+    if (traversal.sharedDevicesCount > 0) {
+      if (!reasonCodes.includes('SHARED_DEVICE_FARM')) reasonCodes.push('SHARED_DEVICE_FARM');
+    }
+  }
+
   const breakdown: ScoreBreakdown = {
     // Score Dual
     internalRiskScore,
@@ -648,6 +696,9 @@ export async function evaluateRisk(params: {
     velocityTriggered: activeEval.velocityTriggered,
     matchingEdges: activeEval.matchingEdges,
     identifierDetails,
+    // Capas de Aceleración e Inteligencia
+    speedLayer,
+    graphIntelligence,
   };
 
   return {
@@ -666,6 +717,8 @@ export async function evaluateRisk(params: {
     timestamp: new Date().toISOString(),
     fintechId,
     scope,
+    speedLayer,
+    graphIntelligence,
   };
 }
 
@@ -787,4 +840,68 @@ export function buildEdgesFromReport(params: {
   }
 
   return edges;
+}
+
+export const TYPOLOGY_LABELS: Record<IncidentCategory, string> = {
+  MULE_ACCOUNT: 'Cuenta Mula / Receptora',
+  FRAUD_CONFIRMED: 'Fraude Confirmado',
+  IDENTITY_THEFT: 'Robo de Identidad / Sintética',
+  ACCOUNT_TAKEOVER: 'Toma de Control (ATO)',
+  PHISHING: 'Origen de Phishing',
+  CHARGEBACK: 'Contracargo Reiterado',
+  SUSPICIOUS: 'Operación Sospechosa',
+};
+
+/**
+ * Motor de Aprendizaje Heurístico Estadístico Continuo (Sin IA Externa)
+ * 
+ * Calcula en tiempo real la tasa de falsos positivos (revocaciones) por tipología
+ * en base a las acciones de los analistas de la red. Si una regla supera el 10%
+ * de falsos positivos, genera una alerta y sugiere automáticamente una reducción
+ * de 5 a 10 puntos en el baseline para optimizar la precisión comunitaria.
+ */
+export function computeHeuristicLearningMetrics(
+  edges: SpecGraphEdge[],
+  config: ScoringConfig = DEFAULT_SCORING_CONFIG
+): TypologyHeuristicMetric[] {
+  const categories: IncidentCategory[] = [
+    'MULE_ACCOUNT',
+    'FRAUD_CONFIRMED',
+    'IDENTITY_THEFT',
+    'ACCOUNT_TAKEOVER',
+    'PHISHING',
+    'CHARGEBACK',
+    'SUSPICIOUS',
+  ];
+
+  return categories.map(cat => {
+    const matchingEdges = edges.filter(e => e.incidentCategory === cat);
+    const totalReports = matchingEdges.length;
+    const falsePositivesCount = matchingEdges.filter(e => e.isFalsePositive).length;
+    const falsePositiveRate = totalReports > 0 ? falsePositivesCount / totalReports : 0;
+    const baselineScore = config.severityBase?.[cat] ?? SEVERITY_BASE[cat] ?? 40;
+
+    // Regla: si supera el 10% de falsos positivos en la red
+    const isAlertTriggered = falsePositiveRate > 0.10 && totalReports >= 1;
+    let suggestedReduction = 0;
+    if (falsePositiveRate >= 0.25) {
+      suggestedReduction = 10;
+    } else if (falsePositiveRate > 0.10) {
+      suggestedReduction = 5;
+    }
+
+    const recommendedScore = Math.max(15, baselineScore - suggestedReduction);
+
+    return {
+      category: cat,
+      label: TYPOLOGY_LABELS[cat] || cat,
+      totalReports,
+      falsePositivesCount,
+      falsePositiveRate,
+      baselineScore,
+      isAlertTriggered,
+      suggestedReduction,
+      recommendedScore,
+    };
+  });
 }

@@ -241,3 +241,123 @@ VALUES
 ON CONFLICT (email) DO UPDATE SET
     role = EXCLUDED.role,
     status = EXCLUDED.status;
+
+-- =====================================================================
+-- 12. TABLA: scoring_config (Configuración Global del Motor Antifraude y Baseline)
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS public.scoring_config (
+    id TEXT PRIMARY KEY DEFAULT 'global-network-config',
+    config JSONB NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by TEXT DEFAULT 'superadmin@consorcio-antifraude.org'
+);
+
+ALTER TABLE public.scoring_config ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Scoring config access policy" ON public.scoring_config;
+CREATE POLICY "Scoring config access policy" ON public.scoring_config FOR ALL USING (true);
+
+-- Insertar configuración baseline inicial por defecto
+INSERT INTO public.scoring_config (id, config, updated_at, updated_by)
+VALUES (
+    'global-network-config',
+    '{
+      "highRiskThreshold": 75,
+      "mediumRiskThreshold": 35,
+      "decayHalfLifeDays": 180,
+      "mismatchPenalty": 40,
+      "velocityPenalty": 25,
+      "deviceFarmFloor": 85,
+      "multiEntityMultipliers": { "two": 1.25, "three": 1.50, "fourOrMore": 1.80 },
+      "severityBase": {
+        "MULE_ACCOUNT": 90,
+        "FRAUD_CONFIRMED": 95,
+        "IDENTITY_THEFT": 75,
+        "ACCOUNT_TAKEOVER": 80,
+        "PHISHING": 55,
+        "CHARGEBACK": 50,
+        "SUSPICIOUS": 40
+      },
+      "decayFloor": {
+        "MULE_ACCOUNT": 40,
+        "FRAUD_CONFIRMED": 40,
+        "SUSPICIOUS": 10
+      },
+      "emailPenalties": {
+        "nonExistent": 35,
+        "disposable": 40,
+        "newDomain": 25,
+        "mediumDomain": 10
+      }
+    }'::jsonb,
+    NOW(),
+    'admin@consorcio-antifraude.org'
+)
+ON CONFLICT (id) DO NOTHING;
+
+-- =====================================================================
+-- 13. ÍNDICES DE ALTA VELOCIDAD PARA GRAFOS Y HASHES (<15MS)
+-- =====================================================================
+CREATE INDEX IF NOT EXISTS idx_graph_edges_source_hash ON public.graph_edges(source_hash);
+CREATE INDEX IF NOT EXISTS idx_graph_edges_target_hash ON public.graph_edges(target_hash);
+CREATE INDEX IF NOT EXISTS idx_graph_edges_composite_active ON public.graph_edges(source_hash, target_hash, is_false_positive);
+CREATE INDEX IF NOT EXISTS idx_identity_nodes_hash ON public.identity_nodes(hash);
+
+-- =====================================================================
+-- 14. FUNCIÓN RPC: traverse_mule_network (SQL Recursive CTE a 3 Saltos)
+-- =====================================================================
+-- Rastreo de salto 2 y 3: Dispositivos compartidos vinculados a un CBU/DNI en base negativa
+CREATE OR REPLACE FUNCTION public.traverse_mule_network(
+    root_hash TEXT,
+    max_depth INT DEFAULT 3
+)
+RETURNS TABLE (
+    source_hash TEXT,
+    target_hash TEXT,
+    incident_category TEXT,
+    reported_by_entity_id TEXT,
+    depth INT
+)
+LANGUAGE sql
+STABLE
+AS $$
+WITH RECURSIVE mule_network AS (
+   -- Salto 1: Conexiones directas
+   SELECT 
+       e.source_hash, 
+       e.target_hash, 
+       e.incident_category, 
+       e.reported_by_entity_id, 
+       1 as depth,
+       ARRAY[e.source_hash] as visited_path
+   FROM public.graph_edges e
+   WHERE (e.source_hash = root_hash OR e.target_hash = root_hash)
+     AND e.is_false_positive = false
+
+   UNION ALL
+
+   -- Saltos Recursivos hasta depth < max_depth
+   SELECT 
+       e.source_hash, 
+       e.target_hash, 
+       e.incident_category, 
+       e.reported_by_entity_id, 
+       mn.depth + 1,
+       visited_path || e.source_hash
+   FROM public.graph_edges e
+   JOIN mule_network mn 
+     ON (e.source_hash = mn.target_hash OR e.target_hash = mn.source_hash)
+   WHERE mn.depth < max_depth
+     AND e.is_false_positive = false
+     AND NOT (e.source_hash = ANY(mn.visited_path))
+)
+SELECT DISTINCT 
+    mule_network.source_hash, 
+    mule_network.target_hash, 
+    mule_network.incident_category, 
+    mule_network.reported_by_entity_id, 
+    MIN(mule_network.depth)::INT as depth
+FROM mule_network
+GROUP BY mule_network.source_hash, mule_network.target_hash, mule_network.incident_category, mule_network.reported_by_entity_id
+ORDER BY depth ASC;
+$$;
+

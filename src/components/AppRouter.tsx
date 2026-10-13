@@ -8,6 +8,7 @@ import AdminLogin from '@/components/AdminLogin';
 import AdminConsortiumPortal from '@/components/AdminConsortiumPortal';
 import PartnerLogin from '@/components/PartnerLogin';
 import EntityPortal from '@/components/EntityPortal';
+import UnifiedLogin from '@/components/UnifiedLogin';
 
 export default function AppRouter() {
   const {
@@ -102,14 +103,12 @@ export default function AppRouter() {
     );
   }
 
-  // ── ROUTE: Admin Login ──
+  // ── ROUTE: Admin Login / Unified Login ──
   if (currentRoute === 'admin-login') {
     return (
-      <AdminLogin
-        onSuccess={() => setCurrentRoute('admin-portal')}
-        onNavigatePartner={() => setCurrentRoute('partner-login')}
+      <UnifiedLogin
+        onSuccess={() => {}}
         onNavigateHome={() => setCurrentRoute('landing')}
-        showPartnerLink={true}
       />
     );
   }
@@ -119,11 +118,9 @@ export default function AppRouter() {
     // Auth Guard
     if (!adminSession?.isAuthenticated) {
       return (
-        <AdminLogin
-          onSuccess={() => setCurrentRoute('admin-portal')}
-          onNavigatePartner={() => setCurrentRoute('partner-login')}
+        <UnifiedLogin
+          onSuccess={() => {}}
           onNavigateHome={() => setCurrentRoute('landing')}
-          showPartnerLink={true}
         />
       );
     }
@@ -138,14 +135,12 @@ export default function AppRouter() {
     );
   }
 
-  // ── ROUTE: Partner / Bancos Login ──
+  // ── ROUTE: Partner / Bancos Login / Unified Login ──
   if (currentRoute === 'partner-login') {
     return (
-      <PartnerLogin
-        onSuccess={() => setCurrentRoute('partner-portal')}
-        onNavigateAdmin={() => setCurrentRoute('admin-login')}
+      <UnifiedLogin
+        onSuccess={() => {}}
         onNavigateHome={() => setCurrentRoute('landing')}
-        showAdminLink={true}
       />
     );
   }
@@ -155,11 +150,9 @@ export default function AppRouter() {
     // Auth Guard
     if (!partnerSession?.isAuthenticated) {
       return (
-        <PartnerLogin
-          onSuccess={() => setCurrentRoute('partner-portal')}
-          onNavigateAdmin={() => setCurrentRoute('admin-login')}
+        <UnifiedLogin
+          onSuccess={() => {}}
           onNavigateHome={() => setCurrentRoute('landing')}
-          showAdminLink={true}
         />
       );
     }

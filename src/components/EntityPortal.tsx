@@ -1,134 +1,80 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
-  Shield,
-  LayoutDashboard,
   Search,
+  Shield,
+  ShieldCheck,
   ShieldAlert,
-  Upload,
-  History,
-  TrendingUp,
-  Key,
+  AlertTriangle,
+  Lock,
   LogOut,
-  ChevronRight,
-  Menu,
-  X,
-  Sparkles,
-  Activity,
-  FileSpreadsheet,
+  History,
   Building2,
-  Network,
-  Fingerprint,
-  Database,
+  CheckCircle2,
+  ArrowRight,
+  RefreshCw,
+  Clock,
+  FileCheck,
+  ExternalLink,
+  ChevronRight,
+  Filter,
+  Plus,
+  X,
+  Hash,
+  AlertCircle,
+  Copy,
+  Check,
+  Zap,
+  Share2,
+  Code2,
+  Cpu,
 } from 'lucide-react';
-import FintechDashboard from '@/components/FintechDashboard';
-import DashboardKPIs from '@/components/DashboardKPIs';
-import ThreatAnalytics from '@/components/ThreatAnalytics';
-import AICopilotDrawer from '@/components/AICopilotDrawer';
-import ConsortiumLogo from '@/components/ConsortiumLogo';
 import { useConsortiumStore } from '@/lib/store';
-import { ServiceScope, FintechEntity } from '@/lib/types';
+import { LookupResult, IncidentCategory, SpecGraphEdge } from '@/lib/types';
+import { computeHash } from '@/lib/fraudEngine';
+import ConsortiumLogo from '@/components/ConsortiumLogo';
 
-const NAV_ITEMS = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, description: 'KPIs y estadísticas' },
-  { id: 'consulta', label: 'Consulta de Riesgo', icon: Search, description: 'Lookup unitario y combinado ZK' },
-  { id: 'reporte', label: 'Reportar Fraude', icon: ShieldAlert, description: 'Ingreso de incidentes' },
-  { id: 'csv', label: 'Importación CSV', icon: Upload, description: 'Carga masiva de fraudes' },
-  { id: 'historial', label: 'Historial', icon: History, description: 'Mis reportes' },
-  { id: 'analytics', label: 'Analytics', icon: TrendingUp, description: 'Inteligencia de amenazas' },
-  { id: 'api', label: 'API & Webhooks', icon: Key, description: 'Integración y claves' },
-];
-
-// Mapea cada tab al módulo dentro de FintechDashboard
-type FintechModule = 'lookup' | 'bulk_lookup' | 'report' | 'csv' | 'history';
-const TAB_TO_MODULE: Record<string, FintechModule> = {
-  consulta: 'lookup',
-  reporte: 'report',
-  csv: 'csv',
-  historial: 'history',
-};
-
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// SERVICE SCOPE SWITCHER
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-function ServiceSwitcher({
-  active,
-  onChange,
-}: {
-  active: ServiceScope;
-  onChange: (s: ServiceScope) => void;
-}) {
-  return (
-    <div className="relative flex bg-[#12161d] rounded-lg p-1 border border-[#2b3442]">
-      {/* Sliding indicator */}
-      <div
-        className="absolute top-1 bottom-1 rounded-md transition-all duration-200 ease-out"
-        style={{
-          left: active === 'INTERNAL' ? '4px' : 'calc(50% + 0px)',
-          width: 'calc(50% - 4px)',
-          background: active === 'INTERNAL' ? '#1c2938' : '#172f2a',
-          borderColor: active === 'INTERNAL' ? '#354d6b' : '#2b544b',
-          borderWidth: '1px',
-          borderStyle: 'solid',
-        }}
-      />
-
-      <button
-        onClick={() => onChange('INTERNAL')}
-        className={`relative z-10 flex items-center gap-2 px-3 py-1.5 rounded-md text-[11px] font-semibold transition-colors flex-1 justify-center ${
-          active === 'INTERNAL'
-            ? 'text-[#d6e3f2]'
-            : 'text-[#6e7b8c] hover:text-[#9eaec2]'
-        }`}
-      >
-        <Building2 className="h-3.5 w-3.5" />
-        <span className="hidden xl:inline">Workspace Interno</span>
-        <span className="xl:hidden">Interno</span>
-      </button>
-
-      <button
-        onClick={() => onChange('CONSORTIUM')}
-        className={`relative z-10 flex items-center gap-2 px-3 py-1.5 rounded-md text-[11px] font-semibold transition-colors flex-1 justify-center ${
-          active === 'CONSORTIUM'
-            ? 'text-[#d2eae4]'
-            : 'text-[#6e7b8c] hover:text-[#9eaec2]'
-        }`}
-      >
-        <Network className="h-3.5 w-3.5" />
-        <span className="hidden xl:inline">Consorcio Federal</span>
-        <span className="xl:hidden">Consorcio</span>
-      </button>
-    </div>
-  );
-}
-
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// PORTAL PRINCIPAL
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-export default function EntityPortal({
-  fintechId,
-  onLogout,
-}: {
+interface EntityPortalProps {
   fintechId: string;
   onLogout: () => void;
-}) {
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isCopilotOpen, setIsCopilotOpen] = useState(false);
-  const [stats, setStats] = useState<any>(null);
+}
 
+type IdentifierKey = 'DNI' | 'CBU' | 'EMAIL' | 'CUIT' | 'PHONE' | 'IP' | 'DEVICE';
+
+const IDENTIFIER_OPTIONS: { id: IdentifierKey; label: string; placeholder: string; example: string }[] = [
+  { id: 'DNI', label: 'DNI', placeholder: 'Ingrese número de DNI (sin puntos)...', example: '30111222' },
+  { id: 'CBU', label: 'CBU / CVU', placeholder: 'Ingrese CBU o CVU de 22 dígitos o alias...', example: '0000003100010000000001' },
+  { id: 'EMAIL', label: 'Email', placeholder: 'Ingrese correo electrónico...', example: 'cuenta.sospechosa@gmail.com' },
+  { id: 'CUIT', label: 'CUIT', placeholder: 'Ingrese CUIT/CUIL de 11 dígitos...', example: '20301112229' },
+  { id: 'PHONE', label: 'Teléfono', placeholder: 'Ingrese teléfono con código de área...', example: '+5491122334455' },
+  { id: 'IP', label: 'Dirección IP', placeholder: 'Ingrese dirección IPv4 o IPv6...', example: '190.210.45.12' },
+  { id: 'DEVICE', label: 'ID Dispositivo', placeholder: 'Ingrese hash de huella de hardware...', example: 'dev_fingerprint_8f9a2' },
+];
+
+const TYPOLOGY_LABELS: Record<IncidentCategory, string> = {
+  MULE_ACCOUNT: 'Cuenta Mula / Receptora',
+  FRAUD_CONFIRMED: 'Fraude Confirmado',
+  IDENTITY_THEFT: 'Robo de Identidad / Sintética',
+  ACCOUNT_TAKEOVER: 'Toma de Control (ATO)',
+  PHISHING: 'Origen de Phishing',
+  CHARGEBACK: 'Contracargo Reiterado',
+  SUSPICIOUS: 'Operación Sospechosa',
+};
+
+export default function EntityPortal({ fintechId, onLogout }: EntityPortalProps) {
   const {
     fintechs,
-    setActiveFintechId,
-    activeService,
-    setActiveService,
-    supabaseStatus,
-    supabaseLatencyMs,
     partnerSession,
+    lookupIdentity,
+    reportFraud,
+    markFalsePositive,
+    graphEdges,
+    auditLogs,
+    lastLookupResult,
+    setActiveFintechId,
   } = useConsortiumStore();
+
   const activeFintech = fintechs.find(f => f.id === fintechId) || fintechs[0] || {
     id: fintechId || 'mi-entidad',
     name: partnerSession?.entityName || 'Mi Entidad Financiera',
@@ -140,311 +86,895 @@ export default function EntityPortal({
     falsePositivesCount: 0,
   };
 
-  // RBAC: Ocultar 'API & Webhooks' para rol 'Analista'. Solo visible para Administradores.
-  const isAnalyst = Boolean(
-    partnerSession?.operatorRole === 'ANALYST_L1' ||
-    partnerSession?.operatorRole === 'ANALYST_L2' ||
-    (partnerSession?.operatorRole && String(partnerSession.operatorRole).toLowerCase().includes('analyst')) ||
-    (partnerSession?.operatorRole && String(partnerSession.operatorRole).toLowerCase().includes('analista'))
-  );
-
-  const visibleNavItems = NAV_ITEMS.filter(item => {
-    if (item.id === 'api' && isAnalyst) return false;
-    return true;
-  });
-
-  // Si el usuario es analista e intenta entrar en API, redirigir a dashboard
   useEffect(() => {
-    if (isAnalyst && activeTab === 'api') {
-      setActiveTab('dashboard');
-    }
-  }, [isAnalyst, activeTab]);
+    setActiveFintechId(activeFintech.id);
+  }, [activeFintech.id, setActiveFintechId]);
 
-  // Sincronizar el fintech activo en el store global
-  useEffect(() => {
-    setActiveFintechId(fintechId);
-  }, [fintechId, setActiveFintechId]);
+  // Tab activo: 'lookup' (Consulta ZK) | 'history' (Historial Entidad)
+  const [activeTab, setActiveTab] = useState<'lookup' | 'history'>('lookup');
 
-  // Cargar stats para el dashboard
+  // ── ESTADO DEL BUSCADOR ZK ──
+  const [selectedType, setSelectedType] = useState<IdentifierKey>('DNI');
+  const [inputValue, setInputValue] = useState('30111222');
+  const [previewHash, setPreviewHash] = useState<string>('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResult, setSearchResult] = useState<LookupResult | null>(lastLookupResult);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [copiedHash, setCopiedHash] = useState(false);
+
+  // ── MODAL DE CONSULTA DE GRAFO (CYPHER & SQL CTE) ──
+  const [showGraphQueryModal, setShowGraphQueryModal] = useState(false);
+  const [activeGraphQueryTab, setActiveGraphQueryTab] = useState<'cypher' | 'sql'>('cypher');
+
+  // ── MODAL DE REPORTE DE INCIDENTE ──
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [reportType, setReportType] = useState<IdentifierKey>('DNI');
+  const [reportValue, setReportValue] = useState('');
+  const [reportCategory, setReportCategory] = useState<IncidentCategory>('MULE_ACCOUNT');
+  const [reportTicket, setReportTicket] = useState('');
+  const [reportSuccess, setReportSuccess] = useState<string | null>(null);
+
+  // ── TOKENIZACIÓN ZERO-KNOWLEDGE EN TIEMPO REAL ──
   useEffect(() => {
-    const fetchStats = async () => {
+    let isCancelled = false;
+    const computeLiveHash = async () => {
+      const trimmed = inputValue.trim();
+      if (!trimmed) {
+        setPreviewHash('');
+        return;
+      }
       try {
-        const res = await fetch('/api/v1/analytics/stats');
-        const data = await res.json();
-        if (data.data) setStats(data.data);
+        const hash = await computeHash(selectedType, trimmed);
+        if (!isCancelled) setPreviewHash(hash);
       } catch {
-        // silence
+        if (!isCancelled) setPreviewHash('');
       }
     };
-    fetchStats();
-  }, []);
+    computeLiveHash();
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedType, inputValue]);
 
-  const activeNav = NAV_ITEMS.find(n => n.id === activeTab);
+  // ── EJECUTAR CONSULTA ZK ──
+  const handleExecuteLookup = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cleanValue = inputValue.trim();
+    if (!cleanValue) {
+      setSearchError('Por favor ingrese un valor para evaluar.');
+      return;
+    }
 
-  // Los tabs que usan FintechDashboard
-  const isFintechModule = activeTab in TAB_TO_MODULE;
+    setIsSearching(true);
+    setSearchError(null);
 
-  const isInternal = activeService === 'INTERNAL';
+    try {
+      const params: any = {};
+      if (selectedType === 'DNI') params.dni = cleanValue;
+      else if (selectedType === 'CBU') params.cbu = cleanValue;
+      else if (selectedType === 'EMAIL') params.email = cleanValue;
+      else if (selectedType === 'CUIT') params.cuit = cleanValue;
+      else if (selectedType === 'PHONE') params.phone = cleanValue;
+      else if (selectedType === 'IP') params.ip = cleanValue;
+      else if (selectedType === 'DEVICE') params.device = cleanValue;
+
+      const res = await lookupIdentity(params);
+      setSearchResult(res);
+    } catch (err: any) {
+      setSearchError(err?.message || 'Error consultando la red Zero-Knowledge.');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // ── CONFIRMAR REPORTE DE AMENAZA ──
+  const handleConfirmReport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanVal = reportValue.trim();
+    if (!cleanVal) return;
+
+    try {
+      const params: any = {
+        incidentCategory: reportCategory,
+        internalTicketId: reportTicket.trim() || undefined,
+      };
+      if (reportType === 'DNI') params.dni = cleanVal;
+      else if (reportType === 'CBU') params.cbu = cleanVal;
+      else if (reportType === 'EMAIL') params.email = cleanVal;
+      else if (reportType === 'CUIT') params.cuit = cleanVal;
+      else if (reportType === 'PHONE') params.phone = cleanVal;
+      else if (reportType === 'IP') params.ip = cleanVal;
+      else if (reportType === 'DEVICE') params.device = cleanVal;
+
+      await reportFraud(params);
+      setReportSuccess(`Incidente tokenizado y reportado a la red federada exitosamente.`);
+      setTimeout(() => {
+        setReportSuccess(null);
+        setIsReportModalOpen(false);
+        setReportValue('');
+        setReportTicket('');
+      }, 2500);
+    } catch (err: any) {
+      alert('Error al registrar reporte: ' + String(err));
+    }
+  };
+
+  // ── REVOCAR REPORTE (MARCAR FALSO POSITIVO) ──
+  const handleRevokeEdge = (edgeId: string) => {
+    const reason = prompt('Ingrese el motivo de revocación/falso positivo:', 'Error operativo / Cuenta saneada');
+    if (reason) {
+      markFalsePositive(edgeId, reason);
+      // Refrescar resultado si el reporte afectaba la búsqueda actual
+      handleExecuteLookup();
+    }
+  };
+
+  // ── HISTORIAL DE LA ENTIDAD ──
+  const entityHistory = useMemo(() => {
+    // Aristas emitidas por esta entidad
+    const myEdges = graphEdges.filter(e => e.reportedByEntityId === activeFintech.id);
+    return myEdges.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }, [graphEdges, activeFintech.id]);
+
+  const copyHashToClipboard = () => {
+    if (previewHash && typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(previewHash);
+      setCopiedHash(true);
+      setTimeout(() => setCopiedHash(false), 2000);
+    }
+  };
+
+  const currentOption = IDENTIFIER_OPTIONS.find(o => o.id === selectedType) || IDENTIFIER_OPTIONS[0];
 
   return (
-    <div className="min-h-screen flex bg-[#070d18] text-[#e2e8f0] font-sans selection:bg-[#1b3b36] selection:text-white">
-      {/* â”€â”€ SIDEBAR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-      <aside
-        className={`fixed inset-y-0 left-0 z-40 w-60 flex flex-col bg-[#0a1222] border-r border-[#17253d] transition-transform duration-300 ${
-          isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-        }`}
-      >
-        {/* Logo + entidad activa */}
-        <div className="px-4 py-5 border-b border-[#17253d]">
-          <div className="flex items-center gap-3 mb-3">
-            {isInternal ? (
-              <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0 border bg-[#15263a] border-[#294260] text-[#a8c5e5]">
-                <Building2 className="h-4.5 w-4.5" />
+    <div className="min-h-screen bg-[#070d18] text-[#f1f5f9] font-sans flex flex-col justify-between selection:bg-[#1d4ed8] selection:text-white">
+      {/* ── HEADER MINIMALISTA & BANCARIO ── */}
+      <header className="border-b border-[#17253d] bg-[#0c1628]/95 backdrop-blur-md px-6 py-4 sticky top-0 z-30 shadow-md">
+        <div className="max-w-6xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3.5">
+            <ConsortiumLogo size="sm" showGlow={true} />
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-white tracking-wide uppercase">
+                  {activeFintech.name}
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#13233e] text-cyan-300 border border-cyan-500/30">
+                  Workspace de Riesgo
+                </span>
               </div>
-            ) : (
-              <ConsortiumLogo size="sm" showGlow={true} />
-            )}
-            <div className="min-w-0">
-              <p className="text-xs font-bold text-white truncate">
-                {activeFintech?.name || 'Entidad'}
-              </p>
-              <p className={`text-[10px] font-mono transition-colors ${
-                isInternal ? 'text-[#7e9bbd]' : 'text-[#74b3a5]'
-              }`}>
-                {isInternal ? 'workspace.interno' : 'red.consorcio.zk'}
+              <p className="text-[11px] text-[#60a5fa] font-mono">
+                {partnerSession?.operatorEmail || 'analista@consorcio.ar'} · Analista L2
               </p>
             </div>
-          </div>
-
-          {/* Service Scope Switcher */}
-          <ServiceSwitcher active={activeService} onChange={setActiveService} />
-        </div>
-
-        {/* Scope label */}
-        <div className={`mx-4 mt-3 mb-1 flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[10px] font-semibold uppercase tracking-wider border transition-all ${
-          isInternal
-            ? 'bg-[#15263a]/60 text-[#a8c5e5] border-[#253e5e]'
-            : 'bg-[#18342e]/60 text-[#a2d6cb] border-[#265046]'
-        }`}>
-          {isInternal ? (
-            <>
-              <Building2 className="h-3 w-3" />
-              Internal Risk Workspace
-            </>
-          ) : (
-            <>
-              <Network className="h-3 w-3" />
-              Federated Threat Consortium
-            </>
-          )}
-        </div>
-
-        {/* Nav */}
-        <nav className="flex-1 p-2.5 space-y-1 overflow-y-auto">
-          {visibleNavItems.map(item => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => {
-                  setActiveTab(item.id);
-                  setIsMobileMenuOpen(false);
-                }}
-                className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 text-left text-xs transition-all ${
-                  isActive
-                    ? isInternal
-                      ? 'bg-[#1b2b3d] text-[#e0ecf7] border border-[#2d4663] font-semibold shadow-2xs'
-                      : 'bg-[#18332c] text-[#d6ede7] border border-[#2c554a] font-semibold shadow-2xs'
-                    : 'text-[#7e8c9d] hover:text-[#d3dce6] hover:bg-[#13233e]/50 border border-transparent font-medium'
-                }`}
-              >
-                <Icon className={`h-4 w-4 shrink-0 ${
-                  isActive
-                    ? isInternal ? 'text-[#8eb8e5]' : 'text-[#78c8b8]'
-                    : 'text-[#5a6878]'
-                }`} />
-                <span className="truncate">{item.label}</span>
-                {isActive && (
-                  <ChevronRight className="h-3 w-3 ml-auto shrink-0 opacity-60" />
-                )}
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* Stats rÃ¡pidas + logout */}
-        <div className="p-3 border-t border-[#17253d] space-y-2 bg-[#141820]">
-          <div className="grid grid-cols-2 gap-1.5 text-center">
-            <div className="rounded-md bg-[#060c17] border border-[#17253d] p-2">
-              <p className="text-sm font-bold font-mono text-[#d6e3f2]">
-                {activeFintech?.queriesCount ?? 0}
-              </p>
-              <p className="text-[9px] text-[#718096] uppercase tracking-wide">Consultas</p>
-            </div>
-            <div className="rounded-md bg-[#060c17] border border-[#17253d] p-2">
-              <p className="text-sm font-bold font-mono text-[#e57373]">
-                {activeFintech?.reportsCount ?? 0}
-              </p>
-              <p className="text-[9px] text-[#718096] uppercase tracking-wide">Reportes</p>
-            </div>
-          </div>
-
-          <button
-            onClick={onLogout}
-            className="w-full flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-[#9faec0] hover:text-[#fc8181] hover:bg-[#2b1f1f] border border-[#17253d] transition-all"
-          >
-            <LogOut className="h-3.5 w-3.5" />
-            <span>Cerrar SesiÃ³n</span>
-          </button>
-        </div>
-      </aside>
-
-      {/* Mobile overlay */}
-      {isMobileMenuOpen && (
-        <div
-          className="fixed inset-0 z-30 bg-black/60 lg:hidden"
-          onClick={() => setIsMobileMenuOpen(false)}
-        />
-      )}
-
-      {/* â”€â”€ CONTENIDO PRINCIPAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-      <div className="flex-1 lg:ml-60 flex flex-col min-h-screen">
-        {/* Header */}
-        <header className="sticky top-0 z-20 flex items-center gap-4 px-6 py-3.5 border-b border-[#17253d] bg-[#0a1222]/95 backdrop-blur-sm shadow-2xs">
-          <button
-            className="lg:hidden text-[#718096] hover:text-white transition"
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          >
-            {isMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </button>
-
-          <div className="flex-1 min-w-0">
-            <h1 className="text-sm font-semibold text-white tracking-wide">{activeNav?.label}</h1>
-            {activeNav?.description && (
-              <p className="text-[11px] text-[#718096] hidden sm:block">{activeNav.description}</p>
-            )}
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Scope badge in header */}
-            <div className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] font-mono border transition-all ${
-              isInternal
-                ? 'bg-[#15263a] border-[#294260] text-[#a8c5e5]'
-                : 'bg-[#18342e] border-[#2a554a] text-[#a2d6cb]'
-            }`}>
-              {isInternal ? (
-                <Building2 className="h-3 w-3" />
-              ) : (
-                <Network className="h-3 w-3" />
-              )}
-              {isInternal ? 'WORKSPACE INTERNO' : 'CONSORCIO FEDERAL'}
+            {/* Badge Zero-Knowledge */}
+            <div className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#062c1d] border border-[#0f5132] text-[#34d399] font-mono text-[11px]">
+              <span className="w-2 h-2 rounded-full bg-[#10b981] animate-pulse" />
+              <span>Zero-Knowledge Activo · SHA-256</span>
             </div>
 
+            <button
+              onClick={() => {
+                setReportType(selectedType);
+                setReportValue(inputValue);
+                setIsReportModalOpen(true);
+              }}
+              className="px-3.5 py-1.5 rounded-lg bg-rose-950/50 hover:bg-rose-900/60 border border-rose-500/40 text-rose-300 text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Reportar Amenaza</span>
+            </button>
 
-            <span className="flex items-center gap-1.5 text-[11px] text-[#718096] font-mono">
-              <span className="w-2 h-2 rounded-full bg-[#48bb78] animate-pulse" />
-              Red Federal Activa
-            </span>
+            <button
+              onClick={onLogout}
+              className="p-1.5 sm:px-3 sm:py-1.5 rounded-lg bg-[#111e33] hover:bg-[#1a2d4c] text-[#94a3b8] hover:text-white border border-[#1e365b] text-xs font-medium transition flex items-center gap-1.5"
+              title="Cerrar Sesión"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Salir</span>
+            </button>
           </div>
-        </header>
+        </div>
+      </header>
 
-        {/* Content */}
-        <main className="flex-1 p-5 lg:p-7 overflow-auto">
-          {activeFintech?.status === 'SUSPENDED' && (
-            <div className="mb-6 rounded-xl border border-rose-500/50 bg-rose-950/40 p-4 text-rose-200 flex items-start gap-3 backdrop-blur-md shadow-lg shadow-rose-950/20">
-              <ShieldAlert className="h-5 w-5 text-rose-400 shrink-0 mt-0.5" />
-              <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-rose-300">
-                  Entidad en Cuarentena Administrativa en Tiempo Real
-                </h4>
-                <p className="text-xs text-rose-200/90 mt-1">
-                  La administración central ha suspendido temporalmente a <strong className="text-white">{activeFintech.name}</strong>. Las consultas federadas y la emisión de reportes quedan restringidas inmediatamente sin necesidad de recargar la sesión.
+      {/* ── NAVEGACIÓN PRINCIPAL (2 TABS LIMPIOS) ── */}
+      <div className="border-b border-[#17253d] bg-[#091120]">
+        <div className="max-w-6xl mx-auto px-6 flex items-center gap-8 text-xs font-semibold">
+          <button
+            onClick={() => setActiveTab('lookup')}
+            className={`py-3.5 border-b-2 flex items-center gap-2 transition-all ${
+              activeTab === 'lookup'
+                ? 'border-cyan-400 text-white'
+                : 'border-transparent text-[#7e8c9d] hover:text-[#cbd5e1]'
+            }`}
+          >
+            <Search className="w-4 h-4 text-cyan-400" />
+            <span>Consulta de Riesgo ZK</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('history')}
+            className={`py-3.5 border-b-2 flex items-center gap-2 transition-all ${
+              activeTab === 'history'
+                ? 'border-cyan-400 text-white'
+                : 'border-transparent text-[#7e8c9d] hover:text-[#cbd5e1]'
+            }`}
+          >
+            <History className="w-4 h-4 text-blue-400" />
+            <span>Historial de mi Entidad ({entityHistory.length})</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ── CUERPO PRINCIPAL DEL WORKSPACE ── */}
+      <main className="flex-1 max-w-6xl mx-auto w-full px-6 py-8">
+        {/* ───────────────────────────────────────────────────────────── */}
+        {/* ── VISTA 1: CONSULTA DE RIESGO MINIMALISTA ───────────────── */}
+        {/* ───────────────────────────────────────────────────────────── */}
+        {activeTab === 'lookup' && (
+          <div className="space-y-6">
+            {/* Tarjeta del Buscador Limpio */}
+            <div className="bg-[#0c1628] border border-[#1b3152] rounded-2xl p-6 sm:p-8 shadow-xl">
+              <div className="mb-4">
+                <span className="text-[11px] font-mono uppercase tracking-wider text-cyan-400 font-bold">
+                  Buscador de Amenazas Interbancario
+                </span>
+                <h2 className="text-xl font-bold text-white mt-0.5">
+                  Consulta de Identidad con Hashing Ciego
+                </h2>
+                <p className="text-xs text-[#94a3b8] mt-1">
+                  El dato ingresado es normalizado y convertido en un hash SHA-256 antes de salir de su navegador. El secreto bancario está garantizado por diseño (Ley 25.326).
                 </p>
               </div>
-            </div>
-          )}
 
-          {activeTab === 'dashboard' && (
-            <DashboardKPIs
-              stats={stats}
-              tenants={fintechs}
-              onNavigateTab={setActiveTab}
-            />
-          )}
-
-          {/* Lookup, Reporte, CSV e Historial usan FintechDashboard con módulo activo */}
-          {isFintechModule && (
-            <FintechDashboard activeModule={TAB_TO_MODULE[activeTab]} />
-          )}
-
-          {activeTab === 'analytics' && <ThreatAnalytics />}
-
-          {activeTab === 'api' && (
-            <div className="space-y-6 max-w-5xl">
-              <div className="rounded-xl border border-cyan-500/30 bg-[#0c1527] p-6 shadow-xl">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="p-2.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
-                    <Key className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">Credenciales & Clave API de {activeFintech.name}</h3>
-                    <p className="text-xs text-slate-400">Utilice esta clave en la cabecera <code className="text-cyan-300 font-mono">x-consortium-api-key</code> para integraciones de backend.</p>
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-lg bg-[#060b14] border border-slate-800 flex items-center justify-between gap-4 font-mono text-xs">
-                  <div className="truncate text-slate-300">
-                    <span className="text-slate-500 mr-2">API Key:</span>
-                    <span className="text-emerald-400 font-bold">{activeFintech.apiKey || 'antf_live_alpha_a1b2c3d4e5f6'}</span>
-                  </div>
+              {/* Selector de Tipo (Pills Minimalistas) */}
+              <div className="flex flex-wrap gap-2 mb-4">
+                {IDENTIFIER_OPTIONS.map(opt => (
                   <button
-                    onClick={() => navigator.clipboard.writeText(activeFintech.apiKey || 'antf_live_alpha_a1b2c3d4e5f6')}
-                    className="px-3 py-1.5 rounded-md bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 text-[11px] font-sans font-semibold border border-cyan-500/30 transition-all shrink-0"
+                    key={opt.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedType(opt.id);
+                      setInputValue(opt.example);
+                      setSearchError(null);
+                    }}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                      selectedType === opt.id
+                        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold shadow-sm'
+                        : 'bg-[#060c17] text-[#94a3b8] hover:text-white border border-[#17253d]'
+                    }`}
                   >
-                    Copiar Clave
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Barra de Consulta */}
+              <form onSubmit={handleExecuteLookup} className="space-y-3">
+                <div className="flex flex-col sm:flex-row gap-2.5">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      required
+                      value={inputValue}
+                      onChange={e => setInputValue(e.target.value)}
+                      placeholder={currentOption.placeholder}
+                      className="w-full px-4 py-3 bg-[#060c17] border border-[#1e365b] rounded-xl text-sm text-white placeholder-[#475569] focus:outline-none focus:border-cyan-500 font-mono transition-all"
+                    />
+                    <Search className="w-4 h-4 text-[#64748b] absolute right-4 top-3.5 pointer-events-none" />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isSearching || !inputValue.trim()}
+                    className="py-3 px-6 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white font-bold text-xs shadow-lg shadow-cyan-950/50 transition-all flex items-center justify-center gap-2 shrink-0 disabled:opacity-50"
+                  >
+                    {isSearching ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Consultando red ZK...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Consultar Riesgo</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </>
+                    )}
                   </button>
                 </div>
+
+                {/* Previsualización del Token Zero-Knowledge en Vivo */}
+                {previewHash && (
+                  <div className="p-3 bg-[#060c17] border border-[#17253d] rounded-xl flex items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2 truncate">
+                      <Lock className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                      <span className="text-[#64748b] font-mono text-[11px] shrink-0">SHA-256 Token Ciego:</span>
+                      <span className="font-mono text-cyan-300 text-[11px] truncate">{previewHash}</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={copyHashToClipboard}
+                      className="text-[10px] font-mono text-[#94a3b8] hover:text-white px-2 py-0.5 rounded bg-[#0d182e] border border-[#1e365b] transition shrink-0 flex items-center gap-1"
+                    >
+                      {copiedHash ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      <span>{copiedHash ? 'Copiado' : 'Copiar'}</span>
+                    </button>
+                  </div>
+                )}
+              </form>
+
+              {searchError && (
+                <div className="mt-4 p-3 rounded-xl bg-[#2e0909] border border-[#661616] text-[#fca5a5] text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-[#ef4444]" />
+                  <span>{searchError}</span>
+                </div>
+              )}
+            </div>
+
+            {/* ── RESULTADOS CLAROS (SCORE E HISTORIAL) ── */}
+            {searchResult && (
+              <div className="space-y-6 animate-fadeIn">
+                {/* Panel de Scores Lado a Lado */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* SCORE 1: INTERNO DE LA ENTIDAD */}
+                  <div className="p-6 bg-[#0c1628] border-2 border-blue-500/40 rounded-2xl shadow-xl flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between border-b border-[#17253d] pb-3 mb-4">
+                        <div className="flex items-center gap-2">
+                          <Building2 className="w-5 h-5 text-blue-400" />
+                          <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                            1. Score Interno ({activeFintech.name})
+                          </h3>
+                        </div>
+                        <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
+                          searchResult.internalRiskLevel === 'ALTO'
+                            ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                            : searchResult.internalRiskLevel === 'MEDIO'
+                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                            : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                        }`}>
+                          {searchResult.internalRiskLevel} RIESGO
+                        </span>
+                      </div>
+
+                      <div className="flex items-baseline gap-2 my-2">
+                        <span className={`text-5xl font-mono font-black ${
+                          searchResult.internalRiskScore >= 70 ? 'text-rose-400' : searchResult.internalRiskScore >= 30 ? 'text-amber-400' : 'text-emerald-400'
+                        }`}>
+                          {searchResult.internalRiskScore}
+                        </span>
+                        <span className="text-xs text-[#64748b] font-mono">/ 100</span>
+                      </div>
+                      <p className="text-[11px] text-[#94a3b8] mt-1">
+                        Calculado con los antecedentes registrados exclusivamente por su entidad bancaria.
+                      </p>
+                    </div>
+
+                    <div className="w-full bg-[#060c17] rounded-full h-2 overflow-hidden border border-[#1e365b] mt-4">
+                      <div
+                        className={`h-full rounded-full transition-all ${
+                          searchResult.internalRiskScore >= 70 ? 'bg-rose-500' : searchResult.internalRiskScore >= 30 ? 'bg-amber-400' : 'bg-emerald-400'
+                        }`}
+                        style={{ width: `${Math.min(100, searchResult.internalRiskScore)}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* SCORE 2: RED FEDERAL CONSORCIO */}
+                  <div className="p-6 bg-gradient-to-b from-[#0e1d38] to-[#0a1528] border-2 border-cyan-500/50 rounded-2xl shadow-xl flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between border-b border-[#1e3a6a] pb-3 mb-4">
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck className="w-5 h-5 text-cyan-400" />
+                          <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                            2. Score Red Federal (Consorcio)
+                          </h3>
+                        </div>
+                        <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
+                          searchResult.consortiumRiskLevel === 'ALTO'
+                            ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                            : searchResult.consortiumRiskLevel === 'MEDIO'
+                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                            : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                        }`}>
+                          {searchResult.consortiumRiskLevel} RIESGO
+                        </span>
+                      </div>
+
+                      <div className="flex items-baseline gap-2 my-2">
+                        <span className={`text-5xl font-mono font-black ${
+                          searchResult.consortiumRiskScore >= 70 ? 'text-rose-400' : searchResult.consortiumRiskScore >= 30 ? 'text-amber-400' : 'text-emerald-400'
+                        }`}>
+                          {searchResult.consortiumRiskScore}
+                        </span>
+                        <span className="text-xs text-[#64748b] font-mono">/ 100</span>
+                      </div>
+                      <p className="text-[11px] text-cyan-200/70 mt-1">
+                        Inteligencia colectiva compartida en tiempo real entre múltiples bancos y billeteras.
+                      </p>
+                    </div>
+
+                    <div className="w-full bg-[#060c17] rounded-full h-2 overflow-hidden border border-[#1e365b] mt-4">
+                      <div
+                        className={`h-full rounded-full transition-all ${
+                          searchResult.consortiumRiskScore >= 70 ? 'bg-rose-500' : searchResult.consortiumRiskScore >= 30 ? 'bg-amber-400' : 'bg-emerald-400'
+                        }`}
+                        style={{ width: `${Math.min(100, searchResult.consortiumRiskScore)}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tarjeta de Recomendación Operativa y Detalle */}
+                <div className="p-6 bg-[#0c1628] border border-[#1e365b] rounded-2xl shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6">
+                  <div className="space-y-1">
+                    <span className="text-[11px] font-mono uppercase tracking-wider text-[#64748b]">
+                      Recomendación Automática del Consorcio
+                    </span>
+                    <div className="flex items-center gap-3">
+                      <span className={`px-4 py-1.5 rounded-xl text-xs font-black border shadow-sm ${
+                        searchResult.breakdown.recommendation === 'BLOCK'
+                          ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                          : searchResult.breakdown.recommendation === 'REVIEW'
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                          : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      }`}>
+                        {searchResult.breakdown.recommendation === 'BLOCK' ? 'BLOQUEAR TRANSACCIÓN' : searchResult.breakdown.recommendation === 'REVIEW' ? 'DESAFÍO BIOMÉTRICO / 2FA' : 'APROBAR OPERACIÓN'}
+                      </span>
+
+                      <span className="text-xs text-[#94a3b8]">
+                        {searchResult.breakdown.matchingEdges.length > 0
+                          ? `${searchResult.breakdown.matchingEdges.length} ${searchResult.breakdown.matchingEdges.length === 1 ? 'coincidencia registrada en la red' : 'coincidencias registradas en la red'}`
+                          : 'Sin reportes previos de fraude en la red'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => {
+                        setReportType(selectedType);
+                        setReportValue(inputValue);
+                        setIsReportModalOpen(true);
+                      }}
+                      className="px-4 py-2.5 rounded-xl bg-rose-950/40 hover:bg-rose-900/50 border border-rose-500/40 text-rose-300 text-xs font-bold transition flex items-center gap-2"
+                    >
+                      <ShieldAlert className="w-4 h-4" />
+                      <span>Reportar Delito</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* ── CAPA 1: VELOCIDAD EN MEMORIA (<1MS) & CAPA 2: GRAFO RECURSIVO ── */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Capa 1: Filtro Cuckoo / RedisBloom */}
+                  <div className="p-4 bg-[#0a1426] border border-cyan-800/40 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between border-b border-[#14233c] pb-2">
+                      <div className="flex items-center gap-2">
+                        <Zap className="w-4 h-4 text-cyan-400" />
+                        <span className="text-xs font-bold text-white uppercase tracking-wider">
+                          1. Capa de Velocidad (<span className="text-cyan-300 font-mono">&lt; 1 ms</span>)
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950/60 text-cyan-300 border border-cyan-800/50">
+                        {searchResult.breakdown.speedLayer?.filterType || 'CuckooFilter'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs pt-1">
+                      <span className="text-[#94a3b8]">Estado en Memoria:</span>
+                      <span className={`font-mono font-bold ${
+                        searchResult.breakdown.speedLayer?.filterHit
+                          ? 'text-rose-400'
+                          : 'text-emerald-400'
+                      }`}>
+                        {searchResult.breakdown.speedLayer?.filterHit
+                          ? 'Hit Positivo (En Lista Negra)'
+                          : 'Hit Negativo (Limpio en Filtro)'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-[#94a3b8]">Filtro Consultado:</span>
+                      <span className="font-mono text-slate-300">
+                        {searchResult.breakdown.speedLayer?.filterName || 'cbu_blacklist'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-[#94a3b8]">Latencia de Consulta:</span>
+                      <span className="font-mono text-cyan-300 font-bold">
+                        ⚡ {searchResult.breakdown.speedLayer?.latencyMs ?? 0.42} ms
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Capa 2: Inteligencia de Grafos sobre Nodos Ciegos */}
+                  <div className="p-4 bg-[#0a1426] border border-purple-800/40 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between border-b border-[#14233c] pb-2">
+                      <div className="flex items-center gap-2">
+                        <Share2 className="w-4 h-4 text-purple-400" />
+                        <span className="text-xs font-bold text-white uppercase tracking-wider">
+                          2. Inteligencia de Grafo (1-3 Saltos)
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => setShowGraphQueryModal(true)}
+                        className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-950/60 hover:bg-purple-900/60 text-purple-300 border border-purple-800/50 flex items-center gap-1 transition"
+                      >
+                        <Code2 className="w-3 h-3" />
+                        <span>Ver Cypher / CTE</span>
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs pt-1">
+                      <span className="text-[#94a3b8]">Saltos de Red Explorados:</span>
+                      <span className="font-mono text-purple-300 font-bold">
+                        {searchResult.breakdown.graphIntelligence?.maxDepthReached || 1} niveles (k-hop)
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-[#94a3b8]">Nodos en el Cluster:</span>
+                      <span className="font-mono text-slate-300">
+                        {searchResult.breakdown.graphIntelligence?.totalConnectedNodes ?? 0} identidades
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-[#94a3b8]">Ciclo de Mula / Granja:</span>
+                      <span className={`font-mono font-bold ${
+                        searchResult.breakdown.graphIntelligence?.hasTriangularCycle || (searchResult.breakdown.graphIntelligence?.sharedDevicesCount ?? 0) > 0
+                          ? 'text-rose-400'
+                          : 'text-slate-400'
+                      }`}>
+                        {searchResult.breakdown.graphIntelligence?.hasTriangularCycle
+                          ? 'Triangulación Detectada'
+                          : (searchResult.breakdown.graphIntelligence?.sharedDevicesCount ?? 0) > 0
+                          ? `${searchResult.breakdown.graphIntelligence?.sharedDevicesCount} Disp. Compartidos`
+                          : 'Sin Ciclos de Mulas'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Modal para Inspeccionar Cypher & SQL Recursive CTE */}
+                {showGraphQueryModal && searchResult.breakdown.graphIntelligence && (
+                  <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-[#0b1526] border border-[#1e3a6a] rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl">
+                      <div className="flex items-center justify-between border-b border-[#17253d] pb-3">
+                        <div className="flex items-center gap-2">
+                          <Code2 className="w-5 h-5 text-purple-400" />
+                          <h3 className="text-sm font-bold text-white">
+                            Consultas de Grafo sobre Nodos Ciegos
+                          </h3>
+                        </div>
+                        <button
+                          onClick={() => setShowGraphQueryModal(false)}
+                          className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-[#13233e]"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <div className="flex gap-2 border-b border-[#17253d] pb-2">
+                        <button
+                          onClick={() => setActiveGraphQueryTab('cypher')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${
+                            activeGraphQueryTab === 'cypher'
+                              ? 'bg-purple-600 text-white'
+                              : 'bg-[#060c17] text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          Memgraph / Neo4j (Cypher)
+                        </button>
+                        <button
+                          onClick={() => setActiveGraphQueryTab('sql')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${
+                            activeGraphQueryTab === 'sql'
+                              ? 'bg-cyan-600 text-white'
+                              : 'bg-[#060c17] text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          Supabase PostgreSQL (Recursive CTE)
+                        </button>
+                      </div>
+
+                      <div className="bg-[#050b14] border border-[#14233c] rounded-xl p-4 overflow-x-auto max-h-72">
+                        <pre className="font-mono text-xs text-slate-300">
+                          {activeGraphQueryTab === 'cypher'
+                            ? searchResult.breakdown.graphIntelligence.cypherQuery
+                            : searchResult.breakdown.graphIntelligence.sqlRecursiveCTE}
+                        </pre>
+                      </div>
+
+                      <div className="flex justify-end pt-2">
+                        <button
+                          onClick={() => setShowGraphQueryModal(false)}
+                          className="px-4 py-2 bg-[#17253d] hover:bg-[#203657] text-white text-xs font-bold rounded-xl transition"
+                        >
+                          Cerrar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Coincidencias en la Red (si existen) */}
+                {searchResult.breakdown.matchingEdges.length > 0 && (
+                  <div className="bg-[#0c1628] border border-[#1e365b] rounded-2xl overflow-hidden shadow-xl">
+                    <div className="px-6 py-4 border-b border-[#17253d] bg-[#091222] flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-400" />
+                        Historial de Incidentes Correlacionados en la Red
+                      </h4>
+                      <span className="text-[11px] font-mono text-[#94a3b8]">
+                        {searchResult.breakdown.matchingEdges.length} eventos
+                      </span>
+                    </div>
+
+                    <div className="divide-y divide-[#17253d]">
+                      {searchResult.breakdown.matchingEdges.map((edge, idx) => (
+                        <div key={edge.id || idx} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-white">
+                                {TYPOLOGY_LABELS[edge.incidentCategory] || edge.incidentCategory}
+                              </span>
+                              {edge.isFalsePositive && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                                  Revocado / Falso Positivo
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-[#64748b]">
+                              Reportado por {edge.entityName || edge.reportedByEntityId} · {new Date(edge.timestamp).toLocaleDateString()}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            {edge.reportedByEntityId === activeFintech.id && !edge.isFalsePositive && (
+                              <button
+                                onClick={() => handleRevokeEdge(edge.id)}
+                                className="px-3 py-1.5 rounded-lg bg-amber-950/40 hover:bg-amber-900/50 border border-amber-500/40 text-amber-300 text-[11px] font-bold transition"
+                              >
+                                Marcar Falso Positivo
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ───────────────────────────────────────────────────────────── */}
+        {/* ── VISTA 2: HISTORIAL DE MI ENTIDAD (LIMPIO & CLARO) ──────── */}
+        {/* ───────────────────────────────────────────────────────────── */}
+        {activeTab === 'history' && (
+          <div className="space-y-6">
+            <div className="bg-[#0c1628] border border-[#1b3152] rounded-2xl p-6 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <History className="w-5 h-5 text-cyan-400" />
+                  Registro de Reportes de {activeFintech.name}
+                </h3>
+                <p className="text-xs text-[#94a3b8] mt-1">
+                  Trazabilidad de todos los incidentes emitidos por su entidad hacia la red federal con hashes ciegos.
+                </p>
               </div>
 
-              <div className="rounded-xl border border-slate-800 bg-[#0c1527] p-6 shadow-xl space-y-4">
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                  <Activity className="h-4 w-4 text-emerald-400" />
-                  Endpoint de Consulta Federada en Tiempo Real (REST)
-                </h3>
-                <div className="bg-[#050912] p-4 rounded-lg border border-slate-800/80 font-mono text-[11px] text-slate-300 overflow-x-auto leading-relaxed">
-                  <span className="text-purple-400">curl</span> -X POST https://api.antifraude.consorcio.ar/v1/risk/lookup \<br />
-                  &nbsp;&nbsp;-H <span className="text-amber-300">"Content-Type: application/json"</span> \<br />
-                  &nbsp;&nbsp;-H <span className="text-amber-300">"x-consortium-api-key: {activeFintech.apiKey || 'antf_live_alpha_a1b2c3d4e5f6'}"</span> \<br />
-                  &nbsp;&nbsp;-d '<span className="text-emerald-300">{"{"}"cuit": "20345678901", "dni": "34567890", "serviceScope": "{activeService}"{"}"}</span>'
+              <button
+                onClick={() => {
+                  setReportType('DNI');
+                  setReportValue('');
+                  setIsReportModalOpen(true);
+                }}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white font-bold text-xs shadow-md transition flex items-center gap-2 shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Nuevo Reporte</span>
+              </button>
+            </div>
+
+            {entityHistory.length === 0 ? (
+              <div className="p-12 text-center bg-[#0c1628] border border-[#1b3152] rounded-2xl">
+                <FileCheck className="w-12 h-12 text-[#475569] mx-auto mb-3" />
+                <h4 className="text-sm font-bold text-white">Sin reportes registrados aún</h4>
+                <p className="text-xs text-[#94a3b8] max-w-sm mx-auto mt-1">
+                  Su institución no ha emitido reportes de amenazas a la red todavía. Cuando reporte un incidente, quedará auditado aquí.
+                </p>
+              </div>
+            ) : (
+              <div className="bg-[#0c1628] border border-[#1b3152] rounded-2xl overflow-hidden shadow-xl">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-[#070e1b] border-b border-[#17253d] text-[#64748b] font-mono text-[11px] uppercase">
+                      <tr>
+                        <th className="py-3 px-4">Fecha / Hora</th>
+                        <th className="py-3 px-4">Tipología</th>
+                        <th className="py-3 px-4">Token SHA-256 (Ciego)</th>
+                        <th className="py-3 px-4">Detalle / Máscara</th>
+                        <th className="py-3 px-4">Estado</th>
+                        <th className="py-3 px-4 text-right">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#17253d]">
+                      {entityHistory.map(edge => (
+                        <tr key={edge.id} className="hover:bg-[#0f1d33]/50 transition">
+                          <td className="py-3.5 px-4 font-mono text-[#94a3b8]">
+                            {new Date(edge.timestamp).toLocaleString()}
+                          </td>
+                          <td className="py-3.5 px-4 font-bold text-white">
+                            {TYPOLOGY_LABELS[edge.incidentCategory] || edge.incidentCategory}
+                          </td>
+                          <td className="py-3.5 px-4 font-mono text-cyan-300">
+                            {edge.targetHash ? `${edge.targetHash.slice(0, 10)}...${edge.targetHash.slice(-6)}` : 'Token hash'}
+                          </td>
+                          <td className="py-3.5 px-4 text-[#cbd5e1]">
+                            {edge.uploadedFields || 'Reporte Manual'}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            {edge.isFalsePositive ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                                Revocado (FP)
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                                Activo en Red
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 text-right">
+                            {!edge.isFalsePositive ? (
+                              <button
+                                onClick={() => handleRevokeEdge(edge.id)}
+                                className="px-2.5 py-1 rounded bg-amber-950/40 hover:bg-amber-900/50 border border-amber-500/40 text-amber-300 text-[11px] font-medium transition"
+                              >
+                                Revocar
+                              </button>
+                            ) : (
+                              <span className="text-[11px] text-[#64748b]">Revocado</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
+            )}
+          </div>
+        )}
+      </main>
+
+      {/* ── MODAL LIMPIO DE REPORTAR AMENAZA ── */}
+      {isReportModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-[#0c1628] border border-[#1e365b] rounded-2xl max-w-lg w-full p-6 shadow-2xl relative">
+            <button
+              onClick={() => setIsReportModalOpen(false)}
+              className="absolute top-5 right-5 text-[#64748b] hover:text-white transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="mb-5">
+              <span className="text-[11px] font-mono uppercase tracking-wider text-rose-400 font-bold">
+                Reporte de Incidente Federado
+              </span>
+              <h3 className="text-lg font-bold text-white mt-0.5">
+                Ingresar Amenaza a la Red ZK
+              </h3>
+              <p className="text-xs text-[#94a3b8] mt-1">
+                El dato personal será convertido a un hash ciego irreversible antes de enviarse.
+              </p>
             </div>
-          )}
-        </main>
-      </div>
 
-      {/* Centinela AI Floating Trigger */}
-      <div className="fixed bottom-6 right-6 z-30">
-        <button
-          onClick={() => setIsCopilotOpen(true)}
-          className={`group flex items-center gap-2 rounded-xl bg-[#0e1424] border px-4 py-2.5 text-xs font-bold text-slate-200 hover:text-white shadow-xl hover:scale-105 active:scale-95 transition-all ${
-            isInternal
-              ? 'border-indigo-500/30 hover:border-indigo-400/60 shadow-indigo-950/40'
-              : 'border-cyan-500/30 hover:border-cyan-400/60 shadow-cyan-950/40'
-          }`}
-        >
-          <Sparkles className={`h-4 w-4 group-hover:rotate-12 transition animate-pulse ${
-            isInternal ? 'text-indigo-400' : 'text-cyan-400'
-          }`} />
-          <span>Centinela AI</span>
-          <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-        </button>
-      </div>
+            {reportSuccess && (
+              <div className="mb-4 p-3 rounded-xl bg-[#062c1d] border border-[#0f5132] text-[#86efac] text-xs flex items-center gap-2">
+                <Check className="w-4 h-4 shrink-0 text-[#22c55e]" />
+                <span>{reportSuccess}</span>
+              </div>
+            )}
 
-      <AICopilotDrawer isOpen={isCopilotOpen} onClose={() => setIsCopilotOpen(false)} />
+            <form onSubmit={handleConfirmReport} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-[#cbd5e1] mb-1.5">
+                  Tipo de Identificador
+                </label>
+                <select
+                  value={reportType}
+                  onChange={e => setReportType(e.target.value as any)}
+                  className="w-full bg-[#060c17] border border-[#1e365b] rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-cyan-500 font-medium"
+                >
+                  <option value="DNI">DNI (Documento Nacional de Identidad)</option>
+                  <option value="CBU">CBU / CVU Bancario</option>
+                  <option value="EMAIL">Email Corporativo o Personal</option>
+                  <option value="CUIT">CUIT / CUIL</option>
+                  <option value="PHONE">Teléfono</option>
+                  <option value="IP">Dirección IP</option>
+                  <option value="DEVICE">Huella de Dispositivo</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#cbd5e1] mb-1.5">
+                  Valor a Reportar (se tokeniza localmente)
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={reportValue}
+                  onChange={e => setReportValue(e.target.value)}
+                  placeholder="Ingrese el DNI, CBU o Email..."
+                  className="w-full px-3.5 py-2.5 bg-[#060c17] border border-[#1e365b] rounded-xl text-xs text-white font-mono focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#cbd5e1] mb-1.5">
+                  Tipología delictiva detectada
+                </label>
+                <select
+                  value={reportCategory}
+                  onChange={e => setReportCategory(e.target.value as any)}
+                  className="w-full bg-[#060c17] border border-[#1e365b] rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-cyan-500 font-medium"
+                >
+                  <option value="MULE_ACCOUNT">Cuenta Mula / Receptora (90 pts)</option>
+                  <option value="FRAUD_CONFIRMED">Fraude Confirmado (95 pts)</option>
+                  <option value="IDENTITY_THEFT">Robo de Identidad / Sintética (75 pts)</option>
+                  <option value="ACCOUNT_TAKEOVER">Toma de Control de Cuenta - ATO (80 pts)</option>
+                  <option value="PHISHING">Origen de Phishing (55 pts)</option>
+                  <option value="CHARGEBACK">Contracargo Reiterado (50 pts)</option>
+                  <option value="SUSPICIOUS">Operación Sospechosa (40 pts)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#cbd5e1] mb-1.5">
+                  Número de Ticket Interno (Opcional)
+                </label>
+                <input
+                  type="text"
+                  value={reportTicket}
+                  onChange={e => setReportTicket(e.target.value)}
+                  placeholder="Ej: CRM-9941 o SUM-2026-04"
+                  className="w-full px-3.5 py-2.5 bg-[#060c17] border border-[#1e365b] rounded-xl text-xs text-white font-mono focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsReportModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl bg-[#111e33] hover:bg-[#1a2d4c] text-xs font-medium text-[#94a3b8] transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-rose-700 to-red-600 hover:from-rose-600 hover:to-red-500 text-white font-bold text-xs shadow-md transition"
+                >
+                  Confirmar Reporte ZK
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── FOOTER INSTITUCIONAL ── */}
+      <footer className="border-t border-[#17253d] bg-[#0c1628]/80 px-6 py-4 text-center text-[11px] text-[#64748b]">
+        <p>Consorcio Federal de Prevención de Fraude · Workspace Interno para Mesas de Riesgo & Cumplimiento</p>
+      </footer>
     </div>
   );
 }
-
-

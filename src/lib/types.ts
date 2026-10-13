@@ -25,7 +25,9 @@ export type ReasonCode =
   | 'PHISHING_ORIGIN'
   | 'CHARGEBACK_HISTORY'
   | 'DEVICE_LINKED_FRAUD'
-  | 'INTERNAL_RECURRENCE';
+  | 'INTERNAL_RECURRENCE'
+  | 'MULE_NETWORK_CLUSTER'
+  | 'SHARED_DEVICE_FARM';
 
 export type ServiceScope = 'INTERNAL' | 'CONSORTIUM';
 
@@ -163,6 +165,34 @@ export interface ScoreBreakdown {
   velocityTriggered: boolean;
   matchingEdges: SpecGraphEdge[];
   identifierDetails?: IdentifierMatchDetail[];
+  // ── Capa de Velocidad (Cuckoo & RedisBloom <1ms) ──
+  speedLayer?: SpeedLayerSummary;
+  // ── Capa de Inteligencia de Grafos sobre Nodos Ciegos (1-3 Saltos) ──
+  graphIntelligence?: GraphIntelligenceSummary;
+}
+
+export interface SpeedLayerSummary {
+  filterHit: boolean;
+  filterType: 'CuckooFilter' | 'RedisBloom';
+  filterName: string;
+  latencyMs: number;
+  source: 'UPSTASH_REDIS' | 'IN_MEMORY_FAST_PATH';
+}
+
+export interface GraphIntelligenceSummary {
+  rootHash: string;
+  maxDepthReached: number;
+  totalConnectedNodes: number;
+  totalEdgesTraversed: number;
+  hasTriangularCycle: boolean;
+  sharedDevicesCount: number;
+  detectedMuleAccountsCount: number;
+  isBridgeNode: boolean;
+  centralityScore: number;
+  latencyMs: number;
+  engine: 'POSTGRES_RECURSIVE_CTE' | 'IN_MEMORY_CYPHER_GRAPH';
+  cypherQuery: string;
+  sqlRecursiveCTE: string;
 }
 
 export interface LookupResult {
@@ -181,6 +211,8 @@ export interface LookupResult {
   timestamp: string;
   fintechId: string;
   scope: ServiceScope;
+  speedLayer?: SpeedLayerSummary;
+  graphIntelligence?: GraphIntelligenceSummary;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -562,4 +594,16 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
     enabled: false,
   },
 };
+
+export interface TypologyHeuristicMetric {
+  category: IncidentCategory;
+  label: string;
+  totalReports: number;
+  falsePositivesCount: number;
+  falsePositiveRate: number; // 0.0 to 1.0
+  baselineScore: number;
+  isAlertTriggered: boolean; // true if > 10% FP rate
+  suggestedReduction: number; // 5 or 10
+  recommendedScore: number;
+}
 

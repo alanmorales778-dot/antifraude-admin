@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState } from 'react';
 import {
@@ -26,6 +26,7 @@ import {
   BadgeCheck,
 } from 'lucide-react';
 import { useConsortiumStore } from '@/lib/store';
+import { computeHeuristicLearningMetrics } from '@/lib/fraudEngine';
 
 import ScoringLabAdmin from '@/components/ScoringLabAdmin';
 import RegulatoryAuditTable from '@/components/RegulatoryAuditTable';
@@ -42,6 +43,8 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
     fintechs,
     auditLogs,
     appUsers,
+    graphEdges,
+    scoringConfig,
     addFintech,
     deleteFintech,
     addAuthorizedUserToFintech,
@@ -51,6 +54,10 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
     supabaseLatencyMs,
     resetEnvironmentToZero,
   } = useConsortiumStore();
+
+  const activeHeuristicAlerts = React.useMemo(() => {
+    return computeHeuristicLearningMetrics(graphEdges, scoringConfig).filter(m => m.alertTriggered);
+  }, [graphEdges, scoringConfig]);
 
   const [activeTab, setActiveTab] = useState<'entities' | 'audit' | 'network' | 'scoring-lab' | 'users'>('entities');
   const [filterQuery, setFilterQuery] = useState('');
@@ -316,9 +323,16 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
             >
               <Sliders className="w-3.5 h-3.5 text-cyan-400" />
               <span>Gestión de Scores de Fraude</span>
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 ml-1">
-                Motor Dual
-              </span>
+              {activeHeuristicAlerts.length > 0 ? (
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 ml-1 animate-pulse flex items-center gap-1">
+                  <AlertTriangle className="w-2.5 h-2.5" />
+                  {activeHeuristicAlerts.length} Alerta{activeHeuristicAlerts.length > 1 ? 's' : ''} Heurística{activeHeuristicAlerts.length > 1 ? 's' : ''}
+                </span>
+              ) : (
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 ml-1">
+                  Motor Dual
+                </span>
+              )}
             </button>
 
             <button

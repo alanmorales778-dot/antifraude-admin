@@ -39,8 +39,8 @@ import {
   X,
   ExternalLink,
 } from 'lucide-react';
-import { SEVERITY_BASE, DECAY_FLOOR } from '@/lib/fraudEngine';
-import { IncidentCategory, ScoringConfig, DEFAULT_SCORING_CONFIG, LookupResult, SpecGraphEdge, NetworkAlert } from '@/lib/types';
+import { SEVERITY_BASE, DECAY_FLOOR, computeHeuristicLearningMetrics, TYPOLOGY_LABELS } from '@/lib/fraudEngine';
+import { IncidentCategory, ScoringConfig, DEFAULT_SCORING_CONFIG, LookupResult, SpecGraphEdge, NetworkAlert, TypologyHeuristicMetric } from '@/lib/types';
 import { useConsortiumStore } from '@/lib/store';
 import { SupabaseService } from '@/lib/supabaseService';
 
@@ -69,6 +69,7 @@ export default function ScoringLabAdmin() {
     scoringAuditRecords,
     adminSession,
     syncWithSupabase,
+    applyHeuristicAdjustment,
   } = useConsortiumStore();
 
   // Vista principal del módulo (Monitoreo como vista inicial por defecto)
@@ -167,6 +168,23 @@ export default function ScoringLabAdmin() {
       setEditingConfig(scoringConfig);
     }
   }, [scoringConfig]);
+
+  // ── MOTOR DE APRENDIZAJE HEURÍSTICO CONTINUO (ESTADÍSTICO, SIN IA EXTERNA) ──
+  const heuristicMetrics = useMemo(() => {
+    return computeHeuristicLearningMetrics(graphEdges, editingConfig);
+  }, [graphEdges, editingConfig]);
+
+  const activeHeuristicAlerts = useMemo(() => {
+    return heuristicMetrics.filter(m => m.alertTriggered);
+  }, [heuristicMetrics]);
+
+  const [heuristicActionMessage, setHeuristicActionMessage] = useState<string | null>(null);
+
+  const handleApplyHeuristicAdjustment = async (category: IncidentCategory, reduction: number) => {
+    const res = await applyHeuristicAdjustment(category, reduction);
+    setHeuristicActionMessage(res.message);
+    setTimeout(() => setHeuristicActionMessage(null), 5000);
+  };
 
   // Tab activo de fórmulas
   const [activeAlgorithmTab, setActiveAlgorithmTab] = useState<'decay' | 'consensus' | 'trust' | 'email' | 'override'>('decay');
@@ -639,26 +657,17 @@ export default function ScoringLabAdmin() {
     try {
       const adminEmail = adminSession?.email || 'admin@antifraude.ar';
 
-      // 1. Actualizar configuración en el motor y persistencia de Supabase
+      // 1. Actualizar configuración en el motor y persistencia local
       updateScoringConfig(editingConfig);
 
-      // 2. Registrar en auditoría inmutable de compliance (config_audit_logs y audit_logs)
-      if (pendingDiffs.length > 0) {
-        await SupabaseService.recordConfigAuditLogs(adminEmail, pendingDiffs);
-      } else {
-        await SupabaseService.recordAuditLog(
-          adminEmail,
-          'CONFIG_REVALIDATED',
-          'Configuración de scoring re-validada y confirmada en Supabase',
-          'CONSORTIUM'
-        );
-      }
+      // 2. Persistir UPDATE real a Supabase (scoring_config y audit_logs)
+      await SupabaseService.saveScoringConfig(editingConfig, adminEmail, pendingDiffs);
 
       // 3. Sincronizar en la nube
       await syncWithSupabase();
 
       setIsConfirmModalOpen(false);
-      setSaveSuccessMsg('¡Configuración de red guardada y auditada exitosamente en Supabase!');
+      setSaveSuccessMsg('¡Configuración de umbrales y baseline guardada y auditada exitosamente en Supabase!');
       setTimeout(() => setSaveSuccessMsg(null), 5000);
     } catch (err) {
       console.error('Error al guardar configuración:', err);
@@ -1784,6 +1793,127 @@ export default function ScoringLabAdmin() {
             </div>
           </div>
 
+          {/* ── NOTIFICACIÓN DE ACCIÓN HEURÍSTICA ── */}
+          {heuristicActionMessage && (
+            <div className="p-3 bg-emerald-950/60 border border-emerald-500/40 rounded-xl text-xs text-emerald-200 flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+              <span>{heuristicActionMessage}</span>
+            </div>
+          )}
+
+          {/* ── BANNER DEL MOTOR DE APRENDIZAJE HEURÍSTICO CONTINUO ── */}
+          <div className="p-4 bg-gradient-to-r from-[#0c1c38] via-[#09162e] to-[#081223] border border-cyan-800/40 rounded-xl space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#172b4d] pb-2.5">
+              <div className="flex items-center gap-2">
+                <Cpu className="h-4 w-4 text-cyan-400" />
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                  Motor de Aprendizaje Estadístico Continuo (Sin IA Externa)
+                </h4>
+              </div>
+              <span className="text-[11px] font-mono text-cyan-300 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/50">
+                Baseline de Red Activo
+              </span>
+            </div>
+
+            <p className="text-[11px] text-slate-300 leading-relaxed">
+              El motor computa en tiempo real la tasa de <strong className="text-white">Falsos Positivos (FP)</strong> por cada tipología analizando los reportes revocados por los analistas. Si una tipología supera el umbral crítico del <strong className="text-amber-300">10% de FP</strong>, el sistema sugiere y calibra de forma autónoma una reducción de 5 a 10 puntos en su score base.
+            </p>
+
+            {/* Alertas Heurísticas Activas */}
+            {activeHeuristicAlerts.length > 0 ? (
+              <div className="space-y-2 pt-1">
+                <div className="text-[11px] font-bold text-amber-400 flex items-center gap-1.5">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  <span>Tipologías con Tasa Anómala de Falsos Positivos ({'>'} 10%):</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {activeHeuristicAlerts.map(alert => (
+                    <div
+                      key={alert.category}
+                      className="p-3 bg-amber-950/30 border border-amber-500/40 rounded-lg flex flex-col justify-between gap-2"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <span className="text-xs font-bold text-amber-200 block">
+                            {TYPOLOGY_LABELS[alert.category] || alert.category}
+                          </span>
+                          <span className="text-[10px] text-slate-400">
+                            {alert.revokedCount} revocaciones de {alert.totalReports} reportes
+                          </span>
+                        </div>
+                        <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 font-mono text-xs font-bold border border-rose-500/30">
+                          {alert.falsePositiveRate.toFixed(1)}% FP
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between pt-1 border-t border-amber-900/30">
+                        <span className="text-[10px] text-amber-300">
+                          Sugerencia: <strong className="text-white">-{alert.suggestedReductionPts} pts</strong> (Score actual: {alert.currentBaseScore})
+                        </span>
+                        <button
+                          onClick={() => handleApplyHeuristicAdjustment(alert.category, alert.suggestedReductionPts)}
+                          className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-[11px] font-bold border border-amber-500/50 transition flex items-center gap-1"
+                        >
+                          <Zap className="h-3 w-3 text-amber-400" />
+                          Aplicar Calibración (-{alert.suggestedReductionPts} pts)
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 p-2.5 bg-emerald-950/30 border border-emerald-500/30 rounded-lg text-[11px] text-emerald-300">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                <span>Todas las tipologías operan dentro del margen de confianza óptimo (Tasa de Falsos Positivos &le; 10%).</span>
+              </div>
+            )}
+          </div>
+
+          {/* ── ARQUITECTURA DE VELOCIDAD (<1MS) & GRAFO RECURSIVO (CTE & MEMGRAPH) ── */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="p-4 bg-[#081223] border border-cyan-800/40 rounded-xl space-y-2">
+              <div className="flex items-center justify-between border-b border-[#14233c] pb-2">
+                <div className="flex items-center gap-2">
+                  <Zap className="h-4 w-4 text-cyan-400" />
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                    Capa de Velocidad: Búsqueda de Hashes en Memoria (&lt; 1 ms)
+                  </h4>
+                </div>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950/60 text-cyan-300 border border-cyan-800/50">
+                  Cuckoo Filter / RedisBloom
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                Operaciones O(1) con matrices compactas de bits sobre hashes SHA-256. Soporta borrado nativo (<code className="text-cyan-300 font-mono text-[10px]">CF.DEL</code>) para desindexar Falsos Positivos y revocaciones sin reconstruir el índice.
+              </p>
+              <div className="flex items-center justify-between text-xs pt-1 text-slate-400 border-t border-[#13233c]">
+                <span>Filtros activos:</span>
+                <span className="font-mono text-cyan-300 font-semibold">cbu, dni, device, email, cuit</span>
+              </div>
+            </div>
+
+            <div className="p-4 bg-[#081223] border border-purple-800/40 rounded-xl space-y-2">
+              <div className="flex items-center justify-between border-b border-[#14233c] pb-2">
+                <div className="flex items-center gap-2">
+                  <Share2 className="h-4 w-4 text-purple-400" />
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                    Capa de Inteligencia de Grafos sobre Nodos Ciegos
+                  </h4>
+                </div>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-950/60 text-purple-300 border border-purple-800/50">
+                  PostgreSQL CTE &amp; Memgraph
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                Detección de saltos 2 y 3 mediante <code className="text-purple-300 font-mono text-[10px]">WITH RECURSIVE</code> en Supabase y motor en memoria compatible con Cypher. Rastreos de ciclos de mulas y granjas de dispositivos.
+              </p>
+              <div className="flex items-center justify-between text-xs pt-1 text-slate-400 border-t border-[#13233c]">
+                <span>Profundidad máxima:</span>
+                <span className="font-mono text-purple-300 font-semibold">3 Saltos (k-hop) | &lt; 15 ms</span>
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {/* 1. Umbrales de Corte */}
             <div className="p-4 bg-[#081223] border border-[#1e365b] rounded-xl space-y-4">
@@ -1797,14 +1927,24 @@ export default function ScoringLabAdmin() {
                   <span>Umbral ALTO RIESGO (Bloqueo):</span>
                   <span className="font-mono text-rose-400 font-bold">{editingConfig.highRiskThreshold} pts</span>
                 </div>
-                <input
-                  type="range"
-                  min="50"
-                  max="90"
-                  value={editingConfig.highRiskThreshold}
-                  onChange={e => setEditingConfig({ ...editingConfig, highRiskThreshold: Number(e.target.value) })}
-                  className="w-full accent-rose-500 h-1.5 bg-[#17253d] rounded cursor-pointer"
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min="50"
+                    max="90"
+                    value={editingConfig.highRiskThreshold}
+                    onChange={e => setEditingConfig({ ...editingConfig, highRiskThreshold: Number(e.target.value) })}
+                    className="flex-1 accent-rose-500 h-1.5 bg-[#17253d] rounded cursor-pointer"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={editingConfig.highRiskThreshold}
+                    onChange={e => setEditingConfig({ ...editingConfig, highRiskThreshold: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })}
+                    className="w-14 px-1.5 py-0.5 bg-[#050b14] border border-[#1e365b] rounded text-right font-mono text-xs text-rose-400 font-bold focus:outline-none focus:border-rose-500"
+                  />
+                </div>
               </div>
 
               <div>
@@ -1812,14 +1952,24 @@ export default function ScoringLabAdmin() {
                   <span>Umbral MEDIO RIESGO (Desafío 2FA):</span>
                   <span className="font-mono text-amber-400 font-bold">{editingConfig.mediumRiskThreshold} pts</span>
                 </div>
-                <input
-                  type="range"
-                  min="15"
-                  max="50"
-                  value={editingConfig.mediumRiskThreshold}
-                  onChange={e => setEditingConfig({ ...editingConfig, mediumRiskThreshold: Number(e.target.value) })}
-                  className="w-full accent-amber-500 h-1.5 bg-[#17253d] rounded cursor-pointer"
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min="15"
+                    max="50"
+                    value={editingConfig.mediumRiskThreshold}
+                    onChange={e => setEditingConfig({ ...editingConfig, mediumRiskThreshold: Number(e.target.value) })}
+                    className="flex-1 accent-amber-500 h-1.5 bg-[#17253d] rounded cursor-pointer"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={editingConfig.mediumRiskThreshold}
+                    onChange={e => setEditingConfig({ ...editingConfig, mediumRiskThreshold: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })}
+                    className="w-14 px-1.5 py-0.5 bg-[#050b14] border border-[#1e365b] rounded text-right font-mono text-xs text-amber-400 font-bold focus:outline-none focus:border-amber-500"
+                  />
+                </div>
               </div>
 
               <div>
@@ -1827,15 +1977,25 @@ export default function ScoringLabAdmin() {
                   <span>Vida Media de Decaimiento (Días):</span>
                   <span className="font-mono text-cyan-300 font-bold">{editingConfig.decayHalfLifeDays || 180} días</span>
                 </div>
-                <input
-                  type="range"
-                  min="30"
-                  max="365"
-                  step="15"
-                  value={editingConfig.decayHalfLifeDays || 180}
-                  onChange={e => setEditingConfig({ ...editingConfig, decayHalfLifeDays: Number(e.target.value) })}
-                  className="w-full accent-cyan-500 h-1.5 bg-[#17253d] rounded cursor-pointer"
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min="30"
+                    max="365"
+                    step="15"
+                    value={editingConfig.decayHalfLifeDays || 180}
+                    onChange={e => setEditingConfig({ ...editingConfig, decayHalfLifeDays: Number(e.target.value) })}
+                    className="flex-1 accent-cyan-500 h-1.5 bg-[#17253d] rounded cursor-pointer"
+                  />
+                  <input
+                    type="number"
+                    min="1"
+                    max="730"
+                    value={editingConfig.decayHalfLifeDays || 180}
+                    onChange={e => setEditingConfig({ ...editingConfig, decayHalfLifeDays: Math.max(1, Number(e.target.value) || 1) })}
+                    className="w-16 px-1.5 py-0.5 bg-[#050b14] border border-[#1e365b] rounded text-right font-mono text-xs text-cyan-300 font-bold focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
               </div>
             </div>
 
@@ -1851,14 +2011,24 @@ export default function ScoringLabAdmin() {
                   <span>Penalidad Identity Mismatch:</span>
                   <span className="font-mono text-white font-bold">+{editingConfig.mismatchPenalty} pts</span>
                 </div>
-                <input
-                  type="range"
-                  min="10"
-                  max="70"
-                  value={editingConfig.mismatchPenalty}
-                  onChange={e => setEditingConfig({ ...editingConfig, mismatchPenalty: Number(e.target.value) })}
-                  className="w-full accent-blue-500 h-1.5 bg-[#17253d] rounded cursor-pointer"
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min="10"
+                    max="70"
+                    value={editingConfig.mismatchPenalty}
+                    onChange={e => setEditingConfig({ ...editingConfig, mismatchPenalty: Number(e.target.value) })}
+                    className="flex-1 accent-blue-500 h-1.5 bg-[#17253d] rounded cursor-pointer"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={editingConfig.mismatchPenalty}
+                    onChange={e => setEditingConfig({ ...editingConfig, mismatchPenalty: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })}
+                    className="w-14 px-1.5 py-0.5 bg-[#050b14] border border-[#1e365b] rounded text-right font-mono text-xs text-white font-bold focus:outline-none focus:border-blue-500"
+                  />
+                </div>
               </div>
 
               <div>
@@ -1866,14 +2036,24 @@ export default function ScoringLabAdmin() {
                   <span>Penalidad Ráfaga de Consultas (Velocidad):</span>
                   <span className="font-mono text-white font-bold">+{editingConfig.velocityPenalty} pts</span>
                 </div>
-                <input
-                  type="range"
-                  min="10"
-                  max="50"
-                  value={editingConfig.velocityPenalty}
-                  onChange={e => setEditingConfig({ ...editingConfig, velocityPenalty: Number(e.target.value) })}
-                  className="w-full accent-purple-500 h-1.5 bg-[#17253d] rounded cursor-pointer"
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min="10"
+                    max="50"
+                    value={editingConfig.velocityPenalty}
+                    onChange={e => setEditingConfig({ ...editingConfig, velocityPenalty: Number(e.target.value) })}
+                    className="flex-1 accent-purple-500 h-1.5 bg-[#17253d] rounded cursor-pointer"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={editingConfig.velocityPenalty}
+                    onChange={e => setEditingConfig({ ...editingConfig, velocityPenalty: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })}
+                    className="w-14 px-1.5 py-0.5 bg-[#050b14] border border-[#1e365b] rounded text-right font-mono text-xs text-white font-bold focus:outline-none focus:border-purple-500"
+                  />
+                </div>
               </div>
 
               <div>
@@ -1881,14 +2061,24 @@ export default function ScoringLabAdmin() {
                   <span>Piso Score Granja de Emuladores:</span>
                   <span className="font-mono text-rose-400 font-bold">{editingConfig.deviceFarmFloor} pts</span>
                 </div>
-                <input
-                  type="range"
-                  min="60"
-                  max="95"
-                  value={editingConfig.deviceFarmFloor}
-                  onChange={e => setEditingConfig({ ...editingConfig, deviceFarmFloor: Number(e.target.value) })}
-                  className="w-full accent-rose-500 h-1.5 bg-[#17253d] rounded cursor-pointer"
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min="60"
+                    max="95"
+                    value={editingConfig.deviceFarmFloor}
+                    onChange={e => setEditingConfig({ ...editingConfig, deviceFarmFloor: Number(e.target.value) })}
+                    className="flex-1 accent-rose-500 h-1.5 bg-[#17253d] rounded cursor-pointer"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={editingConfig.deviceFarmFloor}
+                    onChange={e => setEditingConfig({ ...editingConfig, deviceFarmFloor: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })}
+                    className="w-14 px-1.5 py-0.5 bg-[#050b14] border border-[#1e365b] rounded text-right font-mono text-xs text-rose-400 font-bold focus:outline-none focus:border-rose-500"
+                  />
+                </div>
               </div>
             </div>
 
@@ -1904,21 +2094,38 @@ export default function ScoringLabAdmin() {
                   <span>Multiplicador 2 Entidades:</span>
                   <span className="font-mono text-emerald-400 font-bold">{editingConfig.multiEntityMultipliers?.two}x</span>
                 </div>
-                <input
-                  type="range"
-                  min="1.0"
-                  max="1.6"
-                  step="0.05"
-                  value={editingConfig.multiEntityMultipliers?.two ?? 1.25}
-                  onChange={e => setEditingConfig({
-                    ...editingConfig,
-                    multiEntityMultipliers: {
-                      ...editingConfig.multiEntityMultipliers,
-                      two: Number(e.target.value),
-                    },
-                  })}
-                  className="w-full accent-emerald-500 h-1.5 bg-[#17253d] rounded cursor-pointer"
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min="1.0"
+                    max="1.6"
+                    step="0.05"
+                    value={editingConfig.multiEntityMultipliers?.two ?? 1.25}
+                    onChange={e => setEditingConfig({
+                      ...editingConfig,
+                      multiEntityMultipliers: {
+                        ...editingConfig.multiEntityMultipliers,
+                        two: Number(e.target.value),
+                      },
+                    })}
+                    className="flex-1 accent-emerald-500 h-1.5 bg-[#17253d] rounded cursor-pointer"
+                  />
+                  <input
+                    type="number"
+                    min="1.0"
+                    max="3.0"
+                    step="0.05"
+                    value={editingConfig.multiEntityMultipliers?.two ?? 1.25}
+                    onChange={e => setEditingConfig({
+                      ...editingConfig,
+                      multiEntityMultipliers: {
+                        ...editingConfig.multiEntityMultipliers,
+                        two: Number(e.target.value) || 1.0,
+                      },
+                    })}
+                    className="w-16 px-1.5 py-0.5 bg-[#050b14] border border-[#1e365b] rounded text-right font-mono text-xs text-emerald-400 font-bold focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
               </div>
 
               <div>
@@ -1926,21 +2133,38 @@ export default function ScoringLabAdmin() {
                   <span>Multiplicador 3 Entidades:</span>
                   <span className="font-mono text-emerald-400 font-bold">{editingConfig.multiEntityMultipliers?.three}x</span>
                 </div>
-                <input
-                  type="range"
-                  min="1.2"
-                  max="1.9"
-                  step="0.05"
-                  value={editingConfig.multiEntityMultipliers?.three ?? 1.50}
-                  onChange={e => setEditingConfig({
-                    ...editingConfig,
-                    multiEntityMultipliers: {
-                      ...editingConfig.multiEntityMultipliers,
-                      three: Number(e.target.value),
-                    },
-                  })}
-                  className="w-full accent-emerald-500 h-1.5 bg-[#17253d] rounded cursor-pointer"
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min="1.2"
+                    max="1.9"
+                    step="0.05"
+                    value={editingConfig.multiEntityMultipliers?.three ?? 1.50}
+                    onChange={e => setEditingConfig({
+                      ...editingConfig,
+                      multiEntityMultipliers: {
+                        ...editingConfig.multiEntityMultipliers,
+                        three: Number(e.target.value),
+                      },
+                    })}
+                    className="flex-1 accent-emerald-500 h-1.5 bg-[#17253d] rounded cursor-pointer"
+                  />
+                  <input
+                    type="number"
+                    min="1.0"
+                    max="3.0"
+                    step="0.05"
+                    value={editingConfig.multiEntityMultipliers?.three ?? 1.50}
+                    onChange={e => setEditingConfig({
+                      ...editingConfig,
+                      multiEntityMultipliers: {
+                        ...editingConfig.multiEntityMultipliers,
+                        three: Number(e.target.value) || 1.0,
+                      },
+                    })}
+                    className="w-16 px-1.5 py-0.5 bg-[#050b14] border border-[#1e365b] rounded text-right font-mono text-xs text-emerald-400 font-bold focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
               </div>
 
               <div>
@@ -1948,21 +2172,38 @@ export default function ScoringLabAdmin() {
                   <span>Multiplicador 4+ Entidades:</span>
                   <span className="font-mono text-emerald-400 font-bold">{editingConfig.multiEntityMultipliers?.fourOrMore}x</span>
                 </div>
-                <input
-                  type="range"
-                  min="1.4"
-                  max="2.5"
-                  step="0.05"
-                  value={editingConfig.multiEntityMultipliers?.fourOrMore ?? 1.80}
-                  onChange={e => setEditingConfig({
-                    ...editingConfig,
-                    multiEntityMultipliers: {
-                      ...editingConfig.multiEntityMultipliers,
-                      fourOrMore: Number(e.target.value),
-                    },
-                  })}
-                  className="w-full accent-emerald-500 h-1.5 bg-[#17253d] rounded cursor-pointer"
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min="1.4"
+                    max="2.5"
+                    step="0.05"
+                    value={editingConfig.multiEntityMultipliers?.fourOrMore ?? 1.80}
+                    onChange={e => setEditingConfig({
+                      ...editingConfig,
+                      multiEntityMultipliers: {
+                        ...editingConfig.multiEntityMultipliers,
+                        fourOrMore: Number(e.target.value),
+                      },
+                    })}
+                    className="flex-1 accent-emerald-500 h-1.5 bg-[#17253d] rounded cursor-pointer"
+                  />
+                  <input
+                    type="number"
+                    min="1.0"
+                    max="5.0"
+                    step="0.05"
+                    value={editingConfig.multiEntityMultipliers?.fourOrMore ?? 1.80}
+                    onChange={e => setEditingConfig({
+                      ...editingConfig,
+                      multiEntityMultipliers: {
+                        ...editingConfig.multiEntityMultipliers,
+                        fourOrMore: Number(e.target.value) || 1.0,
+                      },
+                    })}
+                    className="w-16 px-1.5 py-0.5 bg-[#050b14] border border-[#1e365b] rounded text-right font-mono text-xs text-emerald-400 font-bold focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -1976,28 +2217,44 @@ export default function ScoringLabAdmin() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {TYPOLOGIES.map(t => (
-                <div key={t.id} className="p-3 bg-[#0a1528] border border-[#1b345f] rounded-lg space-y-1.5">
+                <div key={t.id} className="p-3 bg-[#0a1528] border border-[#1b345f] rounded-lg space-y-2">
                   <div className="flex justify-between text-xs">
                     <span className="font-semibold text-slate-200">{t.label}</span>
                     <span className="font-mono font-bold text-cyan-300">
                       {editingConfig.severityBase?.[t.id] ?? t.baseScore} pts
                     </span>
                   </div>
-                  <input
-                    type="range"
-                    min="20"
-                    max="100"
-                    step="5"
-                    value={editingConfig.severityBase?.[t.id] ?? t.baseScore}
-                    onChange={e => setEditingConfig({
-                      ...editingConfig,
-                      severityBase: {
-                        ...editingConfig.severityBase,
-                        [t.id]: Number(e.target.value),
-                      },
-                    })}
-                    className="w-full accent-cyan-500 h-1.5 bg-[#17253d] rounded cursor-pointer"
-                  />
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="range"
+                      min="20"
+                      max="100"
+                      step="5"
+                      value={editingConfig.severityBase?.[t.id] ?? t.baseScore}
+                      onChange={e => setEditingConfig({
+                        ...editingConfig,
+                        severityBase: {
+                          ...editingConfig.severityBase,
+                          [t.id]: Number(e.target.value),
+                        },
+                      })}
+                      className="flex-1 accent-cyan-500 h-1.5 bg-[#17253d] rounded cursor-pointer"
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={editingConfig.severityBase?.[t.id] ?? t.baseScore}
+                      onChange={e => setEditingConfig({
+                        ...editingConfig,
+                        severityBase: {
+                          ...editingConfig.severityBase,
+                          [t.id]: Math.max(0, Math.min(100, Number(e.target.value) || 0)),
+                        },
+                      })}
+                      className="w-14 px-1.5 py-0.5 bg-[#050b14] border border-[#1e365b] rounded text-right font-mono text-xs text-cyan-300 font-bold focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
                   <span className="text-[10px] text-[#64748b] block">{t.desc}</span>
                 </div>
               ))}

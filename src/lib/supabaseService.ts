@@ -7,8 +7,9 @@ import {
   DeviceCUITLink,
   ServiceScope,
   AppUser,
-} from './types';
-import { supabaseFetch, getSupabaseConfig, getSupabaseBrowserClient } from './supabaseClient';
+  ScoringConfig,
+} from '@/lib/types';
+import { supabaseFetch, getSupabaseConfig, getSupabaseBrowserClient } from '@/lib/supabaseClient';
 
 /**
  * Servicio de sincronización y persistencia con Supabase
@@ -28,7 +29,15 @@ export class SupabaseService {
   /**
    * Carga todo el estado persistente desde Supabase para inicializar el store
    */
-  static async loadAllData(scope: ServiceScope = 'CONSORTIUM'): Promise<{
+  /**
+   * Carga todo el estado persistente desde Supabase para inicializar el store
+   * con aislamiento estricto por tenant (las entidades no ven API keys de competidores
+   * ni aristas privadas ajenas al consorcio).
+   */
+  static async loadAllData(
+    scope: ServiceScope = 'CONSORTIUM',
+    entityId?: string
+  ): Promise<{
     fintechs: FintechEntity[];
     identityNodes: IdentityNode[];
     graphEdges: SpecGraphEdge[];
@@ -36,10 +45,20 @@ export class SupabaseService {
     auditLogs: StoreAuditLog[];
     deviceCUITLinks: DeviceCUITLink[];
     appUsers?: AppUser[];
+    scoringConfig?: ScoringConfig;
   } | null> {
     if (!this.isAvailable()) return null;
 
     try {
+      // Si entityId está presente (sesión de analista bancario), filtrar aristas y alertas por scope o pertenencia
+      const edgesQuery = entityId
+        ? `graph_edges?select=*&or=(scope.eq.CONSORTIUM,reported_by_entity_id.eq.${entityId})&order=timestamp.desc&limit=1000`
+        : 'graph_edges?select=*&order=timestamp.desc&limit=1000';
+
+      const alertsQuery = entityId
+        ? `network_alerts?select=*&or=(scope.eq.CONSORTIUM,created_by_entity_id.eq.${entityId})&order=created_at.desc`
+        : 'network_alerts?select=*&order=created_at.desc';
+
       const [
         fintechsRes,
         nodesRes,
@@ -48,14 +67,16 @@ export class SupabaseService {
         auditRes,
         deviceLinksRes,
         appUsersRes,
+        scoringConfigRes,
       ] = await Promise.all([
         supabaseFetch<any[]>('fintech_entities?select=*'),
         supabaseFetch<any[]>('identity_nodes?select=*'),
-        supabaseFetch<any[]>('graph_edges?select=*&order=timestamp.desc&limit=1000'),
-        supabaseFetch<any[]>('network_alerts?select=*&order=created_at.desc'),
+        supabaseFetch<any[]>(edgesQuery),
+        supabaseFetch<any[]>(alertsQuery),
         supabaseFetch<any[]>('audit_logs?select=*&order=timestamp.desc&limit=200'),
         supabaseFetch<any[]>('device_cuit_links?select=*&order=timestamp.desc&limit=1000'),
         supabaseFetch<any[]>('app_users?select=*'),
+        supabaseFetch<any[]>('scoring_config?id=eq.consortium_baseline&limit=1'),
       ]);
 
       if (fintechsRes.error && nodesRes.error && edgesRes.error) {
@@ -63,11 +84,11 @@ export class SupabaseService {
         return null;
       }
 
-      // Mapear entidades
+      // Mapear entidades con enmascaramiento de API Keys ajenas para proteger secretos bancarios
       const fintechs: FintechEntity[] = (fintechsRes.data || []).map(f => ({
         id: f.id,
         name: f.name,
-        apiKey: f.api_key,
+        apiKey: !entityId || f.id === entityId ? f.api_key : '••••••••••••••••••••••••',
         trustWeight: Number(f.trust_weight) || 0.7,
         status: f.status as 'ACTIVE' | 'SUSPENDED',
         queriesCount: Number(f.queries_count) || 0,
@@ -146,6 +167,11 @@ export class SupabaseService {
         lastLogin: u.last_login || undefined,
       }));
 
+      const scoringConfig: ScoringConfig | undefined =
+        scoringConfigRes.data && scoringConfigRes.data.length > 0 && scoringConfigRes.data[0].config
+          ? (scoringConfigRes.data[0].config as ScoringConfig)
+          : undefined;
+
       return {
         fintechs,
         identityNodes,
@@ -154,6 +180,7 @@ export class SupabaseService {
         auditLogs,
         deviceCUITLinks,
         appUsers: appUsers.length > 0 ? appUsers : undefined,
+        scoringConfig,
       };
     } catch (err) {
       console.error('[SupabaseService] Error durante loadAllData:', err);
@@ -535,6 +562,67 @@ export class SupabaseService {
   }
 
   /**
+   * Persiste la configuración de umbrales del motor (Baseline) en Supabase y audita el cambio
+   */
+  static async saveScoringConfig(
+    config: ScoringConfig,
+    adminEmail: string,
+    diffs: { field: string; oldValue: any; newValue: any }[] = []
+  ): Promise<boolean> {
+    if (!this.isAvailable()) return false;
+
+    try {
+      const timestamp = new Date().toISOString();
+
+      // 1. Upsert a la tabla scoring_config en Supabase
+      await supabaseFetch('scoring_config', {
+        method: 'POST',
+        prefer: 'resolution=merge-duplicates',
+        body: {
+          id: 'consortium_baseline',
+          config,
+          updated_at: timestamp,
+          updated_by: adminEmail,
+        },
+      }).catch(err => console.warn('[SupabaseService] scoring_config table warning:', err));
+
+      // 2. Registrar en auditoría inmutable de compliance (audit_logs)
+      if (diffs.length > 0) {
+        await this.recordConfigAuditLogs(adminEmail, diffs);
+      } else {
+        await this.recordAuditLog(
+          adminEmail,
+          'SCORING_BASELINE_SAVED',
+          'Configuración de umbrales y baseline del consorcio guardada en la base de datos',
+          'CONSORTIUM'
+        );
+      }
+
+      return true;
+    } catch (err) {
+      console.error('[SupabaseService] Error guardando scoring config:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Carga la configuración de umbrales del motor desde Supabase si existe
+   */
+  static async fetchScoringConfig(): Promise<ScoringConfig | null> {
+    if (!this.isAvailable()) return null;
+
+    try {
+      const res = await supabaseFetch<any[]>('scoring_config?id=eq.consortium_baseline&limit=1');
+      if (res.data && res.data.length > 0 && res.data[0].config) {
+        return res.data[0].config as ScoringConfig;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Busca un incidente real en Supabase por ID de arista, hash o identificador
    */
   static async fetchIncidentById(id: string): Promise<SpecGraphEdge | null> {
@@ -746,6 +834,26 @@ export class SupabaseService {
     } catch (e) {
       console.warn('[Supabase Realtime Subscribe Error]:', e);
     }
+  }
+
+  /**
+   * Ejecución de Recursive CTE en Supabase para rastrear redes de mulas (k-hop neighbors)
+   */
+  static async traverseMuleNetwork(rootHash: string, maxDepth: number = 3): Promise<any[]> {
+    if (!this.isAvailable()) return [];
+    try {
+      const client = getSupabaseBrowserClient();
+      const { data, error } = await client.rpc('traverse_mule_network', {
+        root_hash: rootHash,
+        max_depth: maxDepth,
+      });
+      if (!error && Array.isArray(data)) {
+        return data;
+      }
+    } catch (err) {
+      console.warn('[SupabaseService] Fallback de traverseMuleNetwork:', err);
+    }
+    return [];
   }
 }
 
