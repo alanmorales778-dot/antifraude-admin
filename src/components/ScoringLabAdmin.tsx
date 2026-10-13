@@ -38,6 +38,7 @@ import {
   AlertCircle,
   X,
   ExternalLink,
+  Share2,
 } from 'lucide-react';
 import { SEVERITY_BASE, DECAY_FLOOR, computeHeuristicLearningMetrics, TYPOLOGY_LABELS } from '@/lib/fraudEngine';
 import { IncidentCategory, ScoringConfig, DEFAULT_SCORING_CONFIG, LookupResult, SpecGraphEdge, NetworkAlert, TypologyHeuristicMetric } from '@/lib/types';
@@ -1835,7 +1836,7 @@ export default function ScoringLabAdmin() {
                       <div className="flex items-start justify-between">
                         <div>
                           <span className="text-xs font-bold text-amber-200 block">
-                            {TYPOLOGY_LABELS[alert.category] || alert.category}
+                            {(TYPOLOGY_LABELS as any)?.[alert.category] || alert.category}
                           </span>
                           <span className="text-[10px] text-slate-400">
                             {alert.revokedCount} revocaciones de {alert.totalReports} reportes
