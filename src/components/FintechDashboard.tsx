@@ -75,6 +75,8 @@ const REASON_CODE_LABELS: Record<ReasonCode, { label: string; icon: string; colo
   CHARGEBACK_HISTORY: { label: 'Historial Contracargos', icon: '💳', color: 'bg-amber-500/20 text-amber-300 border-amber-500/30' },
   DEVICE_LINKED_FRAUD: { label: 'Device Vinculado a Fraude', icon: '📱', color: 'bg-rose-500/20 text-rose-300 border-rose-500/30' },
   INTERNAL_RECURRENCE: { label: 'Recurrencia Interna', icon: '🔁', color: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' },
+  MULE_NETWORK_CLUSTER: { label: 'Cluster Red de Mulas', icon: '🕸️', color: 'bg-purple-600/20 text-purple-200 border-purple-500/30' },
+  SHARED_DEVICE_FARM: { label: 'Dispositivo Compartido (Granja)', icon: '📱', color: 'bg-rose-600/20 text-rose-200 border-rose-500/30' },
 };
 
 function recommendationBadge(rec: 'ALLOW' | 'REVIEW' | 'BLOCK') {
@@ -970,7 +972,11 @@ function SingleLookupView() {
               {result.breakdown.reasonCodes && result.breakdown.reasonCodes.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {result.breakdown.reasonCodes.map(code => {
-                    const cfg = REASON_CODE_LABELS[code];
+                    const cfg = REASON_CODE_LABELS[code] || {
+                      label: String(code).replace(/_/g, ' '),
+                      icon: '⚠️',
+                      color: 'bg-slate-700/30 text-slate-300 border-slate-600/40',
+                    };
                     return (
                       <span key={code} className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-bold ${cfg.color}`}>
                         <span>{cfg.icon}</span>

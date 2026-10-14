@@ -979,7 +979,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
               timestamp: new Date().toISOString(),
               actor: actorName,
               action: 'LOOKUP',
-              details: `[${state.activeService}] Consulta de riesgo — ${identifiers} → Score: ${result.breakdown.finalScore} (${result.breakdown.riskLevel}) [${result.breakdown.recommendation}]`,
+              details: `[${state.activeService}] Consulta de riesgo — Tokens: [${tokensList || 'tok_blind'}] → Score: ${result.breakdown.finalScore} (${result.breakdown.riskLevel}) [${result.breakdown.recommendation}]`,
             },
             scope: state.activeService,
           }).catch(err => console.warn('[Supabase Sync Lookup]:', err));
@@ -1102,7 +1102,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
               timestamp: new Date().toISOString(),
               actor: actorName,
               action: 'FRAUD_REPORT',
-              details: `[${state.activeService}] Reporte ${incidentCategory} ingresado — ${identifiers} (${newEdges.length} aristas creadas)`,
+              details: `[${state.activeService}] Reporte ${incidentCategory} ingresado — Tokens: [${tokensList || 'tok_blind'}] (${newEdges.length} aristas creadas)`,
             },
             scope: state.activeService,
           }).catch(err => console.warn('[Supabase Sync Report]:', err));
