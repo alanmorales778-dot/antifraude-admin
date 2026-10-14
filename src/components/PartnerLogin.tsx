@@ -22,6 +22,7 @@ export default function PartnerLogin({
 }: PartnerLoginProps) {
   return (
     <UnifiedLogin
+      portalType="partner"
       onSuccess={onSuccess}
       onNavigateHome={onNavigateHome}
     />

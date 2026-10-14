@@ -249,9 +249,18 @@ export default function EntityPortal({ fintechId, onLogout }: EntityPortalProps)
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Badge Real-Time Federado */}
+            <div className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 font-mono text-[11px]" title="Sincronización WebSocket en tiempo real activa">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span>Real-Time Sync Activo</span>
+            </div>
+
             {/* Badge Zero-Knowledge */}
             <div className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#062c1d] border border-[#0f5132] text-[#34d399] font-mono text-[11px]">
-              <span className="w-2 h-2 rounded-full bg-[#10b981] animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-[#10b981]" />
               <span>Zero-Knowledge Activo · SHA-256</span>
             </div>
 

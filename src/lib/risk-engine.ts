@@ -103,7 +103,7 @@ export async function evaluateRisk(
   let recencyScore = 100;
   if (lastReportedAt) {
     const daysSince = Math.max(0, (Date.now() - new Date(lastReportedAt).getTime()) / (1000 * 60 * 60 * 24));
-    recencyScore = Math.max(10, Math.round(100 - daysSince * 3));
+    recencyScore = Math.max(10, Math.round(100 - daysSince * 3.2));
   } else {
     recencyScore = 0;
   }
@@ -112,14 +112,14 @@ export async function evaluateRisk(
   const emailVerification = type === 'EMAIL' ? verifyEmailExistence(rawValue) : undefined;
   const emailPenalty = emailVerification ? emailVerification.scorePenalty : 0;
 
-  // Ponderación final (0 a 100)
+  // Ponderación final (0 a 100) - Calibración ML v2.1
   let calculatedScore = 0;
   if (entity && !rehabilitated) {
     calculatedScore = Math.round(
-      consensusScore * 0.4 +
-      velocityScore * 0.25 +
+      consensusScore * 0.45 +
+      velocityScore * 0.20 +
       severityScore * 0.25 +
-      recencyScore * 0.1
+      recencyScore * 0.10
     );
     calculatedScore = Math.min(100, Math.max(5, calculatedScore + emailPenalty));
   } else if (rehabilitated) {
@@ -143,7 +143,7 @@ export async function evaluateRisk(
     if (calculatedScore >= 90) {
       killSwitch = true; // Kill-Switch intercepción <15ms con auto-pausa
     }
-  } else if (calculatedScore >= 35 || distinctCount >= 2) {
+  } else if (calculatedScore >= 38 || distinctCount >= 2) {
     riskLevel = 'MEDIO';
     recommendation = 'DESAFIO_2FA';
   } else {
@@ -153,9 +153,9 @@ export async function evaluateRisk(
 
   const riskMatrix: RiskMatrixFactors = {
     consensusScore,
-    consensusWeight: 40,
+    consensusWeight: 45,
     velocityScore,
-    velocityWeight: 25,
+    velocityWeight: 20,
     severityScore,
     severityWeight: 25,
     recencyScore,

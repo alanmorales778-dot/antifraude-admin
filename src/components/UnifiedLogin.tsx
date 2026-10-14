@@ -16,6 +16,7 @@ import {
   HelpCircle,
   QrCode,
   Sparkles,
+  Building2,
 } from 'lucide-react';
 import { useConsortiumStore } from '@/lib/store';
 import { getSupabaseBrowserClient } from '@/lib/supabaseClient';
@@ -23,15 +24,27 @@ import { generateTOTPSecret, generateTOTPUri, generateQRCodeSvg } from '@/lib/to
 import ConsortiumLogo from '@/components/ConsortiumLogo';
 
 interface UnifiedLoginProps {
+  portalType?: 'partner' | 'admin';
   onSuccess?: () => void;
   onNavigateHome?: () => void;
+  onNavigateAdmin?: () => void;
 }
 
 export default function UnifiedLogin({
+  portalType = 'partner',
   onSuccess,
   onNavigateHome,
+  onNavigateAdmin,
 }: UnifiedLoginProps) {
-  const { loginUnified, complete2FAEnrollment, setCurrentRoute, appUsers } = useConsortiumStore();
+  const { loginUnified, complete2FAEnrollment, setCurrentRoute, appUsers, fintechs } = useConsortiumStore();
+  const isPartner = portalType === 'partner';
+  const [selectedEntityId, setSelectedEntityId] = useState<string>(fintechs[0]?.id || '');
+
+  React.useEffect(() => {
+    if (!selectedEntityId && fintechs.length > 0) {
+      setSelectedEntityId(fintechs[0].id);
+    }
+  }, [fintechs, selectedEntityId]);
 
   // Estados de flujo de pantalla: LOGIN | 2FA_CODE | 2FA_ENROLL | FORGOT_PASSWORD
   const [viewMode, setViewMode] = useState<'LOGIN' | '2FA_CODE' | '2FA_ENROLL' | 'FORGOT_PASSWORD'>('LOGIN');
@@ -106,6 +119,8 @@ export default function UnifiedLogin({
         email: cleanEmail,
         password: password.trim(),
         totpCode: '',
+        targetPortal: portalType,
+        selectedEntityId: isPartner ? selectedEntityId : undefined,
       });
 
       if (res.requires2FAEnroll) {
@@ -118,8 +133,8 @@ export default function UnifiedLogin({
       } else if (res.success) {
         setSuccessMsg(res.message);
         setTimeout(() => {
+          if (res.targetRoute) setCurrentRoute(res.targetRoute);
           if (onSuccess) onSuccess();
-          else if (res.targetRoute) setCurrentRoute(res.targetRoute);
         }, 600);
       } else {
         setErrorMsg(res.message);
@@ -149,13 +164,15 @@ export default function UnifiedLogin({
         email: cleanEmail,
         password: password.trim(),
         totpCode: cleanCode,
+        targetPortal: portalType,
+        selectedEntityId: isPartner ? selectedEntityId : undefined,
       });
 
       if (res.success) {
         setSuccessMsg(res.message);
         setTimeout(() => {
+          if (res.targetRoute) setCurrentRoute(res.targetRoute);
           if (onSuccess) onSuccess();
-          else if (res.targetRoute) setCurrentRoute(res.targetRoute);
         }, 600);
       } else {
         setErrorMsg(res.message);
@@ -199,6 +216,7 @@ export default function UnifiedLogin({
       if (res.success) {
         setSuccessMsg('¡Google Authenticator vinculado y verificado! Redirigiendo a su panel...');
         setTimeout(() => {
+          setCurrentRoute(isPartner ? 'partner-portal' : 'admin-portal');
           if (onSuccess) onSuccess();
         }, 900);
       } else {
@@ -243,16 +261,16 @@ export default function UnifiedLogin({
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <button
             type="button"
-            onClick={onNavigateHome || (() => setCurrentRoute('landing'))}
+            onClick={onNavigateHome || (() => setCurrentRoute('partner-login'))}
             className="flex items-center gap-3 text-left group"
           >
             <ConsortiumLogo size="sm" showGlow={true} className="group-hover:scale-105 transition-transform" />
             <div>
               <span className="block text-xs font-bold tracking-wider text-white uppercase group-hover:text-cyan-300 transition-colors">
-                Consorcio Federal de Prevención de Fraude
+                {isPartner ? 'Portal de Entidades Financieras' : 'Consorcio Federal de Prevención de Fraude'}
               </span>
               <span className="block text-[11px] text-[#60a5fa] font-mono">
-                Ingreso Único Centralizado · SSO + 2FA
+                {isPartner ? 'Acceso Bancos, Fintechs y Empresas · Prevención ZK' : 'Consola Central de Gobernanza · SuperAdmin'}
               </span>
             </div>
           </button>
@@ -276,18 +294,20 @@ export default function UnifiedLogin({
 
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-[#13233e] border border-[#203c68] text-[11px] font-mono text-[#93c5fd] uppercase tracking-wider mb-2.5">
                 <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
-                Control de Accesos RBAC + 2FA
+                {isPartner ? 'Acceso Bancario RBAC + 2FA' : 'Control Central RBAC + 2FA'}
               </div>
 
               <h1 className="text-xl font-bold tracking-tight text-white">
-                {viewMode === 'LOGIN' && 'Ingreso a la Plataforma'}
+                {viewMode === 'LOGIN' && (isPartner ? 'Ingreso para Bancos & Fintechs' : 'Gobernanza Central del Consorcio')}
                 {viewMode === '2FA_CODE' && 'Verificación de Seguridad 2FA'}
                 {viewMode === '2FA_ENROLL' && 'Enrolamiento Google Authenticator'}
                 {viewMode === 'FORGOT_PASSWORD' && 'Recuperar Contraseña'}
               </h1>
 
               <p className="text-xs text-[#94a3b8] mt-1.5 max-w-sm leading-relaxed">
-                {viewMode === 'LOGIN' && 'Ingrese con sus credenciales institucionales. El sistema identificará su rol y lo dirigirá a su consola.'}
+                {viewMode === 'LOGIN' && (isPartner
+                  ? 'Acceso exclusivo para Bancos, Fintechs y Empresas. Ingrese con sus credenciales institucionales para acceder a la mesa de riesgo de su entidad.'
+                  : 'Consola reservada para administradores de red, calibración de pesos de confianza y auditoría regulatoria BCRA Com. A7370.')}
                 {viewMode === '2FA_CODE' && `Ingrese el código dinámico de 6 dígitos para la cuenta ${email}.`}
                 {viewMode === '2FA_ENROLL' && 'Para cumplir la normativa BCRA Com. A7370, vincule Google Authenticator escaneando el código QR.'}
                 {viewMode === 'FORGOT_PASSWORD' && 'Ingrese su correo institucional para recibir el enlace de restablecimiento seguro.'}
@@ -311,6 +331,29 @@ export default function UnifiedLogin({
             {/* ── MODO 1: LOGIN (EMAIL + PASSWORD + OLVIDÉ CONTRASEÑA) ── */}
             {viewMode === 'LOGIN' && (
               <form onSubmit={handlePrimarySubmit} className="p-8 space-y-4">
+                {/* Selector de Entidad / Banco si estamos en modo Partner */}
+                {isPartner && fintechs.length > 0 && (
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-[#cbd5e1] tracking-wide">
+                      Entidad Financiera Adherida
+                    </label>
+                    <div className="relative">
+                      <select
+                        value={selectedEntityId}
+                        onChange={e => setSelectedEntityId(e.target.value)}
+                        className="w-full px-3.5 py-2.5 pl-10 bg-[#060c17] border border-[#1e365b] rounded-lg text-xs text-white focus:outline-none focus:border-cyan-500 transition-all font-sans cursor-pointer appearance-none"
+                      >
+                        {fintechs.map(f => (
+                          <option key={f.id} value={f.id} className="bg-[#0d182e] text-white">
+                            {f.name} {f.status === 'SUSPENDED' ? '· [Cuarentena]' : '· [Entidad Activa]'}
+                          </option>
+                        ))}
+                      </select>
+                      <Building2 className="w-4 h-4 text-cyan-400 absolute left-3.5 top-3 pointer-events-none" />
+                    </div>
+                  </div>
+                )}
+
                 {/* Campo Email */}
                 <div className="space-y-1.5">
                   <label className="block text-xs font-semibold text-[#cbd5e1] tracking-wide">
@@ -323,7 +366,7 @@ export default function UnifiedLogin({
                       autoFocus
                       value={email}
                       onChange={e => setEmail(e.target.value)}
-                      placeholder="analista@banco.com.ar"
+                      placeholder={isPartner ? 'analista@bancoprueba.com.ar' : 'admin@consorcio.ar'}
                       className="w-full px-3.5 py-2.5 pl-10 bg-[#060c17] border border-[#1e365b] rounded-lg text-xs text-white placeholder-[#475569] focus:outline-none focus:border-cyan-500 transition-all font-mono"
                     />
                     <Mail className="w-4 h-4 text-[#64748b] absolute left-3.5 top-3" />
@@ -387,18 +430,35 @@ export default function UnifiedLogin({
                       </>
                     ) : (
                       <>
-                        <span>Continuar con Doble Factor (2FA)</span>
+                        <span>{isPartner ? 'Ingresar a Mesa de Riesgo Bancaria' : 'Continuar con Doble Factor (2FA)'}</span>
                         <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                       </>
                     )}
                   </button>
                 </div>
 
-                {/* Aviso de Registro Cerrado */}
-                <div className="pt-4 border-t border-[#162744] text-center">
+                {/* Pie con opciones y enlaces de rol */}
+                <div className="pt-4 border-t border-[#162744] flex flex-col items-center gap-2 text-center">
                   <p className="text-[11px] text-[#64748b] leading-relaxed">
-                    🔒 <strong className="text-[#94a3b8]">Acceso Restringido:</strong> Registro público deshabilitado. Solo ingresan cuentas autorizadas dadas de alta por la Gobernanza Central.
+                    🔒 <strong className="text-[#94a3b8]">Acceso Restringido:</strong> Solo ingresan cuentas autorizadas dadas de alta por la Gobernanza Central.
                   </p>
+                  {isPartner ? (
+                    <button
+                      type="button"
+                      onClick={onNavigateAdmin || (() => setCurrentRoute('admin-login'))}
+                      className="text-[11px] text-[#60a5fa]/70 hover:text-cyan-300 transition-colors underline underline-offset-4 font-mono mt-1"
+                    >
+                      ¿Administrador de Gobernanza? Ingreso SuperAdmin
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={onNavigateHome || (() => setCurrentRoute('partner-login'))}
+                      className="text-[11px] text-[#60a5fa] hover:text-white transition-colors font-mono mt-1"
+                    >
+                      ← Volver al Portal de Bancos y Fintechs
+                    </button>
+                  )}
                 </div>
               </form>
             )}

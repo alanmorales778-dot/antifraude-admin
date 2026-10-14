@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React from 'react';
 import { Layers, CheckCircle, AlertTriangle, ShieldAlert, Clock, Activity, Building, Zap } from 'lucide-react';
@@ -23,36 +23,36 @@ export default function RiskMatrixBreakdown({
   const factors = [
     {
       name: 'Factor Consenso Comunitario',
-      weight: '40%',
+      weight: `${activeMatrix.consensusWeight ?? 45}%`,
       rawScore: activeMatrix.consensusScore,
-      weightedContribution: Math.round(activeMatrix.consensusScore * 0.4),
+      weightedContribution: Math.round(activeMatrix.consensusScore * ((activeMatrix.consensusWeight ?? 45) / 100)),
       icon: Building,
       color: 'bg-indigo-500 text-indigo-400',
       description: 'Pondera la cantidad de entidades financieras independientes que reportaron el identificador.',
     },
     {
       name: 'Factor Frecuencia / Velocidad',
-      weight: '25%',
+      weight: `${activeMatrix.velocityWeight ?? 20}%`,
       rawScore: activeMatrix.velocityScore,
-      weightedContribution: Math.round(activeMatrix.velocityScore * 0.25),
+      weightedContribution: Math.round(activeMatrix.velocityScore * ((activeMatrix.velocityWeight ?? 20) / 100)),
       icon: Zap,
       color: 'bg-cyan-500 text-cyan-400',
       description: 'Volumen de intentos de transacción u onboarding detectados en la red en las últimas 24h.',
     },
     {
       name: 'Factor Gravedad del Evento',
-      weight: '25%',
+      weight: `${activeMatrix.severityWeight ?? 25}%`,
       rawScore: activeMatrix.severityScore,
-      weightedContribution: Math.round(activeMatrix.severityScore * 0.25),
+      weightedContribution: Math.round(activeMatrix.severityScore * ((activeMatrix.severityWeight ?? 25) / 100)),
       icon: ShieldAlert,
       color: 'bg-rose-500 text-rose-400',
       description: 'Severidad del delito (ej. Cuentas Mula y Robo de Cuenta computan mayor peso que abuso promocional).',
     },
     {
       name: 'Factor Recencia / Decaimiento',
-      weight: '10%',
+      weight: `${activeMatrix.recencyWeight ?? 10}%`,
       rawScore: activeMatrix.recencyScore,
-      weightedContribution: Math.round(activeMatrix.recencyScore * 0.1),
+      weightedContribution: Math.round(activeMatrix.recencyScore * ((activeMatrix.recencyWeight ?? 10) / 100)),
       icon: Clock,
       color: 'bg-amber-500 text-amber-400',
       description: 'Atenuación temporal automática a medida que transcurren semanas sin nuevos incidentes.',
@@ -141,7 +141,7 @@ export default function RiskMatrixBreakdown({
       {/* Sum explanation */}
       <div className="rounded-xl border border-white/10 bg-black/40 p-3 text-[11px] text-slate-400 flex flex-col sm:flex-row items-center justify-between gap-2 font-mono">
         <span>
-          Fórmula: (Consenso × 0.40) + (Velocidad × 0.25) + (Gravedad × 0.25) + (Recencia × 0.10)
+          Fórmula: (Consenso × {(activeMatrix.consensusWeight ?? 45) / 100}) + (Velocidad × {(activeMatrix.velocityWeight ?? 20) / 100}) + (Gravedad × {(activeMatrix.severityWeight ?? 25) / 100}) + (Recencia × {(activeMatrix.recencyWeight ?? 10) / 100})
         </span>
         <span className="text-[var(--accent-primary)] font-bold">
           = {activeMatrix.totalWeightedScore} pts Ponderados

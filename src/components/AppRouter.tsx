@@ -78,13 +78,13 @@ export default function AppRouter() {
       }
 
       // En la raíz sin parámetros específicos:
-      if (adminSession?.isAuthenticated) {
-        setCurrentRoute('admin-portal');
-      } else if (partnerSession?.isAuthenticated) {
+      if (partnerSession?.isAuthenticated) {
         setCurrentRoute('partner-portal');
+      } else if (adminSession?.isAuthenticated) {
+        setCurrentRoute('admin-portal');
       } else {
-        // Portal Institucional Oficial como pantalla principal
-        setCurrentRoute('landing');
+        // Pantalla Principal por defecto: Exclusivamente inicio de sesión para Empresas, Fintechs o Bancos
+        setCurrentRoute('partner-login');
       }
     };
 
@@ -93,7 +93,7 @@ export default function AppRouter() {
     return () => window.removeEventListener('hashchange', handleLocationChange);
   }, [setCurrentRoute, adminSession?.isAuthenticated, partnerSession?.isAuthenticated]);
 
-  // ── ROUTE: Landing Oficial (Institutional Gateway) ──
+  // ── ROUTE: Landing Opcional de Presentación Institucional ──
   if (currentRoute === 'landing') {
     return (
       <InstitutionalGateway
@@ -103,12 +103,13 @@ export default function AppRouter() {
     );
   }
 
-  // ── ROUTE: Admin Login / Unified Login ──
+  // ── ROUTE: Admin Login (Gobernanza Central / SuperAdmin) ──
   if (currentRoute === 'admin-login') {
     return (
       <UnifiedLogin
-        onSuccess={() => {}}
-        onNavigateHome={() => setCurrentRoute('landing')}
+        portalType="admin"
+        onSuccess={() => setCurrentRoute('admin-portal')}
+        onNavigateHome={() => setCurrentRoute('partner-login')}
       />
     );
   }
@@ -119,8 +120,9 @@ export default function AppRouter() {
     if (!adminSession?.isAuthenticated) {
       return (
         <UnifiedLogin
-          onSuccess={() => {}}
-          onNavigateHome={() => setCurrentRoute('landing')}
+          portalType="admin"
+          onSuccess={() => setCurrentRoute('admin-portal')}
+          onNavigateHome={() => setCurrentRoute('partner-login')}
         />
       );
     }
@@ -129,30 +131,34 @@ export default function AppRouter() {
       <AdminConsortiumPortal
         onLogout={() => {
           logoutAdmin();
-          setCurrentRoute('landing');
+          setCurrentRoute('partner-login');
         }}
       />
     );
   }
 
-  // ── ROUTE: Partner / Bancos Login / Unified Login ──
+  // ── ROUTE: Partner / Bancos / Fintechs Login (Pantalla Principal) ──
   if (currentRoute === 'partner-login') {
     return (
       <UnifiedLogin
-        onSuccess={() => {}}
-        onNavigateHome={() => setCurrentRoute('landing')}
+        portalType="partner"
+        onSuccess={() => setCurrentRoute('partner-portal')}
+        onNavigateAdmin={() => setCurrentRoute('admin-login')}
+        onNavigateHome={() => setCurrentRoute('partner-login')}
       />
     );
   }
 
-  // ── ROUTE: Partner Portal (Internal Risk Workspace) ──
+  // ── ROUTE: Partner Portal (Página del Propio Banco / Internal Risk Workspace) ──
   if (currentRoute === 'partner-portal') {
     // Auth Guard
     if (!partnerSession?.isAuthenticated) {
       return (
         <UnifiedLogin
-          onSuccess={() => {}}
-          onNavigateHome={() => setCurrentRoute('landing')}
+          portalType="partner"
+          onSuccess={() => setCurrentRoute('partner-portal')}
+          onNavigateAdmin={() => setCurrentRoute('admin-login')}
+          onNavigateHome={() => setCurrentRoute('partner-login')}
         />
       );
     }
@@ -162,17 +168,19 @@ export default function AppRouter() {
         fintechId={partnerSession.entityId}
         onLogout={() => {
           logoutPartner();
-          setCurrentRoute('landing');
+          setCurrentRoute('partner-login');
         }}
       />
     );
   }
 
-  // Default fallback: Portal Institucional Oficial
+  // Default fallback: Inicio de sesión de Bancos, Fintechs y Empresas
   return (
-    <InstitutionalGateway
-      onSelectAdmin={() => setCurrentRoute('admin-login')}
-      onSelectPartner={() => setCurrentRoute('partner-login')}
+    <UnifiedLogin
+      portalType="partner"
+      onSuccess={() => setCurrentRoute('partner-portal')}
+      onNavigateAdmin={() => setCurrentRoute('admin-login')}
+      onNavigateHome={() => setCurrentRoute('partner-login')}
     />
   );
 }

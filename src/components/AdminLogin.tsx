@@ -22,6 +22,7 @@ export default function AdminLogin({
 }: AdminLoginProps) {
   return (
     <UnifiedLogin
+      portalType="admin"
       onSuccess={onSuccess}
       onNavigateHome={onNavigateHome}
     />

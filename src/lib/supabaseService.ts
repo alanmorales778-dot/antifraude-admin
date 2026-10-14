@@ -837,6 +837,58 @@ export class SupabaseService {
   }
 
   /**
+   * Configura listeners de PostgreSQL Realtime (postgres_changes) y WebSocket Broadcast
+   * para sincronización instantánea entre navegadores y dispositivos
+   */
+  static setupRealtimeListener(handlers: {
+    onFintechChange?: (payload: any) => void;
+    onEdgeChange?: (payload: any) => void;
+    onNodeChange?: (payload: any) => void;
+    onAuditChange?: (payload: any) => void;
+    onBroadcastStateSync?: (payload: any) => void;
+  }): () => void {
+    if (!this.isAvailable()) return () => {};
+    try {
+      const client = getSupabaseBrowserClient();
+      const channel = client.channel('consortium_realtime_full_sync');
+
+      channel
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'fintech_entities' }, payload => {
+          if (handlers.onFintechChange) handlers.onFintechChange(payload);
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'graph_edges' }, payload => {
+          if (handlers.onEdgeChange) handlers.onEdgeChange(payload);
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'identity_nodes' }, payload => {
+          if (handlers.onNodeChange) handlers.onNodeChange(payload);
+        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'audit_logs' }, payload => {
+          if (handlers.onAuditChange) handlers.onAuditChange(payload);
+        })
+        .on('broadcast', { event: 'CONSORTIUM_STATE_SYNC' }, ({ payload }: any) => {
+          if (handlers.onBroadcastStateSync) handlers.onBroadcastStateSync(payload);
+        })
+        .subscribe((status, err) => {
+          if (status === 'SUBSCRIBED') {
+            console.log('[Supabase Realtime] Canal conectado y activo en tiempo real');
+          }
+          if (err) {
+            console.warn('[Supabase Realtime] Advertencia de suscripción:', err);
+          }
+        });
+
+      return () => {
+        try {
+          client.removeChannel(channel);
+        } catch {}
+      };
+    } catch (e) {
+      console.warn('[Supabase Realtime Setup Error]:', e);
+      return () => {};
+    }
+  }
+
+  /**
    * Ejecución de Recursive CTE en Supabase para rastrear redes de mulas (k-hop neighbors)
    */
   static async traverseMuleNetwork(rootHash: string, maxDepth: number = 3): Promise<any[]> {

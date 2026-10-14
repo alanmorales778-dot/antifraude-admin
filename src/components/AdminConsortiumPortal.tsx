@@ -238,6 +238,15 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Real-time sync badge */}
+            <div className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 font-mono text-[11px]" title="Sincronización WebSocket en tiempo real activa">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span>Real-Time Activo</span>
+            </div>
+
             {/* Acceso Rápido al Control de Scores */}
             <button
               onClick={() => setActiveTab('scoring-lab')}
