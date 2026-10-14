@@ -855,7 +855,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
                 incidentCategory: category,
                 timestamp: reportLog.timestamp || new Date().toISOString(),
                 isFalsePositive: false,
-                uploadedFields: `DNI: ${prefix}***${suffix}`,
+                uploadedFields: `tok_${dniHash.slice(0, 16)}...`,
                 uploadMethod: 'MANUAL',
                 entityName: reportLog.actor || fintech?.name || 'Entidad de Red',
                 scope: state.activeService,
@@ -885,7 +885,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
                 incidentCategory: category,
                 timestamp: reportLog.timestamp || new Date().toISOString(),
                 isFalsePositive: false,
-                uploadedFields: `CBU/CVU: ${prefix}***${suffix}`,
+                uploadedFields: `tok_${cbuHash.slice(0, 16)}...`,
                 uploadMethod: 'MANUAL',
                 entityName: reportLog.actor || fintech?.name || 'Entidad de Red',
                 scope: state.activeService,
@@ -934,14 +934,14 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           updatedNodes = upsertIdentityNode(updatedNodes, 'CUIT', result.cuitHash, true);
 
         const actorName = fintech?.name || fintechId;
-        const identifiers = [
-          dni ? `DNI: ${dni}` : null,
-          email ? `EMAIL: ${email}` : null,
-          phone ? `PHONE: ${phone}` : null,
-          ip ? `IP: ${ip}` : null,
-          cbu ? `CBU/CVU: ${cbu.slice(0, 4)}***${cbu.slice(-4)}` : null,
-          device ? `DEVICE: ${device.slice(0, 8)}...` : null,
-          cuit ? `CUIT: ${cuit.slice(0, 2)}-***-${cuit.slice(-1)}` : null,
+        const tokensList = [
+          result.dniHash ? `tok_${result.dniHash.slice(0, 10)}...` : null,
+          result.emailHash ? `tok_${result.emailHash.slice(0, 10)}...` : null,
+          result.phoneHash ? `tok_${result.phoneHash.slice(0, 10)}...` : null,
+          result.ipHash ? `tok_${result.ipHash.slice(0, 10)}...` : null,
+          result.cbuHash ? `tok_${result.cbuHash.slice(0, 10)}...` : null,
+          result.deviceHash ? `tok_${result.deviceHash.slice(0, 10)}...` : null,
+          result.cuitHash ? `tok_${result.cuitHash.slice(0, 10)}...` : null,
         ]
           .filter(Boolean)
           .join(', ');
@@ -956,7 +956,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             state2.auditLogs,
             actorName,
             'LOOKUP',
-            `[${state.activeService}] Consulta de riesgo — ${identifiers} → Score: ${result.breakdown.finalScore} (${result.breakdown.riskLevel}) [${result.breakdown.recommendation}]`
+            `[${state.activeService}] Consulta de riesgo — Tokens: [${tokensList || 'tok_blind'}] → Score: ${result.breakdown.finalScore} (${result.breakdown.riskLevel}) [${result.breakdown.recommendation}]`
           ),
         }));
 
@@ -1007,14 +1007,14 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         const cuitHash = cuit ? await computeHash('CUIT', cuit) : null;
 
         const actorName = fintech?.name || state.partnerSession?.entityName || 'Entidad Emisora';
-        const identifiers = [
-          dni ? `DNI: ${dni.slice(0, 2)}***${dni.slice(-3)}` : null,
-          email ? `Email: ${email.slice(0, 3)}***@${email.split('@')[1] || ''}` : null,
-          phone ? `Tel: ${phone.slice(0, 4)}***${phone.slice(-3)}` : null,
-          ip ? `IP: ${ip.split('.').slice(0, 2).join('.')}.***.${ip.split('.')[3] || ''}` : null,
-          cbu ? `CBU/CVU: ${cbu.slice(0, 4)}***${cbu.slice(-4)}` : null,
-          device ? `Device: ${device.slice(0, 8)}...` : null,
-          cuit ? `CUIT: ${cuit.slice(0, 2)}-***-${cuit.slice(-1)}` : null,
+        const tokensList = [
+          dniHash ? `tok_${dniHash.slice(0, 10)}...` : null,
+          emailHash ? `tok_${emailHash.slice(0, 10)}...` : null,
+          phoneHash ? `tok_${phoneHash.slice(0, 10)}...` : null,
+          ipHash ? `tok_${ipHash.slice(0, 10)}...` : null,
+          cbuHash ? `tok_${cbuHash.slice(0, 10)}...` : null,
+          deviceHash ? `tok_${deviceHash.slice(0, 10)}...` : null,
+          cuitHash ? `tok_${cuitHash.slice(0, 10)}...` : null,
         ]
           .filter(Boolean)
           .join(' · ');
@@ -1030,7 +1030,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           cuitHash,
           reportedByEntityId: fintechId,
           incidentCategory,
-          uploadedFields: identifiers || 'Identificador Criptográfico',
+          uploadedFields: tokensList || 'Token Criptográfico ZK',
           uploadMethod: 'MANUAL',
           entityName: actorName,
           scope: state.activeService,
@@ -1077,7 +1077,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             state2.auditLogs,
             actorName,
             'FRAUD_REPORT',
-            `[${state.activeService}] Reporte ${incidentCategory} ingresado ${internalTicketId ? `(Ticket: ${internalTicketId})` : ''} — ${identifiers} (${newEdges.length} aristas creadas)`
+            `[${state.activeService}] Reporte ${incidentCategory} ingresado ${internalTicketId ? `(Ticket: ${internalTicketId})` : ''} — Tokens: [${tokensList || 'tok_blind'}] (${newEdges.length} aristas creadas)`
           ),
         }));
 
@@ -1346,14 +1346,14 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             }
 
             const actorName = fintech?.name || fintechId;
-            const rowIdentifiers = [
-              rawDni ? `DNI: ${rawDni.slice(0, 2)}***${rawDni.slice(-3)}` : null,
-              rawEmail ? `Email: ${rawEmail.slice(0, 3)}***@${rawEmail.split('@')[1] || ''}` : null,
-              rawPhone ? `Tel: ${rawPhone.slice(0, 4)}***${rawPhone.slice(-3)}` : null,
-              rawIp ? `IP: ${rawIp.split('.').slice(0, 2).join('.')}.***.${rawIp.split('.')[3] || ''}` : null,
-              rawCbu ? `CBU/CVU: ${rawCbu.slice(0, 4)}***${rawCbu.slice(-4)}` : null,
-              rawDevice ? `Device: ${rawDevice.slice(0, 8)}...` : null,
-              rawCuit ? `CUIT: ${rawCuit.slice(0, 2)}-***-${rawCuit.slice(-1)}` : null,
+            const rowTokens = [
+              dniHash ? `tok_${dniHash.slice(0, 10)}...` : null,
+              emailHash ? `tok_${emailHash.slice(0, 10)}...` : null,
+              phoneHash ? `tok_${phoneHash.slice(0, 10)}...` : null,
+              ipHash ? `tok_${ipHash.slice(0, 10)}...` : null,
+              cbuHash ? `tok_${cbuHash.slice(0, 10)}...` : null,
+              deviceHash ? `tok_${deviceHash.slice(0, 10)}...` : null,
+              cuitHash ? `tok_${cuitHash.slice(0, 10)}...` : null,
             ].filter(Boolean).join(' · ');
 
             const edges = buildEdgesFromReport({
@@ -1366,7 +1366,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
               cuitHash,
               reportedByEntityId: fintechId,
               incidentCategory,
-              uploadedFields: rowIdentifiers || 'Carga Masiva CSV',
+              uploadedFields: rowTokens || 'Token Criptográfico ZK',
               uploadMethod: 'CSV_BULK',
               entityName: actorName,
               scope: state.activeService,

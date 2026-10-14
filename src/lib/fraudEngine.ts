@@ -544,21 +544,9 @@ export async function evaluateRisk(params: {
   });
 
   // ── DESGLOSE DATO POR DATO ────────────────────────────────────
-  const maskValue = (type: string, val: string) => {
-    if (type === 'DNI') return `${val.slice(0, 2)}***${val.slice(-3)}`;
-    if (type === 'EMAIL') {
-      const [u, d] = val.split('@');
-      return `${u.slice(0, 3)}***@${d || '?'}`;
-    }
-    if (type === 'PHONE') return `${val.slice(0, 4)}***${val.slice(-3)}`;
-    if (type === 'IP') {
-      const parts = val.split('.');
-      return parts.length === 4 ? `${parts[0]}.${parts[1]}.***.${parts[3]}` : val;
-    }
-    if (type === 'CBU') return `${val.slice(0, 4)}***${val.slice(-4)}`;
-    if (type === 'CUIT') return `${val.slice(0, 2)}-***-${val.slice(-1)}`;
-    if (type === 'DEVICE') return `${val.slice(0, 8)}...${val.slice(-6)}`;
-    return val;
+  const formatBlindToken = (hash?: string | null) => {
+    if (!hash) return 'tok_blind_hash';
+    return `tok_${hash.slice(0, 14)}...${hash.slice(-4)}`;
   };
 
   const identifierDetails: IdentifierMatchDetail[] = [];
@@ -599,7 +587,7 @@ export async function evaluateRisk(params: {
 
     identifierDetails.push({
       type,
-      valueMasked: maskValue(type, rawVal),
+      valueMasked: formatBlindToken(hash),
       matched: matched.length > 0,
       reportsCount: matched.length,
       distinctEntitiesCount: distinctEntities,

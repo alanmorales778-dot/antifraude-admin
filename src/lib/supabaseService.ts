@@ -115,7 +115,9 @@ export class SupabaseService {
         incidentCategory: e.incident_category,
         timestamp: e.timestamp,
         isFalsePositive: Boolean(e.is_false_positive),
-        uploadedFields: e.uploaded_fields || undefined,
+        uploadedFields: (e.uploaded_fields && !e.uploaded_fields.includes('@') && !e.uploaded_fields.includes('DNI:') && !e.uploaded_fields.includes('Email:') && !e.uploaded_fields.includes('IP:'))
+          ? e.uploaded_fields
+          : (e.source_hash ? `tok_${e.source_hash.slice(0, 16)}...` : undefined),
         uploadMethod: e.upload_method || 'MANUAL',
         entityName: e.entity_name || undefined,
         scope: e.scope as ServiceScope,

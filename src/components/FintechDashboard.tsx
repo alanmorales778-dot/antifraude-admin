@@ -2879,13 +2879,22 @@ const CATEGORY_TRANSLATIONS: Record<IncidentCategory, { label: string; color: st
   SUSPICIOUS: { label: 'Actividad Sospechosa', color: 'bg-slate-700/60 text-slate-300 border-slate-600' },
 };
 
-function maskZeroTrustData(val?: string) {
-  if (!val) return '—';
-  return val
-    .replace(/([a-zA-Z0-9_.+-]{2})[a-zA-Z0-9_.+-]+@([a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)/g, '$1***@$2')
-    .replace(/\b(\d{2})\d{4,7}(\d{2,3})\b/g, '$1.***.$2')
-    .replace(/\b(\d{4})\d{14}(\d{4})\b/g, '$1***$2')
-    .replace(/\b(\d{1,3}\.\d{1,3})\.\d{1,3}\.(\d{1,3})\b/g, '$1.***.$2');
+function formatZeroTrustToken(edge?: { sourceHash?: string; targetHash?: string; id?: string; uploadedFields?: string } | null): string {
+  if (!edge) return 'tok_blind_hash';
+  if (edge.sourceHash && edge.targetHash && edge.sourceHash !== edge.targetHash) {
+    return `tok_${edge.sourceHash.slice(0, 10)}... ↔ tok_${edge.targetHash.slice(0, 10)}...`;
+  }
+  if (edge.sourceHash) {
+    return `tok_${edge.sourceHash.slice(0, 16)}...${edge.sourceHash.slice(-6)}`;
+  }
+  if (edge.targetHash) {
+    return `tok_${edge.targetHash.slice(0, 16)}...${edge.targetHash.slice(-6)}`;
+  }
+  if (edge.id) {
+    const clean = edge.id.replace(/[^a-zA-Z0-9]/g, '');
+    return `tok_${clean.slice(0, 18)}...`;
+  }
+  return 'tok_blind_hash';
 }
 
 function ReportHistoryModule() {
@@ -2978,7 +2987,7 @@ function ReportHistoryModule() {
 
     const rows = filteredEdges.map((e, idx) => [
       `REP-${String(filteredEdges.length - idx).padStart(3, '0')}`,
-      `"${maskZeroTrustData(e.uploadedFields || '').replace(/"/g, '""')}"`,
+      `"${formatZeroTrustToken(e)}"`,
       `"${(e.internalTicketId || '—').replace(/"/g, '""')}"`,
       `"${(e.incidentId || '—').replace(/"/g, '""')}"`,
       e.uploadMethod === 'CSV_BULK' ? 'Carga Masiva CSV' : 'Carga Unitaria',
@@ -3180,7 +3189,7 @@ function ReportHistoryModule() {
             <thead className="bg-slate-950 border-b border-white/10 text-[11px] uppercase text-slate-400 tracking-wider">
               <tr>
                 <th className="px-4 py-3"># Registro</th>
-                <th className="px-4 py-3">Datos e Identificadores (Zero-Trust)</th>
+                <th className="px-4 py-3">Identificador Criptográfico (Zero-Trust)</th>
                 <th className="px-4 py-3">Ref. Interna / Incidente</th>
                 <th className="px-4 py-3">Canal</th>
                 <th className="px-4 py-3">Tipología</th>
@@ -3210,16 +3219,16 @@ function ReportHistoryModule() {
                       REP-{String(filteredEdges.length - (startIndex + idx)).padStart(3, '0')}
                     </td>
 
-                    {/* Datos Subidos (Estrictamente Tokenizados) */}
+                    {/* Token Criptográfico (Estrictamente Zero-Trust) */}
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <Lock className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-                        <span className="font-mono text-slate-200 font-medium">
-                          {maskZeroTrustData(edge.uploadedFields || 'DNI: 30.***.222 · Email: estafador.red@***')}
+                        <span className="font-mono text-xs text-cyan-300 font-semibold tracking-wider">
+                          {formatZeroTrustToken(edge)}
                         </span>
                       </div>
-                      <span className="text-[10px] text-slate-500 block pl-5 mt-0.5">
-                        Tokenizado Zero-Trust (Sin revelación en crudo)
+                      <span className="text-[10px] text-slate-500 block pl-5 mt-0.5 font-mono">
+                        Hash Ciego SHA-256 + Salt Federal (Token Irreversible Zero-Trust)
                       </span>
                     </td>
 
@@ -3360,7 +3369,7 @@ function ReportHistoryModule() {
                 <span className="text-slate-500">Registro:</span> REP-{revocationTarget.id.slice(0, 8)}
               </p>
               <p className="text-slate-400">
-                <span className="text-slate-500">Datos:</span> {maskZeroTrustData(revocationTarget.uploadedFields)}
+                <span className="text-slate-500">Token Irreversible:</span> <span className="font-mono text-cyan-300 font-semibold">{formatZeroTrustToken(revocationTarget)}</span>
               </p>
               <p className="text-slate-400">
                 <span className="text-slate-500">Tipología:</span> {CATEGORY_TRANSLATIONS[revocationTarget.incidentCategory]?.label || revocationTarget.incidentCategory}
