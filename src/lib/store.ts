@@ -841,10 +841,10 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             const prefix = dni.slice(0, 2);
             const suffix = dni.slice(-3);
             const reportLog = state.auditLogs.find(l =>
-              l.action === 'FRAUD_REPORT' &&
+              l && l.action === 'FRAUD_REPORT' && typeof l.details === 'string' &&
               (l.details.includes(`DNI: ${prefix}***${suffix}`) || l.details.includes(dni))
             );
-            if (reportLog) {
+            if (reportLog && typeof reportLog.details === 'string') {
               const catMatch = reportLog.details.match(/Reporte ([A-Z_]+) ingresado/);
               const category = (catMatch ? catMatch[1] : 'MULE_ACCOUNT') as IncidentCategory;
               healedEdges.push({
@@ -871,10 +871,10 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             const prefix = cbu.slice(0, 4);
             const suffix = cbu.slice(-4);
             const reportLog = state.auditLogs.find(l =>
-              l.action === 'FRAUD_REPORT' &&
+              l && l.action === 'FRAUD_REPORT' && typeof l.details === 'string' &&
               (l.details.includes(`CBU/CVU: ${prefix}***${suffix}`) || l.details.includes(cbu))
             );
-            if (reportLog) {
+            if (reportLog && typeof reportLog.details === 'string') {
               const catMatch = reportLog.details.match(/Reporte ([A-Z_]+) ingresado/);
               const category = (catMatch ? catMatch[1] : 'MULE_ACCOUNT') as IncidentCategory;
               healedEdges.push({
@@ -1185,9 +1185,12 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         const hasHeader =
           firstLine.includes('dni') ||
           firstLine.includes('email') ||
+          firstLine.includes('correo') ||
           firstLine.includes('phone') ||
           firstLine.includes('categoria') ||
           firstLine.includes('category') ||
+          firstLine.includes('tipologia') ||
+          firstLine.includes('motivo') ||
           firstLine.includes('cbu') ||
           firstLine.includes('cvu') ||
           firstLine.includes('device') ||
@@ -1213,8 +1216,18 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           cbuIdx = cols.findIndex(c => c.includes('cbu') || c.includes('cvu') || c.includes('cuenta'));
           deviceIdx = cols.findIndex(c => c.includes('device') || c.includes('dispositivo') || c.includes('fingerprint'));
           cuitIdx = cols.findIndex(c => c.includes('cuit'));
-          catIdx = cols.findIndex(c => c.includes('cat') || c.includes('tipo') || c.includes('motivo'));
+          catIdx = cols.findIndex(c => c.includes('cat') || c.includes('tipo') || c.includes('motivo') || c.includes('tipologia'));
         }
+
+        const KNOWN_CATEGORIES = [
+          'MULE_ACCOUNT',
+          'IDENTITY_THEFT',
+          'CHARGEBACK',
+          'PHISHING',
+          'SUSPICIOUS',
+          'FRAUD_CONFIRMED',
+          'ACCOUNT_TAKEOVER',
+        ];
 
         for (const line of dataLines) {
           const parts = line.split(',').map(p => p.trim().replace(/^["']|["']$/g, ''));
@@ -1233,21 +1246,29 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             let rawCuit: string | undefined;
             let rawCategory: string | undefined;
 
-            if (hasHeader && (dniIdx >= 0 || emailIdx >= 0 || cbuIdx >= 0)) {
-              rawDni = dniIdx >= 0 ? parts[dniIdx] : undefined;
-              rawEmail = emailIdx >= 0 ? parts[emailIdx] : undefined;
-              rawPhone = phoneIdx >= 0 ? parts[phoneIdx] : undefined;
-              rawIp = ipIdx >= 0 ? parts[ipIdx] : undefined;
-              rawCbu = cbuIdx >= 0 ? parts[cbuIdx] : undefined;
-              rawDevice = deviceIdx >= 0 ? parts[deviceIdx] : undefined;
-              rawCuit = cuitIdx >= 0 ? parts[cuitIdx] : undefined;
-              rawCategory = catIdx >= 0 ? parts[catIdx] : undefined;
+            if (hasHeader && (dniIdx >= 0 || emailIdx >= 0 || cbuIdx >= 0 || ipIdx >= 0)) {
+              rawDni = dniIdx >= 0 && parts[dniIdx] ? parts[dniIdx] : undefined;
+              rawEmail = emailIdx >= 0 && parts[emailIdx] ? parts[emailIdx] : undefined;
+              rawPhone = phoneIdx >= 0 && parts[phoneIdx] ? parts[phoneIdx] : undefined;
+              rawIp = ipIdx >= 0 && parts[ipIdx] ? parts[ipIdx] : undefined;
+              rawCbu = cbuIdx >= 0 && parts[cbuIdx] ? parts[cbuIdx] : undefined;
+              rawDevice = deviceIdx >= 0 && parts[deviceIdx] ? parts[deviceIdx] : undefined;
+              rawCuit = cuitIdx >= 0 && parts[cuitIdx] ? parts[cuitIdx] : undefined;
+              rawCategory = catIdx >= 0 && parts[catIdx] ? parts[catIdx] : undefined;
+
+              // Si la categoría no fue capturada por la cabecera (ej: cabecera incompleta "Email,DNI,IP,"),
+              // buscar en las columnas restantes algún valor de tipología conocida
+              if (!rawCategory) {
+                for (let pi = parts.length - 1; pi >= 0; pi--) {
+                  const val = parts[pi]?.toUpperCase()?.trim();
+                  if (KNOWN_CATEGORIES.includes(val)) {
+                    rawCategory = val;
+                    break;
+                  }
+                }
+              }
             } else {
-              // Fallback posicional:
-              // 8 campos: dni,email,phone,ip,cbu,device,cuit,category
-              // 6 campos: dni,email,phone,ip,cbu,category
-              // 5 campos: dni,email,phone,ip,category
-              // 4 campos: dni,email,phone,category
+              // Fallback posicional
               if (parts.length >= 8) {
                 [rawDni, rawEmail, rawPhone, rawIp, rawCbu, rawDevice, rawCuit, rawCategory] = parts;
               } else if (parts.length >= 6) {
@@ -1259,21 +1280,56 @@ export const useConsortiumStore = create<ConsortiumStore>()(
               }
             }
 
+            // ── Validaciones estrictas de formato ──
+            // 1. Validar Email
+            if (rawEmail) {
+              const cleanEmail = rawEmail.trim().toLowerCase();
+              const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail);
+              if (!isValidEmail) {
+                // Email inválido (ej: "alan.morales778gmail.com" sin arroba)
+                if (!rawDni && !rawCbu && !rawPhone && !rawCuit) {
+                  errors++;
+                  continue; // Si no tiene otro dato identificatorio, se descarta la fila por formato erróneo
+                }
+                rawEmail = undefined;
+              } else {
+                rawEmail = cleanEmail;
+              }
+            }
+
+            // 2. Validar DNI
+            if (rawDni) {
+              const cleanDni = rawDni.replace(/\D/g, '');
+              if (cleanDni.length < 6 || cleanDni.length > 9) {
+                if (!rawEmail && !rawCbu && !rawPhone && !rawCuit) {
+                  errors++;
+                  continue;
+                }
+                rawDni = undefined;
+              } else {
+                rawDni = cleanDni;
+              }
+            }
+
+            // 3. Validar CBU / CVU
+            if (rawCbu) {
+              const cleanCbu = rawCbu.replace(/\D/g, '');
+              if (cleanCbu.length < 10 || cleanCbu.length > 22) {
+                if (!rawDni && !rawEmail && !rawPhone && !rawCuit) {
+                  errors++;
+                  continue;
+                }
+                rawCbu = undefined;
+              } else {
+                rawCbu = cleanCbu;
+              }
+            }
+
             const category =
               (rawCategory?.toUpperCase() as IncidentCategory) || 'SUSPICIOUS';
 
-            const validCategories: IncidentCategory[] = [
-              'MULE_ACCOUNT',
-              'IDENTITY_THEFT',
-              'CHARGEBACK',
-              'PHISHING',
-              'SUSPICIOUS',
-              'FRAUD_CONFIRMED',
-              'ACCOUNT_TAKEOVER',
-            ];
-
-            const incidentCategory = validCategories.includes(category)
-              ? category
+            const incidentCategory = KNOWN_CATEGORIES.includes(category)
+              ? (category as IncidentCategory)
               : 'SUSPICIOUS';
 
             const dniHash = rawDni ? await computeHash('DNI', rawDni) : null;
@@ -1363,6 +1419,30 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             `[${state.activeService}] Importación masiva: ${imported} registros ingresados, ${errors} errores`
           ),
         }));
+
+        cuckooFilterService.syncFromGraphEdges(get().graphEdges);
+        broadcastRealtimeChange({
+          graphEdges: get().graphEdges,
+          identityNodes: updatedNodes,
+          fintechs: get().fintechs,
+          auditLogs: get().auditLogs,
+        });
+
+        if (SupabaseService.isAvailable() && newEdgesAll.length > 0) {
+          SupabaseService.persistFraudReport({
+            edges: newEdgesAll,
+            nodes: updatedNodes,
+            deviceCUITLinks: updatedDeviceLinks,
+            entityId: fintechId,
+            auditLog: {
+              timestamp: new Date().toISOString(),
+              actor: actorName,
+              action: 'CSV_IMPORT',
+              details: `[${state.activeService}] Importación masiva: ${imported} registros ingresados, ${errors} errores`,
+            },
+            scope: state.activeService,
+          }).catch(err => console.warn('[Supabase Sync CSV Import]:', err));
+        }
 
         return { imported, errors };
       },

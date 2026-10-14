@@ -501,9 +501,10 @@ export async function evaluateRisk(params: {
     };
   };
 
-  // ── 1. SCORE DE LA ENTIDAD (Reportes e Historial Propios de esa Entidad) ──
+  // ── 1. SCORE DE LA ENTIDAD (Workspace Interno: solo reportes internos de esta entidad) ──
+  // Si un incidente se sube solo al consorcio (CONSORTIUM), NO afecta al score interno.
   const internalEdges = graphEdges.filter(
-    e => !e.isFalsePositive && (e.reportedByEntityId === fintechId || e.scope === 'INTERNAL')
+    e => !e.isFalsePositive && e.reportedByEntityId === fintechId && e.scope === 'INTERNAL'
   );
   const internalEval = evaluateScope(internalEdges, false);
   const internalRiskScore = (scoringConfig?.scoreOverrides?.enabled && scoringConfig.scoreOverrides.manualEntityScore != null)
@@ -513,6 +514,7 @@ export async function evaluateRisk(params: {
     internalRiskScore >= highThresh ? 'ALTO' : internalRiskScore >= medThresh ? 'MEDIO' : 'BAJO';
 
   // ── 2. SCORE DEL CONSORCIO (Inteligencia Colectiva y Red Federal) ──────────
+  // Todo dato reportado (sea interno o del consorcio) alimenta la red federal de riesgo colectivo.
   const consortiumEdges = graphEdges.filter(e => !e.isFalsePositive);
   const consortiumEval = evaluateScope(consortiumEdges, true);
   const consortiumRiskScore = (scoringConfig?.scoreOverrides?.enabled && scoringConfig.scoreOverrides.manualConsortiumScore != null)

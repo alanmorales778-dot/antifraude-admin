@@ -37,7 +37,10 @@ import {
   Calendar,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 import { useConsortiumStore } from '@/lib/store';
 import { LookupResult, IncidentCategory, ReasonCode } from '@/lib/types';
@@ -2245,7 +2248,8 @@ function ReportFraudModule() {
   
   // Selector de Modo: 'single' (Reporte Unitario) vs 'set' (Reporte de Conjunto / Red)
   const [reportMode, setReportMode] = useState<'single' | 'set'>('single');
-  const [primaryType, setPrimaryType] = useState<'DNI' | 'CBU' | 'CUIT' | 'EMAIL' | 'PHONE'>('DNI');
+  const [primaryType, setPrimaryType] = useState<'DNI' | 'CBU'>('DNI');
+  const [showOptionalDetails, setShowOptionalDetails] = useState(false);
 
   // Campo opcional de Ticket Interno
   const [internalTicketId, setInternalTicketId] = useState('');
@@ -2273,27 +2277,28 @@ function ReportFraudModule() {
     e.preventDefault();
     setError('');
 
-    // Comprobar que al menos un dato haya sido provisto
     const hasAnyIdentifier = Boolean(
       dni.trim() || email.trim() || phone.trim() || ip.trim() || cbu.trim() || device.trim() || cuit.trim()
     );
 
     if (!hasAnyIdentifier) {
-      setError('Debe ingresar al menos un identificador (DNI, CBU/CVU, CUIT, Email o Teléfono).');
+      setError(
+        primaryType === 'DNI'
+          ? 'Debe ingresar el número de DNI o CUIL a reportar.'
+          : 'Debe ingresar la cuenta bancaria CBU o CVU a reportar.'
+      );
       return;
     }
 
-    // ── Validaciones Inteligentes y Flexibles ──
-    // CBU/CVU
+    // Validaciones
     if (cbu.trim()) {
       const cleanCbu = cbu.trim().replace(/\D/g, '');
       if (cleanCbu.length > 0 && cleanCbu.length < 10) {
-        setError('Validación CBU/CVU: Ingrese una cuenta bancaria o CVU válida.');
+        setError('Validación CBU/CVU: Ingrese una cuenta bancaria o CVU válida (mínimo 10 dígitos).');
         return;
       }
     }
 
-    // CUIT/CUIL
     if (cuit.trim()) {
       const cleanCuit = cuit.trim().replace(/\D/g, '');
       if (cleanCuit.length > 0 && cleanCuit.length < 10) {
@@ -2302,7 +2307,6 @@ function ReportFraudModule() {
       }
     }
 
-    // DNI: Flexible
     if (dni.trim()) {
       const cleanDni = dni.trim().replace(/\D/g, '');
       if (cleanDni.length > 0 && cleanDni.length < 6) {
@@ -2311,20 +2315,20 @@ function ReportFraudModule() {
       }
     }
 
-    // Teléfono
-    if (phone.trim()) {
-      const cleanPhone = phone.trim();
-      if (!/^\+?[\d\s\-()]{6,20}$/.test(cleanPhone)) {
-        setError('Validación de teléfono fallida: Formato de número inválido.');
-        return;
-      }
+    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setError('Validación Email: Formato de correo electrónico inválido.');
+      return;
+    }
+
+    if (phone.trim() && !/^\+?[\d\s\-()]{6,20}$/.test(phone.trim())) {
+      setError('Validación de teléfono fallida: Formato de número inválido.');
+      return;
     }
 
     setLoading(true);
     setSuccess(false);
 
     try {
-      // Para reporte de conjunto, generar incident_id común para grafo
       const commonIncidentId = reportMode === 'set'
         ? `INC-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
         : undefined;
@@ -2351,6 +2355,7 @@ function ReportFraudModule() {
       setDevice('');
       setCuit('');
       setInternalTicketId('');
+      setShowOptionalDetails(false);
       setTimeout(() => setSuccess(false), 5000);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Error al registrar el incidente.';
@@ -2361,315 +2366,319 @@ function ReportFraudModule() {
   };
 
   return (
-    <div className="glass-panel rounded-2xl p-6 space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
+    <div className="glass-panel rounded-2xl p-6 sm:p-8 space-y-6 max-w-4xl mx-auto">
+      {/* Cabecera */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/5 pb-5">
         <div>
-          <div className="flex items-center gap-2">
-            <ShieldAlert className="h-5 w-5 text-rose-400" />
-            <h3 className="text-base font-bold text-white">Ingresar Nuevo Incidente</h3>
+          <div className="flex items-center gap-2.5">
+            <div className="h-8 w-8 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
+              <ShieldAlert className="h-4.5 w-4.5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white tracking-tight">Ingresar Nuevo Incidente</h3>
+              <p className="text-xs text-slate-400">
+                Registro criptográfico ZK de amenazas para detección y prevención de fraude.
+              </p>
+            </div>
           </div>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Registro de amenaza con tokenización ZK irreversible y trazabilidad criptográfica.
-          </p>
         </div>
 
         {activeFintech && (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-white/10 text-xs font-mono text-slate-300">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 border border-white/10 text-xs text-slate-300 self-start sm:self-auto">
             <Building className="h-3.5 w-3.5 text-cyan-400" />
-            Entidad: <strong className="text-white">{activeFintech.name}</strong>
+            <span>Entidad: <strong className="text-white font-medium">{activeFintech.name}</strong></span>
           </span>
         )}
       </div>
 
       {activeFintech?.status === 'SUSPENDED' && (
-        <div className="rounded-xl border border-rose-500/30 bg-rose-950/20 p-3 text-xs text-rose-300 flex items-center gap-2">
-          <XCircle className="h-4 w-4 shrink-0" />
-          Entidad suspendida. Contactá al SuperAdmin para reactivar privilegios de reporte.
+        <div className="rounded-xl border border-rose-500/30 bg-rose-950/20 p-3.5 text-xs text-rose-300 flex items-center gap-2.5">
+          <XCircle className="h-4 w-4 shrink-0 text-rose-400" />
+          <span>Entidad suspendida. Contactá al SuperAdmin para reactivar privilegios de reporte.</span>
         </div>
       )}
 
-      {/* ── SELECTOR FORMAL DE ALCANCE: REPORTE UNITARIO vs CONJUNTO (RED) ── */}
-      <div className="space-y-2">
-        <label className="block text-xs font-semibold text-slate-300">
-          Modalidad de Carga del Incidente:
-        </label>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={() => setReportMode('single')}
-            className={`p-3.5 rounded-xl border text-left transition flex items-start gap-3 ${
-              reportMode === 'single'
-                ? 'bg-rose-950/40 border-rose-500/60 text-white shadow-md'
-                : 'bg-slate-900/60 border-white/10 text-slate-400 hover:text-white'
-            }`}
-          >
-            <div className={`p-2 rounded-lg ${reportMode === 'single' ? 'bg-rose-500/20 text-rose-300' : 'bg-slate-800 text-slate-400'}`}>
-              <Search className="h-4 w-4" />
-            </div>
-            <div>
-              <span className="block text-xs font-bold text-white">Reporte Unitario</span>
-              <span className="text-[11px] text-slate-400 leading-relaxed block mt-0.5">
-                Carga un dato puntual (ej: una cuenta mula CBU o un DNI apócrifo) como alerta individual.
-              </span>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setReportMode('set')}
-            className={`p-3.5 rounded-xl border text-left transition flex items-start gap-3 ${
-              reportMode === 'set'
-                ? 'bg-indigo-950/40 border-indigo-500/60 text-white shadow-md'
-                : 'bg-slate-900/60 border-white/10 text-slate-400 hover:text-white'
-            }`}
-          >
-            <div className={`p-2 rounded-lg ${reportMode === 'set' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-slate-800 text-slate-400'}`}>
-              <Network className="h-4 w-4" />
-            </div>
-            <div>
-              <span className="block text-xs font-bold text-white">Reporte de Conjunto (Red)</span>
-              <span className="text-[11px] text-slate-400 leading-relaxed block mt-0.5">
-                Vincula múltiples datos bajo un mismo <code className="text-indigo-300">incident_id</code> para alimentar el grafo de detección.
-              </span>
-            </div>
-          </button>
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {/* 1. Modalidad de Carga */}
+        <div className="space-y-2">
+          <label className="block text-xs font-semibold text-slate-300">
+            Modalidad de Carga
+          </label>
+          <div className="grid grid-cols-2 gap-2 p-1 bg-slate-900/60 rounded-xl border border-white/5">
+            <button
+              type="button"
+              onClick={() => setReportMode('single')}
+              className={`py-2 px-3 rounded-lg text-xs font-medium transition flex items-center justify-center gap-2 ${
+                reportMode === 'single'
+                  ? 'bg-rose-500/20 text-rose-200 border border-rose-500/40 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Search className="h-3.5 w-3.5" />
+              <span>Reporte Unitario</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setReportMode('set')}
+              className={`py-2 px-3 rounded-lg text-xs font-medium transition flex items-center justify-center gap-2 ${
+                reportMode === 'set'
+                  ? 'bg-indigo-500/20 text-indigo-200 border border-indigo-500/40 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Network className="h-3.5 w-3.5" />
+              <span>Reporte de Conjunto (Red)</span>
+            </button>
+          </div>
+          <p className="text-[11px] text-slate-500 px-1">
+            {reportMode === 'single'
+              ? 'Registra un identificador puntual como alerta individual.'
+              : 'Vincula múltiples datos bajo un mismo expediente para el grafo de prevención.'}
+          </p>
         </div>
-      </div>
 
-      <form onSubmit={handleSubmit} className="space-y-5">
-        {/* Campo Opcional: ID de Ticket / Referencia Interna */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
-              <span>ID de Ticket / Referencia Interna</span>
-              <span className="text-[10px] text-slate-500">(Opcional)</span>
+        {/* 2. Identificador Principal (DNI o CBU) y Campo de Ingreso */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <label className="block text-xs font-semibold text-slate-300">
+              Identificador Principal <span className="text-rose-400">*</span>
             </label>
-            <input
-              type="text"
-              value={internalTicketId}
-              onChange={e => setInternalTicketId(e.target.value)}
-              placeholder="ej: TCK-2026-9812 / CASO-458"
-              className="w-full rounded-xl border border-white/10 bg-slate-900/90 px-3.5 py-2.5 text-xs text-white placeholder-slate-600 focus:border-cyan-400 focus:outline-none font-mono"
-            />
-            <span className="text-[10px] text-slate-500 mt-1 block">
-              Permite asociar este reporte a la causa o expediente interno de tu entidad.
-            </span>
+            <div className="flex items-center gap-1 p-0.5 bg-slate-900 rounded-lg border border-white/5">
+              <button
+                type="button"
+                onClick={() => setPrimaryType('DNI')}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition ${
+                  primaryType === 'DNI'
+                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                DNI / CUIL
+              </button>
+              <button
+                type="button"
+                onClick={() => setPrimaryType('CBU')}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition ${
+                  primaryType === 'CBU'
+                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                CBU / CVU
+              </button>
+            </div>
           </div>
 
-          {/* Selector de Tipo Principal si es Unitario */}
-          {reportMode === 'single' && (
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Identificador Principal a Reportar *
-              </label>
-              <div className="grid grid-cols-5 gap-1.5 pt-0.5">
-                {(['DNI', 'CBU', 'CUIT', 'EMAIL', 'PHONE'] as const).map(t => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setPrimaryType(t)}
-                    className={`py-2 px-1 rounded-lg text-xs font-bold transition border ${
-                      primaryType === t
-                        ? 'bg-rose-500/20 text-rose-300 border-rose-500/50'
-                        : 'bg-slate-900/60 text-slate-400 border-white/10 hover:text-white'
-                    }`}
-                  >
-                    {t}
-                  </button>
-                ))}
+          {/* Input Principal Grande y Limpio */}
+          {primaryType === 'DNI' ? (
+            <div className="space-y-1.5">
+              <div className="relative">
+                <input
+                  type="text"
+                  value={dni}
+                  onChange={e => setDni(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                  placeholder="Ingrese el número de DNI o CUIL (ej: 35123456)"
+                  maxLength={11}
+                  className="w-full rounded-xl border border-white/10 bg-slate-900/90 px-4 py-3 text-sm text-white placeholder-slate-500 focus:border-rose-500/70 focus:ring-1 focus:ring-rose-500/30 focus:outline-none font-mono transition"
+                />
+                <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[11px] font-mono text-slate-500">
+                  {dni.length > 0 ? `${dni.length} dígitos` : '7-11 dígitos'}
+                </span>
               </div>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <div className="relative">
+                <input
+                  type="text"
+                  value={cbu}
+                  onChange={e => setCbu(e.target.value.replace(/\D/g, '').slice(0, 22))}
+                  placeholder="Ingrese CBU o CVU de 22 dígitos (ej: 0000003100010000000001)"
+                  maxLength={22}
+                  className="w-full rounded-xl border border-white/10 bg-slate-900/90 px-4 py-3 text-sm text-white placeholder-slate-500 focus:border-rose-500/70 focus:ring-1 focus:ring-rose-500/30 focus:outline-none font-mono transition"
+                />
+                <span className={`absolute right-3.5 top-1/2 -translate-y-1/2 text-[11px] font-mono ${
+                  cbu.length === 22 ? 'text-emerald-400' : 'text-slate-500'
+                }`}>
+                  {cbu.length} / 22 dígitos
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* En modo conjunto, mostrar el segundo identificador */}
+          {reportMode === 'set' && (
+            <div className="pt-1">
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                {primaryType === 'DNI' ? 'CBU / CVU Vinculado' : 'DNI / CUIL Vinculado'}
+              </label>
+              {primaryType === 'DNI' ? (
+                <input
+                  type="text"
+                  value={cbu}
+                  onChange={e => setCbu(e.target.value.replace(/\D/g, '').slice(0, 22))}
+                  placeholder="CBU / CVU de 22 dígitos vinculado (opcional)"
+                  maxLength={22}
+                  className="w-full rounded-xl border border-white/10 bg-slate-900/90 px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:border-rose-500/70 focus:outline-none font-mono transition"
+                />
+              ) : (
+                <input
+                  type="text"
+                  value={dni}
+                  onChange={e => setDni(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                  placeholder="DNI o CUIL vinculado (opcional)"
+                  maxLength={11}
+                  className="w-full rounded-xl border border-white/10 bg-slate-900/90 px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:border-rose-500/70 focus:outline-none font-mono transition"
+                />
+              )}
             </div>
           )}
         </div>
 
-        {/* ── IDENTIFICADORES CON VALIDACIÓN INTELIGENTE ── */}
-        <div className="rounded-xl border border-white/10 bg-slate-950/60 p-4 space-y-4">
-          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
-            <span>Datos del Incidente</span>
-            <span className="text-[10px] text-cyan-400 font-normal">
-              {reportMode === 'single' ? `* Campo obligatorio marcado para ${primaryType}` : '* Complete el conjunto de datos vinculados'}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-            {/* DNI */}
-            <div>
-              <label className="block text-xs text-slate-300 mb-1 flex items-center justify-between">
-                <span>
-                  DNI {((reportMode === 'single' && primaryType === 'DNI') || reportMode === 'set') && <span className="text-rose-400 font-bold">*</span>}
-                </span>
-                <span className="text-[10px] text-slate-500 font-mono">7-8 dígitos</span>
-              </label>
-              <input
-                type="text"
-                value={dni}
-                onChange={e => setDni(e.target.value.replace(/\D/g, '').slice(0, 8))}
-                placeholder="ej: 30111222"
-                maxLength={8}
-                className={`w-full rounded-xl border bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none font-mono ${
-                  reportMode === 'single' && primaryType === 'DNI' ? 'border-rose-500/50 focus:border-rose-400' : 'border-white/10 focus:border-cyan-400'
-                }`}
-              />
-            </div>
-
-            {/* CBU/CVU */}
-            <div>
-              <label className="block text-xs text-slate-300 mb-1 flex items-center justify-between">
-                <span>
-                  CBU / CVU {reportMode === 'single' && primaryType === 'CBU' && <span className="text-rose-400 font-bold">*</span>}
-                </span>
-                <span className="text-[10px] text-slate-500 font-mono">Exacto 22 dígitos</span>
-              </label>
-              <input
-                type="text"
-                value={cbu}
-                onChange={e => setCbu(e.target.value.replace(/\D/g, '').slice(0, 22))}
-                placeholder="0000003100010000000001"
-                maxLength={22}
-                className={`w-full rounded-xl border bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none font-mono ${
-                  reportMode === 'single' && primaryType === 'CBU' ? 'border-rose-500/50 focus:border-rose-400' : 'border-white/10 focus:border-cyan-400'
-                }`}
-              />
-              {cbu && cbu.length !== 22 && (
-                <span className="text-[10px] text-amber-400 mt-1 block">
-                  {cbu.length} / 22 dígitos ingresados
-                </span>
-              )}
-            </div>
-
-            {/* CUIT/CUIL */}
-            <div>
-              <label className="block text-xs text-slate-300 mb-1 flex items-center justify-between">
-                <span>
-                  CUIT / CUIL {reportMode === 'single' && primaryType === 'CUIT' && <span className="text-rose-400 font-bold">*</span>}
-                </span>
-                <span className="text-[10px] text-slate-500 font-mono">Exacto 11 dígitos</span>
-              </label>
-              <input
-                type="text"
-                value={cuit}
-                onChange={e => setCuit(e.target.value.replace(/\D/g, '').slice(0, 11))}
-                placeholder="20301112227"
-                maxLength={11}
-                className={`w-full rounded-xl border bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none font-mono ${
-                  reportMode === 'single' && primaryType === 'CUIT' ? 'border-rose-500/50 focus:border-rose-400' : 'border-white/10 focus:border-cyan-400'
-                }`}
-              />
-              {cuit && cuit.length !== 11 && (
-                <span className="text-[10px] text-amber-400 mt-1 block">
-                  {cuit.length} / 11 dígitos ingresados
-                </span>
-              )}
-            </div>
-
-            {/* Email */}
-            <div>
-              <label className="block text-xs text-slate-300 mb-1 flex items-center justify-between">
-                <span>
-                  Email {reportMode === 'single' && primaryType === 'EMAIL' && <span className="text-rose-400 font-bold">*</span>}
-                </span>
-                <span className="text-[10px] text-slate-500">(Opcional)</span>
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="estafador@gmail.com"
-                className={`w-full rounded-xl border bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none ${
-                  reportMode === 'single' && primaryType === 'EMAIL' ? 'border-rose-500/50 focus:border-rose-400' : 'border-white/10 focus:border-cyan-400'
-                }`}
-              />
-            </div>
-
-            {/* Teléfono */}
-            <div>
-              <label className="block text-xs text-slate-300 mb-1 flex items-center justify-between">
-                <span>
-                  Teléfono {reportMode === 'single' && primaryType === 'PHONE' && <span className="text-rose-400 font-bold">*</span>}
-                </span>
-                <span className="text-[10px] text-slate-500">Prefijo libre / intl</span>
-              </label>
-              <input
-                type="text"
-                value={phone}
-                onChange={e => setPhone(e.target.value)}
-                placeholder="+54 9 11 2233-4455"
-                className={`w-full rounded-xl border bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none font-mono ${
-                  reportMode === 'single' && primaryType === 'PHONE' ? 'border-rose-500/50 focus:border-rose-400' : 'border-white/10 focus:border-cyan-400'
-                }`}
-              />
-            </div>
-
-            {/* IP Address */}
-            <div>
-              <label className="block text-xs text-slate-300 mb-1 flex items-center justify-between">
-                <span>IP Conexión</span>
-                <span className="text-[10px] text-slate-500">(Opcional)</span>
-              </label>
-              <input
-                type="text"
-                value={ip}
-                onChange={e => setIp(e.target.value)}
-                placeholder="190.191.200.45"
-                className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-600 focus:border-cyan-400 focus:outline-none font-mono"
-              />
-            </div>
-
-            {/* Device ID */}
-            <div className="sm:col-span-2 lg:col-span-3">
-              <label className="block text-xs text-slate-300 mb-1 flex items-center justify-between">
-                <span>Device Fingerprint / Hardware ID</span>
-                <span className="text-[10px] text-slate-500">(Opcional)</span>
-              </label>
-              <input
-                type="text"
-                value={device}
-                onChange={e => setDevice(e.target.value)}
-                placeholder="Hardware hash o ID de dispositivo del estafador (ej: dev_7f9c2a...)"
-                className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-600 focus:border-cyan-400 focus:outline-none font-mono"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* ── CATEGORÍAS ESPECÍFICAS (SIN FRAUDE CONFIRMADO GENÉRICO) ── */}
-        <div>
-          <label className="block text-xs font-semibold text-slate-300 mb-2">
-            Tipología Específica del Incidente *
+        {/* 3. Tipología del Incidente */}
+        <div className="space-y-2.5">
+          <label className="block text-xs font-semibold text-slate-300">
+            Tipología del Incidente <span className="text-rose-400">*</span>
           </label>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {SPECIFIC_CATEGORIES.map(cat => (
               <button
                 key={cat.value}
                 type="button"
                 onClick={() => setCategory(cat.value)}
-                className={`rounded-xl border p-2.5 text-xs font-semibold transition text-left ${
+                className={`px-3 py-2.5 rounded-xl border text-xs font-medium transition text-left flex items-center justify-between ${
                   category === cat.value
-                    ? 'border-rose-500/60 bg-rose-500/20 text-white shadow-sm'
-                    : 'border-white/10 bg-slate-900/60 text-slate-400 hover:border-white/25 hover:text-slate-200'
+                    ? 'border-rose-500/50 bg-rose-500/15 text-rose-200 shadow-sm'
+                    : 'border-white/5 bg-slate-900/50 text-slate-400 hover:border-white/15 hover:text-slate-200'
                 }`}
               >
-                <span className="block truncate">{cat.label}</span>
+                <span className="truncate">{cat.label}</span>
+                {category === cat.value && (
+                  <span className="h-1.5 w-1.5 rounded-full bg-rose-400 shrink-0 ml-1.5" />
+                )}
               </button>
             ))}
           </div>
         </div>
 
+        {/* 4. Acordeón Desplegable: Detalles Opcionales */}
+        <div className="border-t border-white/5 pt-3">
+          <button
+            type="button"
+            onClick={() => setShowOptionalDetails(!showOptionalDetails)}
+            className="flex items-center gap-2 text-xs font-medium text-slate-400 hover:text-cyan-400 transition py-1.5 px-2 rounded-lg hover:bg-white/5"
+          >
+            {showOptionalDetails ? (
+              <ChevronUp className="h-4 w-4 text-cyan-400" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-slate-400" />
+            )}
+            <span>
+              {showOptionalDetails ? 'Ocultar campos opcionales' : '+ Agregar detalles opcionales (Email, Teléfono, IP, Device, Ticket)'}
+            </span>
+          </button>
+
+          {showOptionalDetails && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-4">
+              <div>
+                <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                  ID de Ticket / Ref. Interna
+                </label>
+                <input
+                  type="text"
+                  value={internalTicketId}
+                  onChange={e => setInternalTicketId(e.target.value)}
+                  placeholder="ej: TCK-2026-9812"
+                  className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-600 focus:border-cyan-400 focus:outline-none font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                  Correo Electrónico
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="ej: sospechoso@email.com"
+                  className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-600 focus:border-cyan-400 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                  Teléfono / Celular
+                </label>
+                <input
+                  type="text"
+                  value={phone}
+                  onChange={e => setPhone(e.target.value)}
+                  placeholder="ej: +54 9 11 2233-4455"
+                  className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-600 focus:border-cyan-400 focus:outline-none font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                  Dirección IP
+                </label>
+                <input
+                  type="text"
+                  value={ip}
+                  onChange={e => setIp(e.target.value)}
+                  placeholder="ej: 190.191.200.45"
+                  className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-600 focus:border-cyan-400 focus:outline-none font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                  Device Fingerprint / Hardware ID
+                </label>
+                <input
+                  type="text"
+                  value={device}
+                  onChange={e => setDevice(e.target.value)}
+                  placeholder="ej: dev_7f9c2a..."
+                  className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-600 focus:border-cyan-400 focus:outline-none font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                  CUIT / CUIL Alternativo
+                </label>
+                <input
+                  type="text"
+                  value={cuit}
+                  onChange={e => setCuit(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                  placeholder="ej: 20301112227"
+                  maxLength={11}
+                  className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-600 focus:border-cyan-400 focus:outline-none font-mono"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Mensajes de Feedback */}
         {error && (
-          <div className="p-3 rounded-xl bg-rose-950/80 border border-rose-500/50 text-rose-200 text-xs flex items-center gap-2">
+          <div className="p-3.5 rounded-xl bg-rose-950/70 border border-rose-500/40 text-rose-200 text-xs flex items-center gap-2.5">
             <XCircle className="h-4 w-4 shrink-0 text-rose-400" />
             <span>{error}</span>
           </div>
         )}
 
         {success && (
-          <div className="rounded-xl border border-emerald-500/40 bg-emerald-950/40 p-3.5 text-xs text-emerald-200 flex items-center gap-2.5 shadow-lg">
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/40 p-3.5 text-xs text-emerald-200 flex items-center gap-2.5 shadow-sm">
             <CheckCircle className="h-4 w-4 shrink-0 text-emerald-400" />
-            <span>¡Incidente registrado exitosamente en el libro mayor criptográfico y persistido para análisis de red!</span>
+            <span>¡Incidente registrado exitosamente en el libro mayor criptográfico y red federal!</span>
           </div>
         )}
 
-        <div className="pt-2 flex items-center justify-between">
+        {/* Botón de Acción Principal */}
+        <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-t border-white/5">
           <p className="text-[11px] text-slate-500">
             Los datos son convertidos a hashes ciegos (SHA-256 + Salt Federal) preservando el secreto bancario.
           </p>
@@ -2677,17 +2686,17 @@ function ReportFraudModule() {
           <button
             type="submit"
             disabled={loading || activeFintech?.status === 'SUSPENDED'}
-            className="flex items-center gap-2 rounded-xl bg-rose-600 hover:bg-rose-500 px-6 py-2.5 text-xs font-bold text-white shadow-lg shadow-rose-950/50 active:scale-95 disabled:opacity-50 transition"
+            className="flex items-center justify-center gap-2 rounded-xl bg-rose-600 hover:bg-rose-500 px-6 py-2.5 text-xs font-bold text-white shadow-lg shadow-rose-950/40 active:scale-95 disabled:opacity-50 transition shrink-0"
           >
             {loading ? (
               <>
                 <RefreshCw className="h-4 w-4 animate-spin" />
-                Registrando Incidente...
+                <span>Registrando...</span>
               </>
             ) : (
               <>
                 <ShieldAlert className="h-4 w-4" />
-                Registrar Incidente en Red
+                <span>Registrar Incidente</span>
               </>
             )}
           </button>
