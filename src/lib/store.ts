@@ -205,7 +205,7 @@ interface ConsortiumStore {
   updateUserRole: (userId: string, role: 'admin' | 'usuario') => Promise<{ success: boolean; message: string }>;
   toggleUserStatus: (userId: string) => Promise<{ success: boolean; message: string }>;
   updateUserTotp: (userId: string, enrolled: boolean, secret?: string) => Promise<void>;
-  complete2FAEnrollment: (email: string, secret: string, code: string) => Promise<{ success: boolean; message: string }>;
+  complete2FAEnrollment: (email: string, secret: string, code: string, targetPortal?: 'partner' | 'admin', selectedEntityId?: string) => Promise<{ success: boolean; message: string; targetRoute?: AppRoute }>;
 
   // ── Auditoría Histórica de Scores ──────────────────────────────
   scoringAuditRecords: ScoringAuditRecord[];
@@ -1685,7 +1685,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         };
       },
 
-      complete2FAEnrollment: async (email: string, secret: string, code: string) => {
+      complete2FAEnrollment: async (email: string, secret: string, code: string, targetPortal: 'partner' | 'admin' = 'partner', selectedEntityId?: string) => {
         const cleanEmail = email.trim().toLowerCase();
         const cleanCode = code.trim().replace(/\s/g, '');
         const cleanSecret = secret.trim().replace(/\s/g, '');
@@ -1707,14 +1707,14 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         let targetUser = state.appUsers.find(u => u.email.toLowerCase() === cleanEmail);
         const isDefaultSuperAdmin = cleanEmail === 'andresalaniz8@gmail.com' || cleanEmail === 'alan.morales778@gmail.com';
 
-        if (!targetUser && !isDefaultSuperAdmin) {
+        if (!targetUser && !isDefaultSuperAdmin && targetPortal === 'admin') {
           return {
             success: false,
             message: `Acceso no autorizado: El usuario ${cleanEmail} no ha sido dado de alta previamente por un Administrador desde el Panel de Gobernanza Central.`,
           };
         }
 
-        const isAdmin = targetUser ? targetUser.role === 'admin' : isDefaultSuperAdmin;
+        const shouldRouteAdmin = targetPortal === 'admin';
 
         set(s => {
           let updatedUsers = s.appUsers.map(u => {
@@ -1725,7 +1725,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           });
 
           // Si el usuario es un admin por defecto que aún no estaba en appUsers:
-          if (!updatedUsers.some(u => u.email.toLowerCase() === cleanEmail) && isDefaultSuperAdmin) {
+          if (!updatedUsers.some(u => u.email.toLowerCase() === cleanEmail) && isDefaultSuperAdmin && shouldRouteAdmin) {
             updatedUsers.push({
               id: `usr-admin-${Date.now()}`,
               email: cleanEmail,
@@ -1740,7 +1740,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             });
           }
 
-          if (isAdmin) {
+          if (shouldRouteAdmin) {
             const adminSession: AdminSession = {
               isAuthenticated: true,
               email: cleanEmail,
@@ -1759,11 +1759,28 @@ export const useConsortiumStore = create<ConsortiumStore>()(
                 s.auditLogs,
                 cleanEmail,
                 '2FA_ENROLL',
-                `Enrolamiento 2FA (Google Authenticator) vinculado y verificado criptográficamente para SuperAdmin ${cleanEmail}`
+                `Enrolamiento 2FA vinculado para SuperAdmin ${cleanEmail}`
               ),
             };
           } else {
-            const partnerEntity = s.fintechs.find(f => f.id === targetUser?.entityId) || s.fintechs[0];
+            // Resolver la entidad bancaria
+            let partnerEntity = selectedEntityId ? s.fintechs.find(f => f.id === selectedEntityId) : null;
+            if (!partnerEntity && targetUser?.entityId && targetUser.entityId !== 'CONSORCIO') {
+              partnerEntity = s.fintechs.find(f => f.id === targetUser?.entityId);
+            }
+            if (!partnerEntity) {
+              partnerEntity = s.fintechs.find(f => f.status === 'ACTIVE') || s.fintechs[0] || {
+                id: 'fintech-1',
+                name: 'BANCO PRUEBA',
+                apiKey: 'antf_live_bancoprueba_2026',
+                trustWeight: 1.0,
+                status: 'ACTIVE',
+                queriesCount: 0,
+                reportsCount: 0,
+                falsePositivesCount: 0,
+              };
+            }
+
             const partnerSession: PartnerSession = {
               isAuthenticated: true,
               entityId: partnerEntity.id,
@@ -1783,13 +1800,17 @@ export const useConsortiumStore = create<ConsortiumStore>()(
                 s.auditLogs,
                 partnerEntity.name,
                 '2FA_ENROLL',
-                `Enrolamiento 2FA (Google Authenticator) vinculado y verificado criptográficamente para ${cleanEmail}`
+                `Enrolamiento 2FA vinculado para ${cleanEmail} en ${partnerEntity.name}`
               ),
             };
           }
         });
 
-        return { success: true, message: 'Google Authenticator vinculado y verificado criptográficamente con éxito.' };
+        return {
+          success: true,
+          message: 'Google Authenticator vinculado y verificado criptográficamente con éxito.',
+          targetRoute: shouldRouteAdmin ? 'admin-portal' : 'partner-portal'
+        };
       },
 
       addUser: async ({ email, role, entityId = 'CONSORCIO', entityName = 'Gobernanza Central', tempPassword }) => {

@@ -131,7 +131,7 @@ export default function AppRouter() {
       <AdminConsortiumPortal
         onLogout={() => {
           logoutAdmin();
-          setCurrentRoute('partner-login');
+          setCurrentRoute('admin-login');
         }}
       />
     );
