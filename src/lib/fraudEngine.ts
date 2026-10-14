@@ -348,7 +348,7 @@ export async function evaluateRisk(params: {
       const recentEdges = edges.filter(e => {
         if (e.isFalsePositive) return false;
         const isMatch =
-          inputHashes.includes(e.sourceHash) || inputHashes.includes(edge.targetHash);
+          inputHashes.includes(e.sourceHash) || inputHashes.includes(e.targetHash);
         const isRecent =
           Date.now() - new Date(e.timestamp).getTime() < VELOCITY_WINDOW_MS;
         return isMatch && isRecent;

@@ -270,7 +270,12 @@ function SingleLookupView() {
       const res = await lookupIdentity(queryParams);
       setResult(res);
     } catch (err) {
-      setError('Error al evaluar el riesgo en la red federada.');
+      const detail = err instanceof Error ? `: ${err.message}` : '';
+      setError(
+        isInternal
+          ? `Error al evaluar el riesgo en el workspace interno${detail}`
+          : `Error al evaluar el riesgo en la red federada del consorcio${detail}`
+      );
       console.error(err);
     } finally {
       setLoading(false);
