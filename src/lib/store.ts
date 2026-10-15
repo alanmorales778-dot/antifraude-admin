@@ -2611,6 +2611,18 @@ if (typeof window !== 'undefined') {
     localStorage.removeItem('antifraude-consortium-store-v2');
     localStorage.removeItem('antifraude-consortium-store-v1');
     localStorage.removeItem('antifraude-consortium-store');
+
+    // Limpiar claves de enrutamiento y roles obsoletos guardados previamente en el navegador
+    const raw = localStorage.getItem('antifraude-consortium-store-v3');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.state && (parsed.state.currentRoute || parsed.state.activeRole || parsed.state.activeFintechId)) {
+        delete parsed.state.currentRoute;
+        delete parsed.state.activeRole;
+        delete parsed.state.activeFintechId;
+        localStorage.setItem('antifraude-consortium-store-v3', JSON.stringify(parsed));
+      }
+    }
   } catch {}
 
   // 1. Canal local de alta velocidad (BroadcastChannel) para todas las pestañas abiertas

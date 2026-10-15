@@ -93,76 +93,59 @@ export default function AppRouter() {
     return () => window.removeEventListener('hashchange', handleLocationChange);
   }, [setCurrentRoute]);
 
+  // Determinar el reino estricto de la ventana / pestaña actual basado en la URL
+  const isAdminRealm = typeof window !== 'undefined' && (
+    window.location.pathname.toLowerCase().startsWith('/admin') ||
+    window.location.hash.toLowerCase().includes('admin') ||
+    window.location.search.toLowerCase().includes('admin')
+  );
+
   // ── ROUTE: Landing Opcional de Presentación Institucional ──
   if (currentRoute === 'landing') {
     return (
       <InstitutionalGateway
-        onSelectAdmin={() => setCurrentRoute('admin-login')}
-        onSelectPartner={() => setCurrentRoute('partner-login')}
-      />
-    );
-  }
-
-  // ── ROUTE: Admin Login (Gobernanza Central / SuperAdmin) ──
-  if (currentRoute === 'admin-login') {
-    return (
-      <UnifiedLogin
-        portalType="admin"
-        onSuccess={() => setCurrentRoute('admin-portal')}
-        onNavigateHome={() => setCurrentRoute('partner-login')}
-      />
-    );
-  }
-
-  // ── ROUTE: Admin Portal (Gobernanza Central) ──
-  if (currentRoute === 'admin-portal') {
-    // Auth Guard
-    if (!adminSession?.isAuthenticated) {
-      return (
-        <UnifiedLogin
-          portalType="admin"
-          onSuccess={() => setCurrentRoute('admin-portal')}
-          onNavigateHome={() => setCurrentRoute('partner-login')}
-        />
-      );
-    }
-
-    return (
-      <AdminConsortiumPortal
-        onLogout={() => {
-          logoutAdmin();
+        onSelectAdmin={() => {
+          if (typeof window !== 'undefined') window.location.hash = 'admin-login';
           setCurrentRoute('admin-login');
+        }}
+        onSelectPartner={() => {
+          if (typeof window !== 'undefined') window.location.hash = 'partner-login';
+          setCurrentRoute('partner-login');
         }}
       />
     );
   }
 
-  // ── ROUTE: Partner / Bancos / Fintechs Login (Pantalla Principal) ──
-  if (currentRoute === 'partner-login') {
-    return (
-      <UnifiedLogin
-        portalType="partner"
-        onSuccess={() => setCurrentRoute('partner-portal')}
-        onNavigateAdmin={() => setCurrentRoute('admin-login')}
-        onNavigateHome={() => setCurrentRoute('partner-login')}
-      />
-    );
-  }
-
-  // ── ROUTE: Partner Portal (Página del Propio Banco / Internal Risk Workspace) ──
-  if (currentRoute === 'partner-portal') {
-    // Auth Guard
-    if (!partnerSession?.isAuthenticated) {
+  // ── REINO ADMIN: Si la URL es explícitamente de administración (/admin o #admin) ──
+  if (isAdminRealm) {
+    if (currentRoute === 'admin-portal' && adminSession?.isAuthenticated) {
       return (
-        <UnifiedLogin
-          portalType="partner"
-          onSuccess={() => setCurrentRoute('partner-portal')}
-          onNavigateAdmin={() => setCurrentRoute('admin-login')}
-          onNavigateHome={() => setCurrentRoute('partner-login')}
+        <AdminConsortiumPortal
+          onLogout={() => {
+            logoutAdmin();
+            setCurrentRoute('admin-login');
+          }}
         />
       );
     }
 
+    return (
+      <UnifiedLogin
+        portalType="admin"
+        onSuccess={() => setCurrentRoute('admin-portal')}
+        onNavigateHome={() => {
+          if (typeof window !== 'undefined') {
+            window.location.hash = 'partner-login';
+          }
+          setCurrentRoute('partner-login');
+        }}
+      />
+    );
+  }
+
+  // ── REINO BANCOS / FINTECHS: La raíz y todo lo que no sea admin ──
+  // Si la sesión de partner está activa, renderizar SIEMPRE el portal del banco
+  if (partnerSession?.isAuthenticated) {
     return (
       <EntityPortal
         fintechId={partnerSession.entityId}
@@ -174,13 +157,23 @@ export default function AppRouter() {
     );
   }
 
-  // Default fallback: Inicio de sesión de Bancos, Fintechs y Empresas
+  // Si no está autenticado como partner, renderizar el login de bancos/fintechs
   return (
     <UnifiedLogin
       portalType="partner"
       onSuccess={() => setCurrentRoute('partner-portal')}
-      onNavigateAdmin={() => setCurrentRoute('admin-login')}
-      onNavigateHome={() => setCurrentRoute('partner-login')}
+      onNavigateAdmin={() => {
+        if (typeof window !== 'undefined') {
+          window.location.hash = 'admin-login';
+        }
+        setCurrentRoute('admin-login');
+      }}
+      onNavigateHome={() => {
+        if (typeof window !== 'undefined') {
+          window.location.hash = 'partner-login';
+        }
+        setCurrentRoute('partner-login');
+      }}
     />
   );
 }
