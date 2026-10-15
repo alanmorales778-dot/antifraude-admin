@@ -827,7 +827,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
 
       lookupIdentity: async ({ dni, email, phone, ip, cbu, device, cuit }) => {
         const state = get();
-        const fintechId = state.activeFintechId;
+        const fintechId = state.partnerSession?.entityId || state.activeFintechId || (state.fintechs[0]?.id) || 'banco-prueba';
         const fintech = state.fintechs.find(f => f.id === fintechId);
 
         // Auto-heal de reportes previos unitarios que sufrieron del bug de 0 aristas
@@ -1159,7 +1159,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
 
       importCSV: async (csvText: string) => {
         const state = get();
-        const fintechId = state.activeFintechId;
+        const fintechId = state.partnerSession?.entityId || state.activeFintechId || (state.fintechs[0]?.id) || 'banco-prueba';
         const fintech = state.fintechs.find(f => f.id === fintechId);
 
         if (fintech?.status === 'SUSPENDED') {
@@ -1645,6 +1645,14 @@ export const useConsortiumStore = create<ConsortiumStore>()(
 
       setCurrentRoute: (route: AppRoute) => {
         set({ currentRoute: route });
+        if (typeof window !== 'undefined') {
+          try {
+            const cleanHash = window.location.hash.replace('#', '').trim().toLowerCase();
+            if (cleanHash !== route.toLowerCase()) {
+              window.location.hash = route;
+            }
+          } catch {}
+        }
       },
 
       loginAdmin: async ({ email, masterKey, totpCode }) => {
@@ -2571,7 +2579,9 @@ export const useConsortiumStore = create<ConsortiumStore>()(
     {
       name: 'antifraude-consortium-store-v3',
       storage: createJSONStorage(() => localStorage),
-      // Serializar todo excepto `lastLookupResult` para no inflar el storage
+      // Serializar datos compartidos del consorcio y sesiones
+      // NOTA CRÍTICA: NO serializar `currentRoute`, `activeRole` ni `activeFintechId`
+      // para evitar que una pestaña de Admin sobreescriba o fuerce la navegación de una pestaña de Banco/Partner.
       partialize: state => ({
         fintechs: state.fintechs,
         identityNodes: state.identityNodes,
@@ -2579,11 +2589,8 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         networkAlerts: state.networkAlerts,
         auditLogs: state.auditLogs,
         deviceCUITLinks: state.deviceCUITLinks,
-        activeRole: state.activeRole,
-        activeFintechId: state.activeFintechId,
         activeService: state.activeService,
         seedReady: state.seedReady,
-        currentRoute: state.currentRoute,
         adminSession: state.adminSession,
         partnerSession: state.partnerSession,
         scoringConfig: state.scoringConfig,
@@ -2610,18 +2617,55 @@ if (typeof window !== 'undefined') {
   if (localSyncChannel) {
     localSyncChannel.onmessage = (event) => {
       if (event.data?.type === 'REALTIME_STATE_MUTATION' && event.data.payload) {
-        useConsortiumStore.setState(event.data.payload);
+        // Filtrar propiedades prohibidas para proteger la navegación y aislamiento de sesión de cada pestaña
+        const {
+          currentRoute,
+          activeRole,
+          activeFintechId,
+          lastLookupResult,
+          adminSession,
+          partnerSession,
+          ...safeSharedPayload
+        } = event.data.payload;
+
+        if (Object.keys(safeSharedPayload).length > 0) {
+          useConsortiumStore.setState(safeSharedPayload);
+        }
       }
     };
   }
 
-  // 2. Event listener de 'storage' para soporte universal si el navegador no soporta BroadcastChannel
+  // 2. Event listener de 'storage' para sincronizar datos compartidos del consorcio sin afectar navegación ni roles locales
   window.addEventListener('storage', (event) => {
     if (event.key === 'antifraude-consortium-store-v3' && event.newValue) {
       try {
         const parsed = JSON.parse(event.newValue);
         if (parsed?.state) {
-          useConsortiumStore.setState(parsed.state);
+          // Extraer ÚNICAMENTE entidades del grafo y datos de consorcio compartidos
+          // NUNCA sobreescribir la pestaña actual: ni currentRoute, ni activeRole, ni activeFintechId, ni lastLookupResult!
+          const {
+            fintechs,
+            identityNodes,
+            graphEdges,
+            networkAlerts,
+            auditLogs,
+            deviceCUITLinks,
+            scoringConfig,
+            appUsers,
+            scoringAuditRecords,
+          } = parsed.state;
+
+          useConsortiumStore.setState({
+            ...(fintechs ? { fintechs } : {}),
+            ...(identityNodes ? { identityNodes } : {}),
+            ...(graphEdges ? { graphEdges } : {}),
+            ...(networkAlerts ? { networkAlerts } : {}),
+            ...(auditLogs ? { auditLogs } : {}),
+            ...(deviceCUITLinks ? { deviceCUITLinks } : {}),
+            ...(scoringConfig ? { scoringConfig } : {}),
+            ...(appUsers ? { appUsers } : {}),
+            ...(scoringAuditRecords ? { scoringAuditRecords } : {}),
+          });
         }
       } catch {}
     }

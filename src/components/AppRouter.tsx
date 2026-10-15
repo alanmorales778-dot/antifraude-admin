@@ -36,6 +36,7 @@ export default function AppRouter() {
       const params = new URLSearchParams(window.location.search);
       const queryRoute = (params.get('route') || params.get('path') || '').toLowerCase();
       const host = window.location.hostname.toLowerCase();
+      const state = useConsortiumStore.getState();
 
       // Rutas explícitas de aterrizaje institucional oficial
       if (hash === 'landing' || queryRoute === 'landing') {
@@ -51,7 +52,7 @@ export default function AppRouter() {
         queryRoute.includes('admin');
 
       if (isAdminContext) {
-        if (hash === 'admin-portal' || queryRoute === 'admin-portal' || (adminSession?.isAuthenticated && !hash.includes('login'))) {
+        if (hash === 'admin-portal' || queryRoute === 'admin-portal' || (state.adminSession?.isAuthenticated && !hash.includes('login'))) {
           setCurrentRoute('admin-portal');
         } else {
           setCurrentRoute('admin-login');
@@ -69,7 +70,7 @@ export default function AppRouter() {
         queryRoute.includes('empresa');
 
       if (isPartnerContext) {
-        if (hash === 'partner-portal' || queryRoute === 'partner-portal' || (partnerSession?.isAuthenticated && !hash.includes('login'))) {
+        if (hash === 'partner-portal' || queryRoute === 'partner-portal' || (state.partnerSession?.isAuthenticated && !hash.includes('login'))) {
           setCurrentRoute('partner-portal');
         } else {
           setCurrentRoute('partner-login');
@@ -78,10 +79,9 @@ export default function AppRouter() {
       }
 
       // En la raíz sin parámetros específicos:
-      if (partnerSession?.isAuthenticated) {
+      // Exclusivamente portal bancario/partner (aislamiento estricto contra el portal Admin):
+      if (state.partnerSession?.isAuthenticated) {
         setCurrentRoute('partner-portal');
-      } else if (adminSession?.isAuthenticated) {
-        setCurrentRoute('admin-portal');
       } else {
         // Pantalla Principal por defecto: Exclusivamente inicio de sesión para Empresas, Fintechs o Bancos
         setCurrentRoute('partner-login');
@@ -91,7 +91,7 @@ export default function AppRouter() {
     handleLocationChange();
     window.addEventListener('hashchange', handleLocationChange);
     return () => window.removeEventListener('hashchange', handleLocationChange);
-  }, [setCurrentRoute, adminSession?.isAuthenticated, partnerSession?.isAuthenticated]);
+  }, [setCurrentRoute]);
 
   // ── ROUTE: Landing Opcional de Presentación Institucional ──
   if (currentRoute === 'landing') {
