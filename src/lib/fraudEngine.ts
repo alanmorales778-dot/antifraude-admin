@@ -395,7 +395,8 @@ export async function evaluateRisk(params: {
     }
 
     // Email
-    const emailVerification = email ? verifyEmailExistence(email) : null;
+    const emailNode = emailHash ? identityNodes.find(n => n.hash === emailHash) : undefined;
+    const emailVerification = email ? verifyEmailExistence(email, emailNode?.firstSeen) : null;
     let emailPenalty = 0;
     if (emailVerification) {
       if (emailVerification.status === 'NON_EXISTENT') {

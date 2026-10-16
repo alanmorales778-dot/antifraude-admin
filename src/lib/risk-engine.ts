@@ -109,7 +109,7 @@ export async function evaluateRisk(
   }
 
   // Variable 5: Email Intelligence (Existencia, País, Dominio Joven/Descartable)
-  const emailVerification = type === 'EMAIL' ? verifyEmailExistence(rawValue) : undefined;
+  const emailVerification = type === 'EMAIL' ? verifyEmailExistence(rawValue, (entity as any)?.firstSeen || entity?.firstReportedAt) : undefined;
   const emailPenalty = emailVerification ? emailVerification.scorePenalty : 0;
 
   // Ponderación final (0 a 100) - Calibración ML v2.1

@@ -149,7 +149,11 @@ export interface ScoreBreakdown {
       agePenalty: number;
       isNewDomain: boolean;
       isYoungDomain: boolean;
+      emailFirstSeen?: any;
+      domainDetails?: any;
     };
+    emailFirstSeen?: any;
+    domainDetails?: any;
   } | null;
   // ── Score Final ──
   finalScore: number;
