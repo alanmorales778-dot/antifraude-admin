@@ -8,8 +8,8 @@ import {
   ServiceScope,
   AppUser,
   ScoringConfig,
-} from '@/lib/types';
-import { supabaseFetch, getSupabaseConfig, getSupabaseBrowserClient } from '@/lib/supabaseClient';
+} from './types';
+import { supabaseFetch, getSupabaseConfig, getSupabaseBrowserClient } from './supabaseClient';
 
 /**
  * Servicio de sincronización y persistencia con Supabase
@@ -491,6 +491,34 @@ export class SupabaseService {
   }
 
   /**
+   * Persiste o actualiza un usuario en la tabla app_users de Supabase
+   */
+  static async persistUser(user: AppUser): Promise<boolean> {
+    if (!this.isAvailable()) return false;
+    try {
+      const res = await supabaseFetch('app_users?on_conflict=email', {
+        method: 'POST',
+        prefer: 'resolution=merge-duplicates',
+        body: {
+          id: user.id,
+          email: user.email.toLowerCase(),
+          role: user.role,
+          entity_id: user.entityId,
+          entity_name: user.entityName,
+          status: user.status,
+          totp_enrolled: Boolean(user.totpEnrolled),
+          totp_secret: user.totpSecret || null,
+          created_at: user.createdAt || new Date().toISOString(),
+          last_login: user.lastLogin || null,
+        },
+      });
+      return !res.error;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Persiste un registro de auditoría individual en Supabase
    */
   static async recordAuditLog(
@@ -847,6 +875,7 @@ export class SupabaseService {
     onEdgeChange?: (payload: any) => void;
     onNodeChange?: (payload: any) => void;
     onAuditChange?: (payload: any) => void;
+    onUserChange?: (payload: any) => void;
     onBroadcastStateSync?: (payload: any) => void;
   }): () => void {
     if (!this.isAvailable()) return () => {};
@@ -866,6 +895,9 @@ export class SupabaseService {
         })
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'audit_logs' }, payload => {
           if (handlers.onAuditChange) handlers.onAuditChange(payload);
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'app_users' }, payload => {
+          if (handlers.onUserChange) handlers.onUserChange(payload);
         })
         .on('broadcast', { event: 'CONSORTIUM_STATE_SYNC' }, ({ payload }: any) => {
           if (handlers.onBroadcastStateSync) handlers.onBroadcastStateSync(payload);

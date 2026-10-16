@@ -24,17 +24,17 @@ import {
   DEFAULT_SCORING_CONFIG,
   AppUser,
   ScoringAuditRecord,
-} from '@/lib/types';
-import { computeHash, evaluateRisk, upsertIdentityNode, buildEdgesFromReport } from '@/lib/fraudEngine';
-import { cuckooFilterService } from '@/lib/cuckooFilterService';
-import { SupabaseService } from '@/lib/supabaseService';
+} from './types';
+import { computeHash, evaluateRisk, upsertIdentityNode, buildEdgesFromReport } from './fraudEngine';
+import { cuckooFilterService } from './cuckooFilterService';
+import { SupabaseService } from './supabaseService';
 import {
   getSupabaseConfig,
   saveSupabaseConfig,
   clearSupabaseConfig,
   testSupabaseConnection,
-} from '@/lib/supabaseClient';
-import { verifyTOTP, generateTOTPSecret } from '@/lib/totp';
+} from './supabaseClient';
+import { verifyTOTP, generateTOTPSecret } from './totp';
 
 // ─────────────────────────────────────────────────────────────────
 // DATOS SEMILLA (del spec)
@@ -389,10 +389,28 @@ export const useConsortiumStore = create<ConsortiumStore>()(
                 u => u.entityId !== 'banco-beta' && u.entityId !== 'fintech-alpha'
               );
 
+              // Preservar accesos autorizados y contactos locales de las entidades bancarias
+              const mergedEntities = cleanEntities.map(remoteF => {
+                const localF = get().fintechs.find(lf => lf.id === remoteF.id);
+                const usersForEntity = cleanUsers.filter(u => u.entityId === remoteF.id).map(u => u.email.toLowerCase());
+                const combinedAuth = Array.from(new Set([
+                  ...(localF?.authorizedEmails || []),
+                  ...(remoteF.authorizedEmails || []),
+                  ...usersForEntity,
+                ])).filter(Boolean);
+
+                return {
+                  ...remoteF,
+                  contactName: localF?.contactName || remoteF.contactName,
+                  contactEmail: localF?.contactEmail || remoteF.contactEmail,
+                  authorizedEmails: combinedAuth,
+                };
+              });
+
               cuckooFilterService.syncFromGraphEdges(cleanEdges);
 
               set({
-                fintechs: cleanEntities,
+                fintechs: mergedEntities,
                 identityNodes: remoteData.identityNodes || [],
                 graphEdges: cleanEdges,
                 networkAlerts: remoteData.networkAlerts || [],
@@ -400,7 +418,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
                 deviceCUITLinks: remoteData.deviceCUITLinks || [],
                 appUsers: cleanUsers,
                 scoringConfig: remoteData.scoringConfig || get().scoringConfig,
-                activeFintechId: cleanEntities[0]?.id || '',
+                activeFintechId: mergedEntities[0]?.id || '',
                 seedReady: true,
                 supabaseStatus: 'CONNECTED',
               });
@@ -508,12 +526,56 @@ export const useConsortiumStore = create<ConsortiumStore>()(
                       set(s => ({ auditLogs: [newLog, ...s.auditLogs.slice(0, 499)] }));
                     }
                   },
+                  onUserChange: (payload) => {
+                    const currentUsers = get().appUsers;
+                    if (payload.eventType === 'INSERT' && payload.new) {
+                      const newUser: AppUser = {
+                        id: payload.new.id,
+                        email: payload.new.email,
+                        role: payload.new.role,
+                        entityId: payload.new.entity_id || 'CONSORCIO',
+                        entityName: payload.new.entity_name || 'Gobernanza Central',
+                        status: payload.new.status || 'ACTIVE',
+                        totpEnrolled: Boolean(payload.new.totp_enrolled),
+                        totpSecret: payload.new.totp_secret || undefined,
+                        createdAt: payload.new.created_at || new Date().toISOString(),
+                        lastLogin: payload.new.last_login || undefined,
+                      };
+                      if (!currentUsers.some(u => u.email.toLowerCase() === newUser.email.toLowerCase())) {
+                        set({ appUsers: [...currentUsers, newUser] });
+                      }
+                    } else if (payload.eventType === 'UPDATE' && payload.new) {
+                      set({
+                        appUsers: currentUsers.map(u => u.email.toLowerCase() === payload.new.email?.toLowerCase() ? {
+                          ...u,
+                          role: payload.new.role || u.role,
+                          entityId: payload.new.entity_id || u.entityId,
+                          entityName: payload.new.entity_name || u.entityName,
+                          status: payload.new.status || u.status,
+                          totpEnrolled: payload.new.totp_enrolled !== undefined ? Boolean(payload.new.totp_enrolled) : u.totpEnrolled,
+                        } : u)
+                      });
+                    } else if (payload.eventType === 'DELETE' && payload.old) {
+                      set({ appUsers: currentUsers.filter(u => u.id !== payload.old.id && u.email !== payload.old.email) });
+                    }
+                  },
                   onBroadcastStateSync: (payload) => {
                     if (payload) {
                       if (payload.graphEdges) {
                         cuckooFilterService.syncFromGraphEdges(payload.graphEdges);
                       }
-                      set(payload);
+                      const {
+                        currentRoute,
+                        activeRole,
+                        activeFintechId,
+                        lastLookupResult,
+                        adminSession,
+                        partnerSession,
+                        ...safeSharedPayload
+                      } = payload;
+                      if (Object.keys(safeSharedPayload).length > 0) {
+                        set(safeSharedPayload);
+                      }
                     }
                   },
                 });
@@ -530,7 +592,16 @@ export const useConsortiumStore = create<ConsortiumStore>()(
                         set({ graphEdges: data.graphEdges });
                       }
                       if (data.fintechs && data.fintechs.length !== curFintechs.length) {
-                        set({ fintechs: data.fintechs });
+                        const mergedFintechs = data.fintechs.map(remoteF => {
+                          const localF = curFintechs.find(lf => lf.id === remoteF.id);
+                          return {
+                            ...remoteF,
+                            contactName: localF?.contactName || remoteF.contactName,
+                            contactEmail: localF?.contactEmail || remoteF.contactEmail,
+                            authorizedEmails: localF?.authorizedEmails || remoteF.authorizedEmails || [],
+                          };
+                        });
+                        set({ fintechs: mergedFintechs });
                       }
                     }
                   } catch {}
@@ -713,25 +784,53 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         const entity = get().fintechs.find(f => f.id === fintechId);
         if (!entity) return { success: false, message: 'Entidad bancaria no encontrada.' };
 
-        if (get().appUsers.some(u => u.email.toLowerCase() === cleanEmail)) {
-          return { success: false, message: `El correo ${cleanEmail} ya cuenta con acceso registrado en la plataforma.` };
+        const currentAuth = (entity.authorizedEmails || []).map(e => e.toLowerCase());
+        const isAlreadyInEntity =
+          currentAuth.includes(cleanEmail) ||
+          (entity.contactEmail && entity.contactEmail.toLowerCase() === cleanEmail) ||
+          get().appUsers.some(u => u.entityId === fintechId && u.email.toLowerCase() === cleanEmail);
+
+        if (isAlreadyInEntity) {
+          return { success: false, message: `El correo ${cleanEmail} ya cuenta con acceso registrado en ${entity.name}.` };
         }
 
-        const newUser: AppUser = {
-          id: `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-          email: cleanEmail,
-          role,
-          entityId: entity.id,
-          entityName: entity.name,
-          status: 'ACTIVE',
-          totpEnrolled: false,
-          createdAt: new Date().toISOString(),
-        };
+        const existingUser = get().appUsers.find(u => u.email.toLowerCase() === cleanEmail);
+        let updatedUsers = get().appUsers;
+        let userToPersist: AppUser | null = null;
 
-        const currentAuth = entity.authorizedEmails || [];
-        const updatedAuth = currentAuth.includes(cleanEmail) ? currentAuth : [...currentAuth, cleanEmail];
-        const updatedFintechs = get().fintechs.map(f => f.id === fintechId ? { ...f, authorizedEmails: updatedAuth } : f);
-        const updatedUsers = [...get().appUsers, newUser];
+        if (!existingUser) {
+          const newUser: AppUser = {
+            id: `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            email: cleanEmail,
+            role,
+            entityId: entity.id,
+            entityName: entity.name,
+            status: 'ACTIVE',
+            totpEnrolled: false,
+            createdAt: new Date().toISOString(),
+          };
+          updatedUsers = [...updatedUsers, newUser];
+          userToPersist = newUser;
+        } else {
+          // Si el usuario existe pero estaba sin entidad o con entidad genérica, actualizar su vinculación
+          if (!existingUser.entityId || existingUser.entityId === 'banco-participante') {
+            updatedUsers = updatedUsers.map(u => u.email.toLowerCase() === cleanEmail ? {
+              ...u,
+              entityId: entity.id,
+              entityName: entity.name,
+            } : u);
+            userToPersist = updatedUsers.find(u => u.email.toLowerCase() === cleanEmail) || null;
+          }
+        }
+
+        const rawCurrent = entity.authorizedEmails || [];
+        const updatedAuth = rawCurrent.some(e => e.toLowerCase() === cleanEmail)
+          ? rawCurrent
+          : [...rawCurrent, cleanEmail];
+
+        const updatedFintechs = get().fintechs.map(f =>
+          f.id === fintechId ? { ...f, authorizedEmails: updatedAuth } : f
+        );
 
         const updatedLogs = addAuditEntry(
           get().auditLogs,
@@ -753,7 +852,9 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         });
 
         if (SupabaseService.isAvailable()) {
-          SupabaseService.persistUser(newUser).catch(console.error);
+          if (userToPersist) {
+            SupabaseService.persistUser(userToPersist).catch(console.error);
+          }
           SupabaseService.recordAuditLog(
             get().adminSession?.email || 'SuperAdmin',
             'USER_ACCESS_GRANTED',
@@ -1923,15 +2024,43 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           createdAt: new Date().toISOString(),
         };
 
-        set(s => ({
-          appUsers: [newUser, ...s.appUsers],
-          auditLogs: addAuditEntry(
-            s.auditLogs,
-            s.adminSession?.email || 'SuperAdmin',
-            'USER_CREATE',
-            `Alta de nuevo usuario: ${cleanEmail} con rol [${role.toUpperCase()}] para [${entityName}]`
-          ),
-        }));
+        let updatedFintechs = state.fintechs;
+        if (entityId && entityId !== 'CONSORCIO') {
+          updatedFintechs = state.fintechs.map(f => {
+            if (f.id === entityId) {
+              const currentAuth = f.authorizedEmails || [];
+              return {
+                ...f,
+                authorizedEmails: currentAuth.includes(cleanEmail) ? currentAuth : [...currentAuth, cleanEmail],
+              };
+            }
+            return f;
+          });
+        }
+
+        const updatedUsers = [newUser, ...state.appUsers];
+        const updatedLogs = addAuditEntry(
+          state.auditLogs,
+          state.adminSession?.email || 'SuperAdmin',
+          'USER_CREATE',
+          `Alta de nuevo usuario: ${cleanEmail} con rol [${role.toUpperCase()}] para [${entityName}]`
+        );
+
+        set({
+          fintechs: updatedFintechs,
+          appUsers: updatedUsers,
+          auditLogs: updatedLogs,
+        });
+
+        broadcastRealtimeChange({
+          fintechs: updatedFintechs,
+          appUsers: updatedUsers,
+          auditLogs: updatedLogs,
+        });
+
+        if (SupabaseService.isAvailable()) {
+          SupabaseService.persistUser(newUser).catch(console.error);
+        }
 
         return {
           success: true,
@@ -2687,7 +2816,18 @@ if (typeof window !== 'undefined') {
   if (SupabaseService.isAvailable()) {
     SupabaseService.subscribeToRealtimeChanges((payload) => {
       if (payload) {
-        useConsortiumStore.setState(payload);
+        const {
+          currentRoute,
+          activeRole,
+          activeFintechId,
+          lastLookupResult,
+          adminSession,
+          partnerSession,
+          ...safeSharedPayload
+        } = payload;
+        if (Object.keys(safeSharedPayload).length > 0) {
+          useConsortiumStore.setState(safeSharedPayload);
+        }
       }
     });
   }
