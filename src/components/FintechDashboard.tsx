@@ -199,7 +199,7 @@ function SingleLookupView() {
 
   // Modo Dato por Dato
   const [singleType, setSingleType] = useState<'DNI' | 'EMAIL' | 'PHONE' | 'CBU' | 'IP' | 'DEVICE' | 'CUIT'>('DNI');
-  const [singleValue, setSingleValue] = useState('30111222');
+  const [singleValue, setSingleValue] = useState('');
 
   // Modo Conjunto de Datos
   const [dni, setDni] = useState('');
@@ -398,20 +398,20 @@ function SingleLookupView() {
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
               {[
-                { type: 'DNI' as const, icon: CreditCard, label: 'DNI / CUIL', demo: '30111222' },
-                { type: 'EMAIL' as const, icon: Mail, label: 'Email', demo: 'estafador@gmail.com' },
-                { type: 'PHONE' as const, icon: Phone, label: 'Teléfono', demo: '+5491122334455' },
-                { type: 'CBU' as const, icon: Building, label: 'CBU / CVU', demo: '0000003100010000000001' },
-                { type: 'IP' as const, icon: Globe, label: 'IP', demo: '190.191.200.45' },
-                { type: 'DEVICE' as const, icon: Fingerprint, label: 'Device ID', demo: 'a1b2c3d4e5f6' },
-                { type: 'CUIT' as const, icon: Hash, label: 'CUIT', demo: '20301112227' },
-              ].map(({ type, icon: Icon, label, demo }) => (
+                { type: 'DNI' as const, icon: CreditCard, label: 'DNI / CUIL' },
+                { type: 'EMAIL' as const, icon: Mail, label: 'Email' },
+                { type: 'PHONE' as const, icon: Phone, label: 'Teléfono' },
+                { type: 'CBU' as const, icon: Building, label: 'CBU / CVU' },
+                { type: 'IP' as const, icon: Globe, label: 'IP' },
+                { type: 'DEVICE' as const, icon: Fingerprint, label: 'Device ID' },
+                { type: 'CUIT' as const, icon: Hash, label: 'CUIT' },
+              ].map(({ type, icon: Icon, label }) => (
                 <button
                   key={type}
                   type="button"
                   onClick={() => {
                     setSingleType(type);
-                    setSingleValue(demo);
+                    setSingleValue('');
                   }}
                   className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold border transition ${
                     singleType === type
@@ -1129,9 +1129,6 @@ function SingleLookupView() {
                                 <span className="text-xs font-extrabold text-white tracking-wider uppercase">
                                   Email Intelligence & Aging
                                 </span>
-                                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold">
-                                  Standard Emailage / LexisNexis
-                                </span>
                               </div>
                               <p className="text-[11px] text-slate-400 mt-0.5">
                                 Análisis de antigüedad del correo (First Seen), registro oficial WHOIS/RDAP y sede corporativa
@@ -1267,7 +1264,7 @@ function SingleLookupView() {
                           <div className="flex items-center justify-between mb-2.5 pb-2 border-b border-white/5">
                             <span className="text-[11px] font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
                               <FileText className="h-3.5 w-3.5 text-indigo-400" />
-                              Desglose de Auditoría Técnica (Emailage Parity Details)
+                              Desglose de Auditoría Técnica
                             </span>
                             <span className="text-[10px] text-slate-400 font-mono">
                               Consulta Certificada ZK
