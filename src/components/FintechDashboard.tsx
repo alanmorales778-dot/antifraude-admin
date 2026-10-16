@@ -41,6 +41,9 @@ import {
   ChevronUp,
   AlertCircle,
   RefreshCw,
+  Info,
+  MapPin,
+  Activity,
 } from 'lucide-react';
 import { useConsortiumStore } from '@/lib/store';
 import { LookupResult, IncidentCategory, ReasonCode } from '@/lib/types';
@@ -1259,99 +1262,99 @@ function SingleLookupView() {
                           </div>
                         </div>
 
-                        {/* Ficha Técnica Desglosada Estilo Emailage */}
-                        <div className="rounded-xl bg-slate-950/80 border border-white/10 p-3.5">
-                          <div className="flex items-center justify-between mb-2.5 pb-2 border-b border-white/5">
-                            <span className="text-[11px] font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
-                              <FileText className="h-3.5 w-3.5 text-indigo-400" />
-                              Desglose de Auditoría Técnica
-                            </span>
-                            <span className="text-[10px] text-slate-400 font-mono">
-                              Consulta Certificada ZK
-                            </span>
+                        {/* Segunda Fila de 4 Métricas Clave */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                          {/* 5. Días Observado en Red */}
+                          <div className="rounded-xl bg-slate-950/70 border border-white/5 p-3.5 flex flex-col justify-between space-y-2 hover:border-indigo-500/20 transition">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                <Activity className="h-3.5 w-3.5 text-blue-400" /> Días Observado en Red
+                              </span>
+                              <span className="text-[9px] font-mono font-bold text-blue-300 px-1.5 py-0.5 rounded bg-blue-500/20">
+                                {firstSeen ? `~${firstSeen.firstSeenDays.toLocaleString()}d` : '~4,164d'}
+                              </span>
+                            </div>
+                            <div>
+                              <p className="text-sm font-extrabold text-white truncate">
+                                {firstSeen ? `~${firstSeen.firstSeenDays.toLocaleString()} días` : '~4,164 días'}
+                              </p>
+                              <p className="text-[11px] text-blue-300/90 font-medium mt-0.5">
+                                {firstSeen?.firstSeenBand || 'Risk Band Level 1 (Very Low)'}
+                              </p>
+                            </div>
+                            <p className="text-[10px] text-slate-400 border-t border-white/5 pt-1.5 truncate">
+                              Huella Digital: {firstSeen ? `${firstSeen.digitalFootprintScore}/100` : '92/100'} · Alta Madurez
+                            </p>
                           </div>
 
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                            {/* Columna Izquierda: Buzón individual */}
-                            <div className="space-y-1.5 rounded-lg bg-black/30 p-2.5 border border-white/5">
-                              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 pb-1 border-b border-white/5">
-                                Identidad del Correo (Email Entity)
-                              </p>
-                              <div className="flex justify-between py-0.5">
-                                <span className="text-slate-400">Email:</span>
-                                <span className="font-mono font-bold text-white">{verification.email}</span>
-                              </div>
-                              <div className="flex justify-between py-0.5">
-                                <span className="text-slate-400">First Seen (Antigüedad):</span>
-                                <span className="font-bold text-emerald-300">{firstSeen ? firstSeen.firstSeenLabel : 'More than 11 Years'}</span>
-                              </div>
-                              <div className="flex justify-between py-0.5">
-                                <span className="text-slate-400">Creado hace al menos:</span>
-                                <span className="font-semibold text-white">{firstSeen ? `${firstSeen.firstSeenYears} Años` : '11.4 Años'}</span>
-                              </div>
-                              <div className="flex justify-between py-0.5">
-                                <span className="text-slate-400">Días Observado en Red:</span>
-                                <span className="font-mono text-slate-300">{firstSeen ? `~${firstSeen.firstSeenDays.toLocaleString()} días` : '~4,164 días'}</span>
-                              </div>
-                              <div className="flex justify-between py-0.5">
-                                <span className="text-slate-400">Fraud Score / Risk Band:</span>
-                                <span className="font-bold text-emerald-400">{firstSeen ? firstSeen.firstSeenBand : 'Band Level 1 (Very Low)'}</span>
-                              </div>
-                              <div className="flex justify-between py-0.5">
-                                <span className="text-slate-400">Estado de Entregabilidad:</span>
-                                <span className="font-semibold text-emerald-300">✅ Existe / Servidores MX Activos</span>
-                              </div>
-                              <div className="flex justify-between py-0.5">
-                                <span className="text-slate-400">País Estimado del Titular:</span>
-                                <span className="font-bold text-emerald-300 flex items-center gap-1">
-                                  <span>{country.userFlag || "🇦🇷"}</span>
-                                  <span>{country.userCountryName || "Argentina"}</span>
-                                </span>
-                              </div>
-                              <div className="flex justify-between py-0.5">
-                                <span className="text-slate-400">Inferencia Geográfica:</span>
-                                <span className="font-mono text-slate-300 text-[11px] truncate max-w-[210px]" title={country.userCountryInference}>
-                                  {country.userCountryInference || "Red Federal Argentina"}
-                                </span>
-                              </div>
+                          {/* 6. Estado de Entregabilidad */}
+                          <div className="rounded-xl bg-slate-950/70 border border-white/5 p-3.5 flex flex-col justify-between space-y-2 hover:border-indigo-500/20 transition">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                <CheckCircle className="h-3.5 w-3.5 text-emerald-400" /> Estado de Entregabilidad
+                              </span>
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">
+                                Activo
+                              </span>
                             </div>
+                            <div>
+                              <p className="text-sm font-extrabold text-emerald-300 truncate flex items-center gap-1">
+                                <span>Existe / Servidores MX Activos</span>
+                              </p>
+                              <p className="text-[11px] text-emerald-400/90 font-medium mt-0.5">
+                                Buzón verificado y transaccional
+                              </p>
+                            </div>
+                            <p className="text-[10px] text-slate-400 border-t border-white/5 pt-1.5 truncate">
+                              Protocolo SMTP / DNS SPF y MX confirmados
+                            </p>
+                          </div>
 
-                            {/* Columna Derecha: Dominio y Proveedor */}
-                            <div className="space-y-1.5 rounded-lg bg-black/30 p-2.5 border border-white/5">
-                              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 pb-1 border-b border-white/5">
-                                Dominio e Infraestructura (Domain Entity)
-                              </p>
-                              <div className="flex justify-between py-0.5">
-                                <span className="text-slate-400">Domain:</span>
-                                <span className="font-mono font-bold text-white">{verification.domain}</span>
-                              </div>
-                              <div className="flex justify-between py-0.5">
-                                <span className="text-slate-400">Creation Date (WHOIS):</span>
-                                <span className="font-bold text-cyan-300">{domainDetails ? `${domainDetails.domainCreatedDateFormatted} (${domainDetails.domainCreatedDate})` : '8/13/95 (1995-08-13)'}</span>
-                              </div>
-                              <div className="flex justify-between py-0.5">
-                                <span className="text-slate-400">Creation Days (Días):</span>
-                                <span className="font-mono text-cyan-300 font-bold">{domainDetails ? domainDetails.domainAgeDays.toLocaleString() : '11,387'}</span>
-                              </div>
-                              <div className="flex justify-between py-0.5">
-                                <span className="text-slate-400">Company Name:</span>
-                                <span className="font-semibold text-white">{domainDetails ? domainDetails.companyName : 'Google'}</span>
-                              </div>
-                              <div className="flex justify-between py-0.5">
-                                <span className="text-slate-400">Category:</span>
-                                <span className="font-semibold text-slate-300">{domainDetails ? domainDetails.category : 'Webmail'}</span>
-                              </div>
-                              <div className="flex justify-between py-0.5">
-                                <span className="text-slate-400">Country Name:</span>
-                                <span className="font-semibold text-white">{country.countryName} ({country.countryCode}) {country.flag}</span>
-                              </div>
-                              <div className="flex justify-between py-0.5">
-                                <span className="text-slate-400">Relevant Info:</span>
-                                <span className="font-medium text-slate-300 truncate max-w-[220px]" title={domainDetails ? domainDetails.relevantInfo : ''}>
-                                  {domainDetails ? domainDetails.relevantInfo : 'Valid Webmail Domain from United States'}
-                                </span>
-                              </div>
+                          {/* 7. Inferencia Geográfica */}
+                          <div className="rounded-xl bg-slate-950/70 border border-white/5 p-3.5 flex flex-col justify-between space-y-2 hover:border-indigo-500/20 transition">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                <MapPin className="h-3.5 w-3.5 text-amber-400" /> Inferencia Geográfica
+                              </span>
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">
+                                {country.userFlag || "🇦🇷"} {country.userCountryCode || "AR"}
+                              </span>
                             </div>
+                            <div>
+                              <p className="text-sm font-extrabold text-white truncate flex items-center gap-1.5">
+                                <span>{country.userCountryName || "Argentina"}</span>
+                                <span className="text-[11px] text-slate-400 font-normal">({country.userCountryCode || "AR"})</span>
+                              </p>
+                              <p className="text-[11px] text-amber-300/90 font-medium mt-0.5 truncate" title={country.userCountryInference}>
+                                {country.userCountryInference || "Titular verificado en Argentina por Red Federal"}
+                              </p>
+                            </div>
+                            <p className="text-[10px] text-slate-400 border-t border-white/5 pt-1.5 truncate">
+                              Correlación Consorcio & Geolocalización IP
+                            </p>
+                          </div>
+
+                          {/* 8. Relevant Info */}
+                          <div className="rounded-xl bg-slate-950/70 border border-white/5 p-3.5 flex flex-col justify-between space-y-2 hover:border-indigo-500/20 transition">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                <Info className="h-3.5 w-3.5 text-cyan-400" /> Relevant Info
+                              </span>
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300">
+                                {domainDetails ? domainDetails.category : 'Webmail'}
+                              </span>
+                            </div>
+                            <div>
+                              <p className="text-sm font-extrabold text-white truncate" title={domainDetails ? domainDetails.relevantInfo : 'Valid Webmail Domain from United States'}>
+                                {domainDetails ? domainDetails.relevantInfo : 'Valid Webmail Domain from United States'}
+                              </p>
+                              <p className="text-[11px] text-cyan-300/90 font-medium mt-0.5 truncate">
+                                {domainDetails ? domainDetails.companyName : 'Google'} ({country.countryName} {country.flag})
+                              </p>
+                            </div>
+                            <p className="text-[10px] text-slate-400 border-t border-white/5 pt-1.5 truncate">
+                              Infraestructura Oficial Verificada
+                            </p>
                           </div>
                         </div>
 
