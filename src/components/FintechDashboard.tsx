@@ -1210,24 +1210,31 @@ function SingleLookupView() {
                             </p>
                           </div>
 
-                          {/* 3. País de Origen y Sede */}
+                          {/* 3. País de Origen y Sede Dual (Titular vs Host) */}
                           <div className="rounded-xl bg-slate-950/70 border border-white/5 p-3.5 flex flex-col justify-between space-y-2 hover:border-indigo-500/20 transition">
                             <div className="flex items-center justify-between">
                               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                                <Building className="h-3.5 w-3.5 text-violet-400" /> Proveedor y Sede
+                                <Building className="h-3.5 w-3.5 text-violet-400" /> Geografía & Proveedor
                               </span>
-                              <span className="text-base">{country.flag}</span>
+                              <div className="flex items-center gap-1">
+                                <span title={"Titular: " + (country.userCountryName || "Argentina")}>{country.userFlag || "🇦🇷"}</span>
+                                <span className="text-slate-500 text-[10px]">/</span>
+                                <span title={"Host: " + country.countryName}>{country.flag}</span>
+                              </div>
                             </div>
                             <div>
-                              <p className="text-sm font-extrabold text-white truncate">
-                                {domainDetails ? domainDetails.companyName : 'Google'}
+                              <p className="text-sm font-extrabold text-white truncate flex items-center gap-1.5">
+                                <span>{country.userCountryName || "Argentina"}</span>
+                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">
+                                  Titular {country.userFlag || "🇦🇷"}
+                                </span>
                               </p>
-                              <p className="text-[11px] text-violet-300/90 font-medium mt-0.5">
-                                {country.countryName} ({country.countryCode})
+                              <p className="text-[11px] text-violet-300/90 font-medium mt-0.5 truncate">
+                                Host: {domainDetails ? domainDetails.companyName : "Google"} ({country.countryName} {country.flag})
                               </p>
                             </div>
                             <p className="text-[10px] text-slate-400 border-t border-white/5 pt-1.5 truncate">
-                              {country.sourceLabel}
+                              {country.userCountryInference || "Titular localizado en Argentina por Red Federal"}
                             </p>
                           </div>
 
@@ -1296,6 +1303,19 @@ function SingleLookupView() {
                               <div className="flex justify-between py-0.5">
                                 <span className="text-slate-400">Estado de Entregabilidad:</span>
                                 <span className="font-semibold text-emerald-300">✅ Existe / Servidores MX Activos</span>
+                              </div>
+                              <div className="flex justify-between py-0.5">
+                                <span className="text-slate-400">País Estimado del Titular:</span>
+                                <span className="font-bold text-emerald-300 flex items-center gap-1">
+                                  <span>{country.userFlag || "🇦🇷"}</span>
+                                  <span>{country.userCountryName || "Argentina"}</span>
+                                </span>
+                              </div>
+                              <div className="flex justify-between py-0.5">
+                                <span className="text-slate-400">Inferencia Geográfica:</span>
+                                <span className="font-mono text-slate-300 text-[11px] truncate max-w-[210px]" title={country.userCountryInference}>
+                                  {country.userCountryInference || "Red Federal Argentina"}
+                                </span>
                               </div>
                             </div>
 

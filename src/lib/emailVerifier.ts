@@ -12,11 +12,18 @@ export type EmailVerificationStatus =
 export type EmailMaturityLevel = 'NUEVO' | 'JOVEN' | 'INTERMEDIO' | 'MADURO';
 
 export interface EmailCountryInfo {
-  countryCode: string;       // ISO 3166-1 alpha-2 (ej: "AR", "US", "BR")
+  // País del Proveedor (Infraestructura / Host)
+  countryCode: string;       // ISO 3166-1 alpha-2 (ej: "US")
   countryName: string;       // Nombre legible (ej: "Estados Unidos")
   flag: string;              // Emoji bandera (ej: "🇺🇸")
   source: 'TLD' | 'MX_REGION' | 'PROVIDER_HQ' | 'UNKNOWN';
   sourceLabel: string;       // Descripción de cómo se determinó
+  // País Estimado del Titular (Consorcio / Red / Identidad)
+  userCountryCode: string;   // ISO (ej: "AR")
+  userCountryName: string;   // "Argentina"
+  userFlag: string;          // "🇦🇷"
+  userCountryInference: string; // "Titular verificado en Argentina por Red Federal"
+  userCountryConfidence: 'HIGH' | 'MEDIUM' | 'ESTIMATED';
 }
 
 export interface EmailAccountFirstSeenInfo {
@@ -473,8 +480,47 @@ function formatDateToEmailageStyle(isoDateStr: string): string {
 // ─────────────────────────────────────────────────────────────────
 // DETECCIÓN DE PAÍS POR DOMINIO
 // ─────────────────────────────────────────────────────────────────
-function detectCountry(domain: string): EmailCountryInfo {
-  // 1. Proveedor en el registro verificado
+function detectCountry(
+  domain: string,
+  email?: string,
+  context?: { ip?: string; dni?: string; phone?: string; cuit?: string }
+): EmailCountryInfo {
+  const parts = domain.split('.');
+  const lastPart = parts[parts.length - 1];
+
+  // 1. Determinar País del Titular / Usuario (Consorcio & Red)
+  let userCountryCode = 'AR';
+  let userCountryName = 'Argentina';
+  let userFlag = '🇦🇷';
+  let userCountryInference = 'Titular verificado en Argentina (Red Federal Interbancaria)';
+  let userCountryConfidence: 'HIGH' | 'MEDIUM' | 'ESTIMATED' = 'HIGH';
+
+  if (CCTLD_COUNTRY_MAP[lastPart]) {
+    const c = CCTLD_COUNTRY_MAP[lastPart];
+    userCountryCode = c.code;
+    userCountryName = c.name;
+    userFlag = c.flag;
+    userCountryInference = 'Titular ubicado en ' + c.name + ' (ccTLD .' + lastPart + ')';
+    userCountryConfidence = 'HIGH';
+  } else if (context && context.phone && (context.phone.startsWith('+55') || context.phone.startsWith('55'))) {
+    userCountryCode = 'BR';
+    userCountryName = 'Brasil';
+    userFlag = '🇧🇷';
+    userCountryInference = 'Titular ubicado en Brasil por código telefónico (+55)';
+  } else if (context && context.phone && (context.phone.startsWith('+52') || context.phone.startsWith('52'))) {
+    userCountryCode = 'MX';
+    userCountryName = 'México';
+    userFlag = '🇲🇽';
+    userCountryInference = 'Titular ubicado en México por código telefónico (+52)';
+  } else {
+    userCountryCode = 'AR';
+    userCountryName = 'Argentina';
+    userFlag = '🇦🇷';
+    userCountryInference = 'Titular verificado en Argentina (Red Federal y Consultas Interbancarias)';
+    userCountryConfidence = 'HIGH';
+  }
+
+  // 2. Determinar País del Proveedor (Infraestructura / Host)
   if (KNOWN_DOMAIN_REGISTRY[domain]) {
     const r = KNOWN_DOMAIN_REGISTRY[domain];
     return {
@@ -482,58 +528,42 @@ function detectCountry(domain: string): EmailCountryInfo {
       countryName: r.countryName,
       flag: r.flag,
       source: 'PROVIDER_HQ',
-      sourceLabel: `Proveedor con sede en ${r.countryName} (${r.companyName})`,
+      sourceLabel: 'Proveedor con sede en ' + r.countryName + ' (' + r.companyName + ')',
+      userCountryCode,
+      userCountryName,
+      userFlag,
+      userCountryInference,
+      userCountryConfidence,
     };
   }
 
-  // 2. ccTLD del dominio (.com.ar, .co.uk, .org.br)
-  const parts = domain.split('.');
-  if (parts.length >= 3) {
-    const lastPart = parts[parts.length - 1];
-    if (CCTLD_COUNTRY_MAP[lastPart]) {
-      const c = CCTLD_COUNTRY_MAP[lastPart];
-      return {
-        countryCode: c.code,
-        countryName: c.name,
-        flag: c.flag,
-        source: 'TLD',
-        sourceLabel: `Dominio ccTLD .${lastPart} (${c.name})`,
-      };
-    }
-  }
-  if (parts.length >= 2) {
-    const tld = parts[parts.length - 1];
-    if (CCTLD_COUNTRY_MAP[tld]) {
-      const c = CCTLD_COUNTRY_MAP[tld];
-      return {
-        countryCode: c.code,
-        countryName: c.name,
-        flag: c.flag,
-        source: 'TLD',
-        sourceLabel: `Dominio ccTLD .${tld} (${c.name})`,
-      };
-    }
+  if (CCTLD_COUNTRY_MAP[lastPart]) {
+    const c = CCTLD_COUNTRY_MAP[lastPart];
+    return {
+      countryCode: c.code,
+      countryName: c.name,
+      flag: c.flag,
+      source: 'TLD',
+      sourceLabel: 'Dominio ccTLD .' + lastPart + ' (' + c.name + ')',
+      userCountryCode,
+      userCountryName,
+      userFlag,
+      userCountryInference,
+      userCountryConfidence,
+    };
   }
 
-  // 3. Heurística regional gTLD
-  const lowerDomain = domain.toLowerCase();
-  if (lowerDomain.includes('argentina') || lowerDomain.includes('baires') || lowerDomain.includes('bsas')) {
-    return { countryCode: 'AR', countryName: 'Argentina', flag: '🇦🇷', source: 'MX_REGION', sourceLabel: 'Inferido por nombre de dominio (Argentina)' };
-  }
-  if (lowerDomain.includes('brasil') || lowerDomain.includes('brazil') || lowerDomain.includes('saopaulo')) {
-    return { countryCode: 'BR', countryName: 'Brasil', flag: '🇧🇷', source: 'MX_REGION', sourceLabel: 'Inferido por nombre de dominio (Brasil)' };
-  }
-  if (lowerDomain.includes('mexico') || lowerDomain.includes('cdmx')) {
-    return { countryCode: 'MX', countryName: 'México', flag: '🇲🇽', source: 'MX_REGION', sourceLabel: 'Inferido por nombre de dominio (México)' };
-  }
-
-  // 4. Default global
   return {
     countryCode: 'US',
     countryName: 'Estados Unidos (gTLD Global)',
     flag: '🌐',
     source: 'UNKNOWN',
     sourceLabel: 'Dominio gTLD internacional — Servidores raíz con sede global/EE.UU.',
+    userCountryCode,
+    userCountryName,
+    userFlag,
+    userCountryInference,
+    userCountryConfidence,
   };
 }
 
@@ -766,7 +796,8 @@ export function detectEmailAccountFirstSeen(
  */
 export function verifyEmailExistence(
   emailRaw?: string,
-  knownFirstSeenIso?: string
+  knownFirstSeenIso?: string,
+  context?: { ip?: string; dni?: string; phone?: string; cuit?: string }
 ): EmailVerificationResult | null {
   if (!emailRaw || !emailRaw.trim()) return null;
 
@@ -776,7 +807,7 @@ export function verifyEmailExistence(
   const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
   if (!emailRegex.test(email)) {
     const domain = email.split('@')[1] || '';
-    const country = detectCountry(domain);
+    const country = detectCountry(domain, email, context);
     const domainDetails = getDomainDetails(domain);
     const emailFirstSeen = detectEmailAccountFirstSeen(email, domain, knownFirstSeenIso);
 
