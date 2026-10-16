@@ -18,12 +18,14 @@ interface PartnerLoginProps {
  */
 export default function PartnerLogin({
   onSuccess,
+  onNavigateAdmin,
   onNavigateHome,
 }: PartnerLoginProps) {
   return (
     <UnifiedLogin
       portalType="partner"
       onSuccess={onSuccess}
+      onNavigateAdmin={onNavigateAdmin}
       onNavigateHome={onNavigateHome}
     />
   );

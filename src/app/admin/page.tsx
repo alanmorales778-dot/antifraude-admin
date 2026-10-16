@@ -1,18 +1,33 @@
-﻿'use client';
+'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useConsortiumStore } from '@/lib/store';
 import AdminConsortiumPortal from '@/components/AdminConsortiumPortal';
 import AdminLogin from '@/components/AdminLogin';
 
 export default function AdminPage() {
-  const { adminSession, logoutAdmin } = useConsortiumStore();
+  const { adminSession, logoutAdmin, initSeedData } = useConsortiumStore();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    initSeedData();
+  }, [initSeedData]);
+
+  if (!mounted) {
+    return null;
+  }
 
   if (!adminSession?.isAuthenticated) {
     return (
       <AdminLogin
         onSuccess={() => {}}
-        showPartnerLink={false}
+        showPartnerLink={true}
+        onNavigatePartner={() => {
+          if (typeof window !== 'undefined') {
+            window.location.href = '/';
+          }
+        }}
       />
     );
   }

@@ -18,13 +18,14 @@ interface AdminLoginProps {
  */
 export default function AdminLogin({
   onSuccess,
+  onNavigatePartner,
   onNavigateHome,
 }: AdminLoginProps) {
   return (
     <UnifiedLogin
       portalType="admin"
       onSuccess={onSuccess}
-      onNavigateHome={onNavigateHome}
+      onNavigateHome={onNavigatePartner || onNavigateHome}
     />
   );
 }
