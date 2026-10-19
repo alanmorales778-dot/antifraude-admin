@@ -17,6 +17,7 @@ import {
   QrCode,
   Sparkles,
   Building2,
+  Clock,
 } from 'lucide-react';
 import { useConsortiumStore } from '@/lib/store';
 import { getSupabaseBrowserClient } from '@/lib/supabaseClient';
@@ -59,6 +60,20 @@ export default function UnifiedLogin({
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [timeoutNotice, setTimeoutNotice] = useState<string | null>(null);
+
+  // Comprobar si hubo un timeout por inactividad previo
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const msg = sessionStorage.getItem('session_timeout_message');
+        if (msg) {
+          setTimeoutNotice(msg);
+          sessionStorage.removeItem('session_timeout_message');
+        }
+      } catch {}
+    }
+  }, []);
 
   // 2FA Enrollment con Supabase MFA / TOTP
   const [factorId, setFactorId] = useState('');
@@ -328,6 +343,15 @@ export default function UnifiedLogin({
             </div>
 
             {/* Mensajes de Estado */}
+            {timeoutNotice && (
+              <div className="m-6 mb-0 p-3.5 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-200 text-xs flex items-start gap-2.5 animate-fade-in shadow-lg shadow-amber-950/30">
+                <Clock className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+                <div className="space-y-0.5">
+                  <span className="font-bold block text-amber-300">Sesión Expirada por Inactividad</span>
+                  <span className="leading-snug text-amber-200/90">{timeoutNotice}</span>
+                </div>
+              </div>
+            )}
             {errorMsg && (
               <div className="m-6 mb-0 p-3.5 rounded-xl bg-[#2e0909] border border-[#661616] text-[#fca5a5] text-xs flex items-start gap-2.5">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#ef4444]" />

@@ -9,6 +9,7 @@ import AdminConsortiumPortal from '@/components/AdminConsortiumPortal';
 import PartnerLogin from '@/components/PartnerLogin';
 import EntityPortal from '@/components/EntityPortal';
 import UnifiedLogin from '@/components/UnifiedLogin';
+import SessionTimeoutGuard from '@/components/SessionTimeoutGuard';
 
 export default function AppRouter() {
   const {
@@ -120,12 +121,15 @@ export default function AppRouter() {
   if (isAdminRealm) {
     if (currentRoute === 'admin-portal' && adminSession?.isAuthenticated) {
       return (
-        <AdminConsortiumPortal
-          onLogout={() => {
-            logoutAdmin();
-            setCurrentRoute('admin-login');
-          }}
-        />
+        <>
+          <SessionTimeoutGuard />
+          <AdminConsortiumPortal
+            onLogout={() => {
+              logoutAdmin();
+              setCurrentRoute('admin-login');
+            }}
+          />
+        </>
       );
     }
 
@@ -147,13 +151,16 @@ export default function AppRouter() {
   // Si la sesión de partner está activa, renderizar SIEMPRE el portal del banco
   if (partnerSession?.isAuthenticated) {
     return (
-      <EntityPortal
-        fintechId={partnerSession.entityId}
-        onLogout={() => {
-          logoutPartner();
-          setCurrentRoute('partner-login');
-        }}
-      />
+      <>
+        <SessionTimeoutGuard />
+        <EntityPortal
+          fintechId={partnerSession.entityId}
+          onLogout={() => {
+            logoutPartner();
+            setCurrentRoute('partner-login');
+          }}
+        />
+      </>
     );
   }
 

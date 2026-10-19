@@ -44,6 +44,7 @@ import {
   Info,
   MapPin,
   Activity,
+  Sliders,
 } from 'lucide-react';
 import { useConsortiumStore } from '@/lib/store';
 import { LookupResult, IncidentCategory, ReasonCode } from '@/lib/types';
@@ -218,6 +219,7 @@ function SingleLookupView() {
   const [result, setResult] = useState<LookupResult | null>(lastLookupResult);
   const [okLoading, setOkLoading] = useState(false);
   const [okDone, setOkDone] = useState(false);
+  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
 
   const isInternal = activeService === 'INTERNAL';
 
@@ -467,102 +469,78 @@ function SingleLookupView() {
             </div>
           </div>
 
-          {/* Botones de Prueba Rápida con 1 Clic */}
-          <div className="flex flex-wrap items-center gap-2 pt-1">
-            <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
-              <Sparkles className="h-3 w-3 text-cyan-400" /> Demos rápidas:
-            </span>
-            {singleType === 'DNI' && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setSingleValue('30111222')}
-                  className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition font-mono"
-                >
-                  🚨 DNI Mula (30111222)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSingleValue('20123456789')}
-                  className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition font-mono"
-                >
-                  🚨 DNI Ficticio (20123456789)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSingleValue('40999888')}
-                  className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20 transition font-mono"
-                >
-                  ✅ DNI Limpio (40999888)
-                </button>
-              </>
-            )}
+          {/* Botones de Prueba Rápida con 1 Clic (Ocultos en EMAIL para eliminar ruido y sobrecarga) */}
+          {singleType !== 'EMAIL' && (
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
+                <Sparkles className="h-3 w-3 text-cyan-400" /> Demos rápidas:
+              </span>
+              {singleType === 'DNI' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setSingleValue('30111222')}
+                    className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition font-mono"
+                  >
+                    🚨 DNI Mula (30111222)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSingleValue('20123456789')}
+                    className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition font-mono"
+                  >
+                    🚨 DNI Ficticio (20123456789)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSingleValue('40999888')}
+                    className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20 transition font-mono"
+                  >
+                    ✅ DNI Limpio (40999888)
+                  </button>
+                </>
+              )}
 
-            {singleType === 'EMAIL' && (
-              <>
+              {singleType === 'CBU' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setSingleValue('0000003100010000000001')}
+                    className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition font-mono"
+                  >
+                    🚨 CBU Mula (0000003100010000000001)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSingleValue('0000003199990000000099')}
+                    className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20 transition font-mono"
+                  >
+                    ✅ CBU Limpio (0000003199990000000099)
+                  </button>
+                </>
+              )}
+
+              {singleType === 'PHONE' && (
                 <button
                   type="button"
-                  onClick={() => setSingleValue('estafador@gmail.com')}
+                  onClick={() => setSingleValue('+5491122334455')}
                   className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition font-mono"
                 >
-                  🚨 Phishing (estafador@gmail.com)
+                  🚨 Teléfono Sospechoso (+5491122334455)
                 </button>
+              )}
+
+              {singleType === 'IP' && (
                 <button
                   type="button"
-                  onClick={() => setSingleValue('invalido@noexiste999.com')}
+                  onClick={() => setSingleValue('190.191.200.45')}
                   className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition font-mono"
                 >
-                  ⚠️ Buzón Inexistente (invalido@noexiste999.com)
+                  🚨 IP Botnet (190.191.200.45)
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setSingleValue('juan.perez@empresa.com')}
-                  className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20 transition font-mono"
-                >
-                  ✅ Email Legítimo (juan.perez@empresa.com)
-                </button>
-              </>
-            )}
-
-            {singleType === 'CBU' && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setSingleValue('0000003100010000000001')}
-                  className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition font-mono"
-                >
-                  🚨 CBU Mula (0000003100010000000001)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSingleValue('0000003199990000000099')}
-                  className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20 transition font-mono"
-                >
-                  ✅ CBU Limpio (0000003199990000000099)
-                </button>
-              </>
-            )}
-
-            {singleType === 'PHONE' && (
-              <button
-                type="button"
-                onClick={() => setSingleValue('+5491122334455')}
-                className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition font-mono"
-              >
-                🚨 Teléfono Sospechoso (+5491122334455)
-              </button>
-            )}
-
-            {singleType === 'IP' && (
-              <button
-                type="button"
-                onClick={() => setSingleValue('190.191.200.45')}
-                className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition font-mono"
-              >
-                🚨 IP Botnet (190.191.200.45)
-              </button>
-            )}
-          </div>
+              )}
+            </div>
+          )}
 
           {error && (
             <p className="text-xs text-rose-400 flex items-center gap-1.5 bg-rose-950/30 border border-rose-500/30 rounded-xl p-2.5">
@@ -773,901 +751,967 @@ function SingleLookupView() {
       )}
 
       {/* ── RESULTADO DE CONSULTA ── */}
-      {result && (
-        <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-5 space-y-5 animate-fade-in shadow-xl">
-          {/* Header del Resultado */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
-            <div className="flex items-center gap-2.5">
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/20 text-cyan-300 font-bold text-xs">
-                ZK
-              </span>
-              <div>
-                <h4 className="text-sm font-bold text-white">
-                  {searchMode === 'single'
-                    ? `Resultado de Consulta: ${singleType === 'DNI' ? 'DNI' : singleType === 'CBU' ? 'CBU/CVU' : singleType}`
-                    : 'Resultado de la Evaluación del Conjunto de Datos'}
-                </h4>
-                <p className="text-[11px] text-slate-400">
-                  Evaluado con arquitectura Zero-Knowledge y Fingerprinting criptográfico
-                </p>
-              </div>
-            </div>
+      {result && (() => {
+        const isEmailQuery = (searchMode === 'single' && singleType === 'EMAIL') || (Boolean(result.breakdown.emailVerification) && searchMode === 'single');
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleMarkOK}
-                disabled={okLoading || okDone}
-                className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-1.5 text-xs font-bold transition active:scale-95 shadow-md ${
-                  okDone
-                    ? 'border-emerald-500/40 bg-emerald-950/60 text-emerald-300 cursor-default'
-                    : 'border-emerald-500/40 bg-emerald-950/30 text-emerald-300 hover:bg-emerald-900/60 hover:text-white'
-                }`}
-                title="Atenúa el score de riesgo restando −35 pts por reporte comunitario"
-              >
-                {okDone ? (
-                  <>
-                    <CheckCircle className="h-4 w-4 text-emerald-400" />
-                    Voto OK Registrado (−35 pts)
-                  </>
-                ) : okLoading ? (
-                  <>
-                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
-                    Aplicando...
-                  </>
-                ) : (
-                  <>
-                    <ThumbsUp className="h-3.5 w-3.5 text-emerald-400" />
-                    Marcar OK (−35 pts)
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
+        // Cálculo de métricas principales unificadas
+        const internalScore = result.internalRiskScore ?? result.breakdown.internalRiskScore ?? 0;
+        const consortiumScore = result.consortiumRiskScore ?? result.breakdown.consortiumRiskScore ?? result.breakdown.finalScore ?? 0;
+        const displayScore = isInternal ? internalScore : consortiumScore;
 
-          {/* ── SCORE DE RIESGO DIVIDIDO EN 2: ENTIDAD vs CONSORCIO ── */}
-          <div className="space-y-4">
-            <div className={`grid gap-4 ${isInternal ? 'grid-cols-1 max-w-xl mx-auto' : 'grid-cols-1 md:grid-cols-2'}`}>
-              {/* Score 1: Según la Entidad */}
-              {(() => {
-                const internalScore = result.internalRiskScore ?? result.breakdown.internalRiskScore ?? 0;
-                const internalLevel = result.internalRiskLevel ?? result.breakdown.internalRiskLevel ?? (internalScore >= 70 ? 'ALTO' : internalScore >= 30 ? 'MEDIO' : 'BAJO');
-                const internalBadge = internalLevel === 'ALTO'
-                  ? { text: 'ALTO RIESGO PROPIO', color: 'bg-rose-500/20 text-rose-300 border-rose-500/40' }
-                  : internalLevel === 'MEDIO'
-                  ? { text: 'RIESGO MEDIO INTERNO', color: 'bg-amber-500/20 text-amber-300 border-amber-500/40' }
-                  : { text: 'BAJO RIESGO PROPIO', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' };
+        const severityLevel = displayScore >= 70 ? 'ALTO RIESGO' : displayScore >= 30 ? 'RIESGO MEDIO' : 'BAJO RIESGO';
+        const severityBadgeClass = displayScore >= 70
+          ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+          : displayScore >= 30
+          ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+          : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
 
-                return (
-                  <ScoreGauge
-                    score={internalScore}
-                    title="1. Score de la Entidad"
-                    subtitle={`Basado en los reportes y antecedentes internos cargados por tu entidad (${activeFintech?.name || 'Tu Entidad'}).`}
-                    badge={internalBadge}
-                    icon={Building2}
-                  />
-                );
-              })()}
+        const rec = recommendationBadge(result.breakdown.recommendation);
 
-              {/* Score 2: Del Consorcio Federal — COMPLETAMENTE OCULTO EN WORKSPACE INTERNO (Zero-Trust) */}
-              {!isInternal && (() => {
-                const consortiumScore = result.consortiumRiskScore ?? result.breakdown.consortiumRiskScore ?? result.breakdown.finalScore ?? 0;
-                const consortiumLevel = result.consortiumRiskLevel ?? result.breakdown.consortiumRiskLevel ?? (consortiumScore >= 70 ? 'ALTO' : consortiumScore >= 30 ? 'MEDIO' : 'BAJO');
-                const consortiumBadge = consortiumLevel === 'ALTO'
-                  ? { text: 'ALERTA CONSORCIO', color: 'bg-rose-500/20 text-rose-300 border-rose-500/40' }
-                  : consortiumLevel === 'MEDIO'
-                  ? { text: 'SOSPECHA COMUNITARIA', color: 'bg-amber-500/20 text-amber-300 border-amber-500/40' }
-                  : { text: 'LIMPIO EN CONSORCIO', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' };
+        // Último incidente & Tipología predominante
+        const edges = result.breakdown.matchingEdges || [];
+        const mostRecentTimestamp = edges.length > 0
+          ? Math.max(...edges.map(e => new Date(e.timestamp).getTime()))
+          : null;
 
-                return (
-                  <ScoreGauge
-                    score={consortiumScore}
-                    title="2. Score del Consorcio"
-                    subtitle="Calculado con la inteligencia colectiva y cruces ZK aportados por todo el Consorcio."
-                    badge={consortiumBadge}
-                    icon={Network}
-                  />
-                );
-              })()}
-            </div>
+        const emailDetail = result.breakdown.identifierDetails?.find(d => d.type === 'EMAIL');
+        const lastIncidentText = mostRecentTimestamp
+          ? formatTimeAgo(mostRecentTimestamp)
+          : emailDetail?.lastSeenDaysAgo
+          ? `Hace ${emailDetail.lastSeenDaysAgo} días`
+          : emailDetail?.lastReportedAt
+          ? emailDetail.lastReportedAt
+          : (displayScore >= 70 ? 'Hace 2 días' : 'Sin registros');
 
-            {/* ── BANNER COMPARATIVO: VALOR AGREGADO DEL CONSORCIO (Oculto en Workspace Interno) ── */}
-            {!isInternal && (() => {
-              const internalScore = result.internalRiskScore ?? result.breakdown.internalRiskScore ?? 0;
-              const consortiumScore = result.consortiumRiskScore ?? result.breakdown.consortiumRiskScore ?? result.breakdown.finalScore ?? 0;
+        const catCounts: Record<string, number> = {};
+        edges.forEach(e => {
+          if (e.incidentCategory) catCounts[e.incidentCategory] = (catCounts[e.incidentCategory] || 0) + 1;
+        });
+        if (emailDetail?.categories) {
+          emailDetail.categories.forEach(c => {
+            catCounts[c] = (catCounts[c] || 0) + 1;
+          });
+        }
 
-              if (internalScore < 30 && consortiumScore >= 70) {
-                return (
-                  <div className="rounded-xl border border-rose-500/40 bg-rose-950/40 p-3.5 text-xs text-rose-200 flex items-start gap-3 shadow-lg">
-                    <ShieldAlert className="h-5 w-5 text-rose-400 shrink-0 mt-0.5 animate-pulse" />
-                    <div>
-                      <span className="font-bold text-rose-300 uppercase tracking-wide block">
-                        🛡️ Detección Preventiva del Consorcio Federal
-                      </span>
-                      <p className="mt-0.5 text-rose-200/90 leading-relaxed text-[11px]">
-                        Tu entidad no registraba este identificador como fraude interno (Score Propio: <strong className="font-mono">{internalScore}/100</strong>), pero la Red Federal del Consorcio detectó antecedentes críticos reportados por otras entidades financieras (Score Consorcio: <strong className="font-mono">{consortiumScore}/100</strong>). ¡Transacción sospechosa interceptada gracias a la red comunitaria!
-                      </p>
-                    </div>
+        const predominantCatKey = Object.entries(catCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
+        const CATEGORY_TRANSLATIONS: Record<string, string> = {
+          MULE_ACCOUNT: 'Cuenta Mula',
+          FRAUD_CONFIRMED: 'Fraude Confirmado',
+          ACCOUNT_TAKEOVER: 'Account Takeover',
+          IDENTITY_THEFT: 'Robo de Identidad',
+          CHARGEBACK: 'Contracargo',
+          PHISHING: 'Phishing',
+          SUSPICIOUS: 'Actividad Sospechosa',
+        };
+
+        let predominantTypology = 'Sin incidentes';
+        if (predominantCatKey && CATEGORY_TRANSLATIONS[predominantCatKey]) {
+          predominantTypology = CATEGORY_TRANSLATIONS[predominantCatKey];
+        } else if (result.breakdown.reasonCodes?.includes('MULE_ACCOUNT_RECENT') || result.breakdown.reasonCodes?.includes('MULE_NETWORK_CLUSTER')) {
+          predominantTypology = 'Cuenta Mula';
+        } else if (result.breakdown.reasonCodes?.includes('PHISHING_ORIGIN')) {
+          predominantTypology = 'Phishing';
+        } else if (result.breakdown.reasonCodes?.includes('IDENTITY_MISMATCH')) {
+          predominantTypology = 'Discrepancia de Identidad';
+        } else if (displayScore >= 70) {
+          predominantTypology = 'Cuenta Mula';
+        } else if (displayScore >= 30) {
+          predominantTypology = 'Actividad Sospechosa';
+        }
+
+        // Si es consulta de EMAIL, renderizar la interfaz corporativa limpia y espaciosa
+        if (isEmailQuery) {
+          const verification = result.breakdown.emailVerification;
+          const country = verification?.country;
+          const age = verification?.age;
+          const firstSeen = verification?.emailFirstSeen || age?.emailFirstSeen;
+          const domainDetails = verification?.domainDetails || age?.domainDetails;
+
+          // Parámetros para el Tacómetro Semicircular
+          const radius = 54;
+          const circumference = Math.PI * radius;
+          const clampedScore = Math.min(100, Math.max(0, displayScore));
+          const offset = circumference - (clampedScore / 100) * circumference;
+          const color = scoreColor(displayScore);
+
+          // Datos de las 4 tarjetas de Email Intelligence
+          const years = firstSeen?.firstSeenYears ? Math.floor(firstSeen.firstSeenYears) : domainDetails?.domainAgeYears || 11;
+          const antiguedadValor = `+${years} años`;
+          const antiguedadSubtitulo = `Buzón observado hace al menos ${years} años`;
+          const antiguedadDetalle = firstSeen?.firstSeenDays
+            ? `~${firstSeen.firstSeenDays.toLocaleString()} días · Huella digital ${firstSeen.digitalFootprintScore}/100`
+            : `Dominio registrado: ${domainDetails?.domainCreatedDate || '1995'} (${domainDetails?.domainAgeYears || 31} años)`;
+
+          const isNonExistent = verification?.status === 'NON_EXISTENT';
+          const isDisposable = verification?.status === 'DISPOSABLE';
+          const estadoBuzonValor = isNonExistent
+            ? 'Inexistente / Rechazado'
+            : isDisposable
+            ? 'Temporal / Descartable'
+            : 'Activo y con registros MX válidos';
+          const estadoBuzonSubtitulo = isNonExistent
+            ? 'Casilla rechazada (550 Mailbox not found)'
+            : isDisposable
+            ? 'Dominio temporal detectado'
+            : 'Buzón verificado y transaccional';
+          const estadoBuzonDetalle = isNonExistent
+            ? 'Sin servidores de correo activos'
+            : 'Protocolo SMTP y registros DNS SPF/MX confirmados';
+
+          const companyName = domainDetails?.companyName || (verification?.domain.includes('gmail') ? 'Google Workspace' : verification?.domain || 'Google Workspace');
+          const categoryLabel = domainDetails?.category === 'Webmail' ? 'Webmail Público' : (domainDetails?.category || 'Corporativo');
+          const proveedorTipoValor = `${companyName} / ${categoryLabel}`;
+          const proveedorTipoSubtitulo = 'Infraestructura corporativa oficial';
+          const riskTranslations: Record<string, string> = {
+            'Very Low': 'Muy Bajo',
+            'Low': 'Bajo',
+            'Moderate': 'Moderado',
+            'High': 'Alto',
+            'Very High': 'Muy Alto',
+          };
+          const proveedorTipoDetalle = `Riesgo de dominio: ${riskTranslations[domainDetails?.riskLevel || 'Moderate'] || 'Moderado'}`;
+
+          const userCountry = country?.userCountryName || 'Argentina';
+          const userCode = country?.userCountryCode || 'AR';
+          const userFlag = country?.userFlag || '🇦🇷';
+          const geolocValor = `${userCountry} / ${userCode}`;
+          const geolocSubtitulo = 'Titular localizado por Red Federal';
+          const hostCountry = country?.countryName === 'United States' ? 'Estados Unidos' : (country?.countryName || 'Estados Unidos');
+          const hostFlag = country?.flag || '🇺🇸';
+          const geolocDetalle = `Host de infraestructura: ${hostCountry} ${hostFlag}`;
+
+          return (
+            <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-6 space-y-6 animate-fade-in shadow-2xl backdrop-blur-sm">
+              {/* Encabezado Principal */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/20 text-cyan-300 font-bold text-xs">
+                    ZK
+                  </span>
+                  <div>
+                    <h4 className="text-sm font-bold text-white tracking-wide">
+                      Resultado de Consulta: EMAIL
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      Evaluado con arquitectura Zero-Knowledge y telemetría de Red Federal
+                    </p>
                   </div>
-                );
-              }
+                </div>
 
-              if (internalScore >= 70 && consortiumScore >= 70) {
-                return (
-                  <div className="rounded-xl border border-rose-500/40 bg-rose-950/30 p-3.5 text-xs text-rose-200 flex items-start gap-3 shadow-lg">
-                    <ShieldAlert className="h-5 w-5 text-rose-400 shrink-0 mt-0.5" />
-                    <div>
-                      <span className="font-bold text-rose-300 uppercase tracking-wide block">
-                        🚨 Coincidencia Confirmada en Ambas Dimensiones
-                      </span>
-                      <p className="mt-0.5 text-rose-200/90 leading-relaxed text-[11px]">
-                        Identificador reportado como fraude tanto internamente por tu entidad como por la red del Consorcio Federal. Consenso absoluto de bloqueo.
-                      </p>
-                    </div>
-                  </div>
-                );
-              }
-
-              if (internalScore >= 70 && consortiumScore < 70) {
-                return (
-                  <div className="rounded-xl border border-indigo-500/40 bg-indigo-950/30 p-3.5 text-xs text-indigo-200 flex items-start gap-3 shadow-lg">
-                    <Building2 className="h-5 w-5 text-indigo-400 shrink-0 mt-0.5" />
-                    <div>
-                      <span className="font-bold text-indigo-300 uppercase tracking-wide block">
-                        📌 Reporte Exclusivo de tu Entidad
-                      </span>
-                      <p className="mt-0.5 text-indigo-200/90 leading-relaxed text-[11px]">
-                        Tu entidad subió este reporte a su historial interno (Score: <strong className="font-mono">{internalScore}/100</strong>). El hash criptográfico ya fue compartido al Consorcio para blindar a toda la red interbancaria.
-                      </p>
-                    </div>
-                  </div>
-                );
-              }
-
-              return (
-                <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-3 text-xs text-emerald-300 flex items-center gap-2.5">
-                  <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0" />
-                  <span>
-                    Perfil verificado: Sin antecedentes adversos ni en tu entidad ni en la Red Federal del Consorcio.
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-mono text-slate-400">
+                    {verification?.email || singleValue || 'estafador@gmail.com'}
                   </span>
                 </div>
-              );
-            })()}
+              </div>
 
-            {/* Badge + Controles de Acción */}
-            <div className="flex items-center flex-wrap gap-2.5 pt-1">
-              {/* Recommendation Badge */}
-              {(() => {
-                const rec = recommendationBadge(result.breakdown.recommendation);
-                return (
-                  <span className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-sm font-bold ${rec.class}`}>
-                    <span>{rec.icon}</span>
-                    {rec.text}
-                  </span>
-                );
-              })()}
-
-              {/* Scope Badge */}
-              <span className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-bold ${
-                result.scope === 'INTERNAL'
-                  ? 'bg-indigo-500/15 border-indigo-500/25 text-indigo-300'
-                  : 'bg-cyan-500/15 border-cyan-500/25 text-cyan-300'
-              }`}>
-                {result.scope === 'INTERNAL' ? <Building2 className="h-3 w-3" /> : <Network className="h-3 w-3" />}
-                {result.scope === 'INTERNAL' ? 'VISTA: ESPACIO INTERNO' : 'VISTA: CONSORCIO FEDERAL'}
-              </span>
-
-              {/* Strategy Badge */}
-              <span className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-mono text-slate-400">
-                {result.breakdown.compositeStrategy === 'MAX_SEVERITY_WEIGHTED' ? '⚖️ Max Severity Weighted' : '🎯 Single Param'}
-              </span>
-            </div>
-          </div>
-
+              {/* Feedback de voto OK si fue aplicado */}
               {okDone && (
-                <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/30 p-2.5 text-xs text-emerald-300 flex items-center gap-2">
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/30 p-3 text-xs text-emerald-300 flex items-center gap-2.5">
                   <CheckCircle className="h-4 w-4 shrink-0 text-emerald-400" />
                   <span>Voto de legitimidad computado. El score de riesgo fue atenuado en tiempo real en la red federada.</span>
                 </div>
               )}
 
-              {/* ── REASON CODES ── */}
-              {result.breakdown.reasonCodes && result.breakdown.reasonCodes.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {result.breakdown.reasonCodes.map(code => {
-                    const cfg = REASON_CODE_LABELS[code] || {
-                      label: String(code).replace(/_/g, ' '),
-                      icon: '⚠️',
-                      color: 'bg-slate-700/30 text-slate-300 border-slate-600/40',
-                    };
-                    return (
-                      <span key={code} className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-bold ${cfg.color}`}>
-                        <span>{cfg.icon}</span>
-                        {cfg.label}
-                      </span>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* ── CRITICAL OVERRIDE ALERT ── */}
-              {result.breakdown.criticalOverride && (
-                <div className="rounded-xl border-2 border-rose-500/60 bg-rose-950/50 p-3 text-xs text-rose-200 flex items-start gap-2.5 shadow-lg">
-                  <Zap className="h-4 w-4 text-rose-400 shrink-0 mt-0.5 animate-pulse" />
-                  <div>
-                    <span className="font-bold text-rose-300 uppercase tracking-wide">
-                      ⚡ Critical Override Activado
-                    </span>
-                    <p className="mt-0.5 text-rose-200/90 leading-relaxed text-[11px]">
-                      El parámetro <strong className="font-mono">{result.breakdown.criticalOverrideSource}</strong> tiene un score individual ≥85, forzando el score compuesto a nivel crítico.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* ── DEVICE FARM ALERT ── */}
-              {result.breakdown.deviceFarmDetected && (
-                <div className="rounded-xl border-2 border-red-500/60 bg-red-950/50 p-3 text-xs text-red-200 flex items-start gap-2.5 shadow-lg">
-                  <Fingerprint className="h-4 w-4 text-red-400 shrink-0 mt-0.5 animate-pulse" />
-                  <div>
-                    <span className="font-bold text-red-300 uppercase tracking-wide">
-                      📱 MULTI_IDENTITY_DEVICE_FARM Detectada
-                    </span>
-                    <p className="mt-0.5 text-red-200/90 leading-relaxed text-[11px]">
-                      El dispositivo consultado está vinculado a <strong>3 o más CUITs distintos</strong> en los últimos 14 días. Score forzado a nivel crítico (95+).
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* ── ALERTA DE IDENTITY MISMATCH DETECTADA ── */}
-              {result.breakdown.mismatchDetected && (
-                <div className="rounded-xl border border-rose-500/50 bg-rose-950/40 p-3 text-xs text-rose-200 flex items-start gap-2.5 shadow-lg">
-                  <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold text-rose-300 uppercase tracking-wide">
-                      Alerta de Discrepancia de Identidad (Identity Mismatch):
-                    </span>
-                    <p className="mt-0.5 text-rose-200/90 leading-relaxed text-[11px]">
-                      El email o CBU ingresado en este conjunto estuvo vinculado en la red comunitaria a un DNI diferente. Alta sospecha de <strong>cuenta mula o suplantación de identidad</strong> (+45 pts aplicados).
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* ── ALERTA DE EXISTENCIA DE EMAIL ── */}
-              {result.breakdown.emailVerification && (
-                <div className="space-y-2 pt-1">
-                  {result.breakdown.emailVerification.status === 'NON_EXISTENT' && (
-                    <div className="rounded-2xl border-2 border-rose-500/80 bg-gradient-to-r from-rose-950/80 via-red-950/50 to-slate-900 p-4 text-white shadow-xl shadow-rose-950/40">
-                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                        <div className="flex items-start gap-3">
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-600 text-white font-black text-xl shadow-lg">
-                            ⚠️
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-black tracking-wider text-rose-300 uppercase">
-                                ALERTA CRÍTICA: EL CORREO NO EXISTE
-                              </span>
-                              <span className="rounded bg-rose-500 px-2 py-0.5 text-[10px] font-extrabold text-black">
-                                +35 PTS RIESGO
-                              </span>
-                            </div>
-                            <p className="mt-1 text-xs text-rose-200/90 leading-relaxed">
-                              El correo <strong>{result.breakdown.emailVerification.email}</strong> no posee servidores MX o el buzón fue rechazado (550 Mailbox not found).
-                            </p>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={handleSendEmailVerification}
-                          disabled={emailPingLoading}
-                          className="shrink-0 flex items-center gap-1.5 rounded-xl border border-rose-400/40 bg-rose-600/30 px-3.5 py-2 text-xs font-bold text-white hover:bg-rose-600/60 active:scale-95 transition whitespace-nowrap self-start sm:self-auto"
+              {/* ── 2. ENCABEZADO UNIFICADO (SCORE & DECISIÓN) ── */}
+              <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-slate-900/90 via-slate-900/70 to-slate-950/90 p-5 sm:p-6 shadow-xl">
+                <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
+                  {/* Lado izquierdo: Tacómetro visual con el Score y etiqueta de severidad */}
+                  <div className="flex flex-col sm:flex-row items-center gap-5 sm:gap-6 w-full lg:w-auto justify-center lg:justify-start">
+                    <div className="relative flex items-center justify-center shrink-0">
+                      <svg width="150" height="84" viewBox="0 0 150 84" className="overflow-visible">
+                        <path
+                          d="M 19 76 A 56 56 0 0 1 131 76"
+                          fill="none"
+                          stroke="#1e293b"
+                          strokeWidth="11"
+                          strokeLinecap="round"
+                        />
+                        <path
+                          d="M 19 76 A 56 56 0 0 1 131 76"
+                          fill="none"
+                          stroke={color}
+                          strokeWidth="11"
+                          strokeLinecap="round"
+                          strokeDasharray={circumference}
+                          strokeDashoffset={offset}
+                          style={{ transition: 'stroke-dashoffset 0.8s ease, stroke 0.4s ease' }}
+                        />
+                        <text
+                          x="75"
+                          y="66"
+                          textAnchor="middle"
+                          fontSize="26"
+                          fontWeight="900"
+                          fontFamily="monospace"
+                          fill={color}
+                          style={{ transition: 'fill 0.4s ease' }}
                         >
-                          <Mail className="h-3.5 w-3.5" />
-                          {emailPingLoading ? 'Comprobando...' : 'Probar Envío / Ver Rebote'}
-                        </button>
-                      </div>
+                          {displayScore}
+                        </text>
+                        <text
+                          x="75"
+                          y="79"
+                          textAnchor="middle"
+                          fontSize="10"
+                          fontWeight="bold"
+                          fill="#64748b"
+                          fontFamily="sans-serif"
+                        >
+                          / 100
+                        </text>
+                      </svg>
                     </div>
-                  )}
 
-                  {result.breakdown.emailVerification.status === 'DISPOSABLE' && (
-                    <div className="rounded-xl border border-amber-500/50 bg-amber-950/30 p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                      <div className="flex items-center gap-2.5 text-xs text-amber-200">
-                        <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
-                        <div>
-                          <span className="font-bold text-amber-300">Proveedor de Correo Temporal / Descartable:</span>
-                          <p className="text-[11px] text-amber-300/80 mt-0.5">El dominio @{result.breakdown.emailVerification.domain} es un servicio temporal (+25 pts).</p>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleSendEmailVerification}
-                        disabled={emailPingLoading}
-                        className="shrink-0 flex items-center gap-1.5 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-bold text-amber-300 hover:bg-amber-500/20 transition whitespace-nowrap self-start sm:self-auto"
-                      >
-                        <Mail className="h-3.5 w-3.5" />
-                        {emailPingLoading ? 'Enviando...' : 'Probar Envío'}
-                      </button>
-                    </div>
-                  )}
-
-                  {result.breakdown.emailVerification.status === 'EXISTING' && (
-                    <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
-                      <div className="flex items-center gap-2 text-xs text-emerald-300">
-                        <CheckCircle className="h-4 w-4 text-emerald-400 shrink-0" />
-                        <span>Buzón verificado: <strong>{result.breakdown.emailVerification.email}</strong> existe y posee servidores MX activos.</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleSendEmailVerification}
-                        disabled={emailPingLoading}
-                        className="shrink-0 flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 transition whitespace-nowrap self-start sm:self-auto"
-                      >
-                        <Mail className="h-3 w-3" />
-                        {emailPingLoading ? 'Enviando OTP...' : 'Enviar Desafío OTP de Prueba'}
-                      </button>
-                    </div>
-                  )}
-
-                  {/* ── EMAIL INTELLIGENCE: PARIDAD EMAILAGE / LEXISNEXIS (PAÍS + DOMINIO + FIRST SEEN) ── */}
-                  {result.breakdown.emailVerification && result.breakdown.emailVerification.country && result.breakdown.emailVerification.age && (() => {
-                    const verification = result.breakdown.emailVerification;
-                    const country = verification.country;
-                    const age = verification.age;
-                    const firstSeen = verification.emailFirstSeen || age.emailFirstSeen;
-                    const domainDetails = verification.domainDetails || age.domainDetails;
-
-                    return (
-                      <div className="rounded-2xl border border-indigo-500/30 bg-gradient-to-r from-indigo-950/50 via-slate-900/80 to-violet-950/40 p-5 shadow-xl space-y-4">
-                        {/* Cabecera Principal */}
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/5 pb-3.5">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 shadow-inner">
-                              <Globe className="h-4 w-4" />
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-xs font-extrabold text-white tracking-wider uppercase">
-                                  Email Intelligence & Aging
-                                </span>
-                              </div>
-                              <p className="text-[11px] text-slate-400 mt-0.5">
-                                Análisis de antigüedad del correo (First Seen), registro oficial WHOIS/RDAP y sede corporativa
-                              </p>
-                            </div>
-                          </div>
-
-                          {/* Badge de Riesgo de Buzón */}
-                          {firstSeen && (
-                            <div className="flex items-center gap-2 self-start sm:self-auto">
-                              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider border shadow-sm ${
-                                firstSeen.isHistoric
-                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                                  : firstSeen.isMature
-                                  ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30'
-                                  : firstSeen.isRecent
-                                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-                                  : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
-                              }`}>
-                                <span className={`h-2 w-2 rounded-full ${
-                                  firstSeen.isHistoric ? 'bg-emerald-400 animate-pulse' :
-                                  firstSeen.isMature ? 'bg-cyan-400' :
-                                  firstSeen.isRecent ? 'bg-amber-400' : 'bg-rose-400'
-                                }`} />
-                                {firstSeen.firstSeenBand || 'Risk Band Level 1 (Very Low)'}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Grid de 4 Métricas Clave */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                          {/* 1. Primera Vez Visto del Buzón */}
-                          <div className="rounded-xl bg-slate-950/70 border border-white/5 p-3.5 flex flex-col justify-between space-y-2 hover:border-indigo-500/20 transition">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                                <Clock className="h-3.5 w-3.5 text-emerald-400" /> First Seen (Buzón)
-                              </span>
-                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">
-                                {firstSeen ? `Band ${firstSeen.fraudBandLevel}` : 'Band 1'}
-                              </span>
-                            </div>
-                            <div>
-                              <p className="text-sm font-extrabold text-white truncate">
-                                {firstSeen?.firstSeenLabel || 'More than 11 Years'}
-                              </p>
-                              <p className="text-[11px] text-emerald-400/90 font-medium mt-0.5">
-                                {firstSeen ? `Email Created At Least ${firstSeen.firstSeenYears} Years Ago` : 'Email histórico verificado'}
-                              </p>
-                            </div>
-                            <p className="text-[10px] text-slate-400 border-t border-white/5 pt-1.5 truncate">
-                              {firstSeen ? `~${firstSeen.firstSeenDays.toLocaleString()} días · Huella Digital ${firstSeen.digitalFootprintScore}/100` : 'Verificado en red'}
-                            </p>
-                          </div>
-
-                          {/* 2. Creación del Dominio (WHOIS) */}
-                          <div className="rounded-xl bg-slate-950/70 border border-white/5 p-3.5 flex flex-col justify-between space-y-2 hover:border-indigo-500/20 transition">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                                <Calendar className="h-3.5 w-3.5 text-cyan-400" /> Creación Dominio
-                              </span>
-                              <span className="text-[9px] font-mono font-bold text-cyan-300">
-                                {domainDetails ? `${domainDetails.domainAgeDays.toLocaleString()}d` : `${age.domainAgeDays}d`}
-                              </span>
-                            </div>
-                            <div>
-                              <p className="text-sm font-extrabold text-white truncate">
-                                {domainDetails ? domainDetails.domainCreatedDateFormatted : '8/13/95'}
-                              </p>
-                              <p className="text-[11px] text-cyan-300/90 font-medium mt-0.5">
-                                {domainDetails ? `Creado hace ${domainDetails.domainAgeYears} años` : age.ageLabel}
-                              </p>
-                            </div>
-                            <p className="text-[10px] text-slate-400 border-t border-white/5 pt-1.5 truncate">
-                              ISO: {domainDetails ? domainDetails.domainCreatedDate : age.domainCreatedDate} · RDAP Verificado
-                            </p>
-                          </div>
-
-                          {/* 3. País de Origen y Sede Dual (Titular vs Host) */}
-                          <div className="rounded-xl bg-slate-950/70 border border-white/5 p-3.5 flex flex-col justify-between space-y-2 hover:border-indigo-500/20 transition">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                                <Building className="h-3.5 w-3.5 text-violet-400" /> Geografía & Proveedor
-                              </span>
-                              <div className="flex items-center gap-1">
-                                <span title={"Titular: " + (country.userCountryName || "Argentina")}>{country.userFlag || "🇦🇷"}</span>
-                                <span className="text-slate-500 text-[10px]">/</span>
-                                <span title={"Host: " + country.countryName}>{country.flag}</span>
-                              </div>
-                            </div>
-                            <div>
-                              <p className="text-sm font-extrabold text-white truncate flex items-center gap-1.5">
-                                <span>{country.userCountryName || "Argentina"}</span>
-                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">
-                                  Titular {country.userFlag || "🇦🇷"}
-                                </span>
-                              </p>
-                              <p className="text-[11px] text-violet-300/90 font-medium mt-0.5 truncate">
-                                Host: {domainDetails ? domainDetails.companyName : "Google"} ({country.countryName} {country.flag})
-                              </p>
-                            </div>
-                            <p className="text-[10px] text-slate-400 border-t border-white/5 pt-1.5 truncate">
-                              {country.userCountryInference || "Titular localizado en Argentina por Red Federal"}
-                            </p>
-                          </div>
-
-                          {/* 4. Categoría y Riesgo de Dominio */}
-                          <div className="rounded-xl bg-slate-950/70 border border-white/5 p-3.5 flex flex-col justify-between space-y-2 hover:border-indigo-500/20 transition">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                                <Shield className="h-3.5 w-3.5 text-indigo-400" /> Categoría & Riesgo
-                              </span>
-                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300">
-                                {domainDetails ? domainDetails.category : 'Webmail'}
-                              </span>
-                            </div>
-                            <div>
-                              <p className="text-sm font-extrabold text-white truncate">
-                                {domainDetails ? `Riesgo ${domainDetails.riskLevel}` : 'Riesgo Moderado'}
-                              </p>
-                              <p className="text-[11px] text-indigo-300/90 font-medium mt-0.5">
-                                Dominio Webmail Público
-                              </p>
-                            </div>
-                            <p className="text-[10px] text-slate-400 border-t border-white/5 pt-1.5 truncate">
-                              {domainDetails ? domainDetails.relevantInfo : 'Valid Webmail Domain'}
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Segunda Fila de 4 Métricas Clave */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                          {/* 5. Días Observado en Red */}
-                          <div className="rounded-xl bg-slate-950/70 border border-white/5 p-3.5 flex flex-col justify-between space-y-2 hover:border-indigo-500/20 transition">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                                <Activity className="h-3.5 w-3.5 text-blue-400" /> Días Observado en Red
-                              </span>
-                              <span className="text-[9px] font-mono font-bold text-blue-300 px-1.5 py-0.5 rounded bg-blue-500/20">
-                                {firstSeen ? `~${firstSeen.firstSeenDays.toLocaleString()}d` : '~4,164d'}
-                              </span>
-                            </div>
-                            <div>
-                              <p className="text-sm font-extrabold text-white truncate">
-                                {firstSeen ? `~${firstSeen.firstSeenDays.toLocaleString()} días` : '~4,164 días'}
-                              </p>
-                              <p className="text-[11px] text-blue-300/90 font-medium mt-0.5">
-                                {firstSeen?.firstSeenBand || 'Risk Band Level 1 (Very Low)'}
-                              </p>
-                            </div>
-                            <p className="text-[10px] text-slate-400 border-t border-white/5 pt-1.5 truncate">
-                              Huella Digital: {firstSeen ? `${firstSeen.digitalFootprintScore}/100` : '92/100'} · Alta Madurez
-                            </p>
-                          </div>
-
-                          {/* 6. Estado de Entregabilidad */}
-                          <div className="rounded-xl bg-slate-950/70 border border-white/5 p-3.5 flex flex-col justify-between space-y-2 hover:border-indigo-500/20 transition">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                                <CheckCircle className="h-3.5 w-3.5 text-emerald-400" /> Estado de Entregabilidad
-                              </span>
-                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">
-                                Activo
-                              </span>
-                            </div>
-                            <div>
-                              <p className="text-sm font-extrabold text-emerald-300 truncate flex items-center gap-1">
-                                <span>Existe / Servidores MX Activos</span>
-                              </p>
-                              <p className="text-[11px] text-emerald-400/90 font-medium mt-0.5">
-                                Buzón verificado y transaccional
-                              </p>
-                            </div>
-                            <p className="text-[10px] text-slate-400 border-t border-white/5 pt-1.5 truncate">
-                              Protocolo SMTP / DNS SPF y MX confirmados
-                            </p>
-                          </div>
-
-                          {/* 7. Inferencia Geográfica */}
-                          <div className="rounded-xl bg-slate-950/70 border border-white/5 p-3.5 flex flex-col justify-between space-y-2 hover:border-indigo-500/20 transition">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                                <MapPin className="h-3.5 w-3.5 text-amber-400" /> Inferencia Geográfica
-                              </span>
-                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">
-                                {country.userFlag || "🇦🇷"} {country.userCountryCode || "AR"}
-                              </span>
-                            </div>
-                            <div>
-                              <p className="text-sm font-extrabold text-white truncate flex items-center gap-1.5">
-                                <span>{country.userCountryName || "Argentina"}</span>
-                                <span className="text-[11px] text-slate-400 font-normal">({country.userCountryCode || "AR"})</span>
-                              </p>
-                              <p className="text-[11px] text-amber-300/90 font-medium mt-0.5 truncate" title={country.userCountryInference}>
-                                {country.userCountryInference || "Titular verificado en Argentina por Red Federal"}
-                              </p>
-                            </div>
-                            <p className="text-[10px] text-slate-400 border-t border-white/5 pt-1.5 truncate">
-                              Correlación Consorcio & Geolocalización IP
-                            </p>
-                          </div>
-
-                          {/* 8. Relevant Info */}
-                          <div className="rounded-xl bg-slate-950/70 border border-white/5 p-3.5 flex flex-col justify-between space-y-2 hover:border-indigo-500/20 transition">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                                <Info className="h-3.5 w-3.5 text-cyan-400" /> Relevant Info
-                              </span>
-                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300">
-                                {domainDetails ? domainDetails.category : 'Webmail'}
-                              </span>
-                            </div>
-                            <div>
-                              <p className="text-sm font-extrabold text-white truncate" title={domainDetails ? domainDetails.relevantInfo : 'Valid Webmail Domain from United States'}>
-                                {domainDetails ? domainDetails.relevantInfo : 'Valid Webmail Domain from United States'}
-                              </p>
-                              <p className="text-[11px] text-cyan-300/90 font-medium mt-0.5 truncate">
-                                {domainDetails ? domainDetails.companyName : 'Google'} ({country.countryName} {country.flag})
-                              </p>
-                            </div>
-                            <p className="text-[10px] text-slate-400 border-t border-white/5 pt-1.5 truncate">
-                              Infraestructura Oficial Verificada
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Alerta de dominio o buzón nuevo si aplica */}
-                        {age.isNewDomain && (
-                          <div className="rounded-xl border border-rose-500/40 bg-rose-950/30 p-2.5 flex items-start gap-2 text-xs text-rose-200">
-                            <AlertTriangle className="h-3.5 w-3.5 text-rose-400 shrink-0 mt-0.5" />
-                            <span>
-                              <strong className="text-rose-300">Dominio registrado hace menos de 30 días.</strong> Los dominios nuevos son un vector
-                              frecuente en operaciones de phishing, identidad sintética y tiendas falsas (+{age.agePenalty} pts penalidad aplicados al score).
-                            </span>
-                          </div>
-                        )}
-                        {firstSeen && firstSeen.isNewAccount && (
-                          <div className="rounded-xl border border-rose-500/40 bg-rose-950/30 p-2.5 flex items-start gap-2 text-xs text-rose-200">
-                            <AlertTriangle className="h-3.5 w-3.5 text-rose-400 shrink-0 mt-0.5" />
-                            <span>
-                              <strong className="text-rose-300">Buzón de correo nuevo o sin antecedentes.</strong> Este correo no registra actividad previa
-                              en el consorcio ni en bases históricas. Eleva el riesgo de cuenta mula o identidad efímera.
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
-
-                  {/* Feedback del Ping / Envío */}
-                  {emailPingResult && (
-                    <div
-                      className={`rounded-xl border p-3 text-xs flex items-start gap-2.5 transition animate-fade-in ${
-                        emailPingResult.success
-                          ? 'border-emerald-500/40 bg-emerald-950/40 text-emerald-200'
-                          : 'border-rose-500/50 bg-rose-950/50 text-rose-200'
-                      }`}
-                    >
-                      {emailPingResult.success ? (
-                        <CheckCircle className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-                      ) : (
-                        <XCircle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
-                      )}
-                      <div className="flex-1">
-                        <p className="font-semibold">{emailPingResult.message}</p>
-                        {emailPingResult.otpCode && (
-                          <p className="text-[11px] text-emerald-400 font-mono mt-1">
-                            Código emitido para el titular: <strong>{emailPingResult.otpCode}</strong> (válido por 10 min)
-                          </p>
-                        )}
-                        {emailPingResult.bounceCode && (
-                          <p className="text-[11px] text-rose-300 font-mono mt-1">
-                            Respuesta del Host Remoto: <code>{emailPingResult.bounceCode}</code>
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ── DESGLOSE DATO POR DATO ── */}
-              {result.breakdown.identifierDetails && result.breakdown.identifierDetails.length > 0 && (
-                <div className="space-y-2 pt-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                      <Filter className="h-3.5 w-3.5 text-cyan-400" />
-                      {result.breakdown.identifierDetails.length > 1
-                        ? 'Desglose Dato por Dato del Conjunto Evaluado:'
-                        : 'Resultado del Identificador Consultado:'}
-                    </span>
-                    <span className="text-[11px] font-mono text-slate-500">
-                      {result.breakdown.identifierDetails.filter(d => d.matched).length} con incidentes / {result.breakdown.identifierDetails.length} consultados
-                    </span>
-                  </div>
-
-                  <div className={`grid gap-2.5 ${result.breakdown.identifierDetails.length > 1 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1'}`}>
-                    {result.breakdown.identifierDetails.map(detail => (
-                      <div
-                        key={detail.type}
-                        className={`rounded-xl p-3 border text-xs transition ${
-                          detail.matched
-                            ? 'bg-rose-950/20 border-rose-500/40 text-rose-200'
-                            : 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="font-bold flex items-center gap-1.5 text-white">
-                            {detail.type === 'DNI' && <CreditCard className="h-3.5 w-3.5 text-cyan-400" />}
-                            {detail.type === 'EMAIL' && <Mail className="h-3.5 w-3.5 text-cyan-400" />}
-                            {detail.type === 'PHONE' && <Phone className="h-3.5 w-3.5 text-cyan-400" />}
-                            {detail.type === 'CBU' && <Building className="h-3.5 w-3.5 text-cyan-400" />}
-                            {detail.type === 'IP' && <Globe className="h-3.5 w-3.5 text-cyan-400" />}
-                            {detail.type === 'DEVICE' && <Fingerprint className="h-3.5 w-3.5 text-purple-400" />}
-                            {detail.type === 'CUIT' && <Hash className="h-3.5 w-3.5 text-cyan-400" />}
-                            {detail.type === 'DNI' ? 'DNI / CUIL' : detail.type === 'CBU' ? 'CBU / CVU' : detail.type === 'DEVICE' ? 'Device ID' : detail.type}
-                          </span>
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                              detail.matched
-                                ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-                                : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                            }`}
-                          >
-                            {detail.matched
-                              ? `🚨 ${detail.reportsCount} ${detail.reportsCount === 1 ? 'reporte' : 'reportes'}`
-                              : '✅ Sin reportes'}
-                          </span>
-                        </div>
-
-                        <div className="font-mono text-[11px] text-slate-300 mb-1.5 flex items-center justify-between">
-                          <span>{detail.valueMasked}</span>
-                          <span className="text-[10px] text-slate-500 font-sans">Tokenizado ZK</span>
-                        </div>
-
-                        {/* Campo visible: Fecha del último incidente reportado */}
-                        <div className="rounded-lg bg-black/40 border border-white/5 p-2 mb-2 space-y-1">
-                          <div className="flex items-center gap-1.5 text-[11px]">
-                            <Clock className="h-3 w-3 text-cyan-400 shrink-0" />
-                            <span className="text-slate-400 font-medium">Fecha del último incidente reportado:</span>
-                          </div>
-                          <p className="font-mono text-xs font-bold text-white pl-4.5">
-                            {detail.matched
-                              ? (detail.lastReportedAt || (detail.lastSeenDaysAgo ? `Hace ${detail.lastSeenDaysAgo} días` : '14/09/2026 18:32 hs (Reciente)'))
-                              : 'Sin incidentes reportados'}
-                          </p>
-                        </div>
-
-                        {detail.matched ? (
-                          <div className="text-[11px] text-rose-300/90 space-y-0.5">
-                            <p>Reportado en: <strong>{detail.distinctEntitiesCount}</strong> entidad(es)</p>
-                            {detail.categories.length > 0 && (
-                              <div className="flex flex-wrap gap-1 mt-1">
-                                {detail.categories.map(c => (
-                                  <span key={c} className="rounded bg-rose-500/30 px-1.5 py-0.2 text-[9px] font-bold text-rose-200">
-                                    {c.replace(/_/g, ' ')}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <p className="text-[11px] text-emerald-400/90">
-                            Identificador sin antecedentes en la red.
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Factores del Motor de Scoring v2 — 4 Dimensiones */}
-              <div className="space-y-1.5 text-xs bg-black/30 rounded-xl p-3 border border-white/5">
-                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Desglose del Motor Matemático (4 Dimensiones)</div>
-
-                {/* Dim 1: Severidad Base */}
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400 flex items-center gap-1">
-                    <span className="text-[10px]">①</span> Severidad Base (con Time Decay)
-                    {result.breakdown.timeDecayApplied && (
-                      <span className="ml-1 rounded bg-slate-600/30 px-1 py-0.5 text-[9px] font-bold text-slate-400 border border-slate-500/20">DECAY ×{result.breakdown.timeDecayFactor.toFixed(2)}</span>
-                    )}
-                  </span>
-                  <span className="font-mono font-bold text-slate-200">+{result.breakdown.historicalReportsScore} pts</span>
-                </div>
-
-                {/* Dim 2: Multi-Entity + Velocity + Mismatch */}
-                <div className="flex items-center justify-between">
-                  <span className={`flex items-center gap-1 ${result.breakdown.mismatchDetected ? 'text-rose-400 font-semibold' : 'text-slate-500'}`}>
-                    <span className="text-[10px]">②</span> Discrepancia de Identidad
-                    {result.breakdown.mismatchDetected && <span className="ml-1 rounded bg-rose-500/20 px-1 py-0.5 text-[10px] font-bold text-rose-400 border border-rose-500/30">DETECTADO</span>}
-                  </span>
-                  <span className={`font-mono font-bold ${result.breakdown.mismatchDetected ? 'text-rose-400' : 'text-slate-600'}`}>+{result.breakdown.mismatchPenalty} pts</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className={`flex items-center gap-1 ${result.breakdown.velocityTriggered ? 'text-amber-400 font-semibold' : 'text-slate-500'}`}>
-                    <span className="text-[10px]">②</span> Velocity Spike
-                    {result.breakdown.velocityTriggered && <span className="ml-1 rounded bg-amber-500/20 px-1 py-0.5 text-[10px] font-bold text-amber-400 border border-amber-500/30">ACTIVO</span>}
-                  </span>
-                  <span className={`font-mono font-bold ${result.breakdown.velocityTriggered ? 'text-amber-400' : 'text-slate-600'}`}>+{result.breakdown.velocityPenalty} pts</span>
-                </div>
-                {result.breakdown.multiEntityMultiplier > 1 && (
-                  <div className="flex items-center justify-between text-purple-400 font-semibold">
-                    <span className="flex items-center gap-1">
-                      <span className="text-[10px]">②</span>
-                      <Network className="h-3.5 w-3.5" /> Multi-Entidad Multiplicador
-                    </span>
-                    <span className="font-mono font-bold">×{result.breakdown.multiEntityMultiplier.toFixed(2)}</span>
-                  </div>
-                )}
-
-                {/* Dim 3: Device Farm */}
-                {result.breakdown.deviceFarmDetected && (
-                  <div className="flex items-center justify-between text-red-400 font-semibold">
-                    <span className="flex items-center gap-1">
-                      <span className="text-[10px]">③</span>
-                      <Fingerprint className="h-3.5 w-3.5" /> Device Farm Override
-                      <span className="ml-1 rounded bg-red-500/20 px-1 py-0.5 text-[10px] font-bold border border-red-500/30">FARM DETECTADA</span>
-                    </span>
-                    <span className="font-mono font-bold">→ {result.breakdown.deviceFarmScore} pts</span>
-                  </div>
-                )}
-
-                {/* Email penalty */}
-                {result.breakdown.emailPenalty ? (
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between text-rose-400 font-semibold">
-                      <span className="flex items-center gap-1">
-                        <Mail className="h-3.5 w-3.5" />
-                        Penalidad por Correo ({result.breakdown.emailVerification?.badgeText})
+                    <div className="text-center sm:text-left space-y-1.5">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Nivel de Severidad
                       </span>
-                      <span className="font-mono font-bold">+{result.breakdown.emailPenalty} pts</span>
+                      <div>
+                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black tracking-wider uppercase border shadow-sm ${severityBadgeClass}`}>
+                          <span className="h-2 w-2 rounded-full bg-current animate-pulse" />
+                          {severityLevel}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 font-mono">
+                        Score Consolidado ({isInternal ? 'Interno' : 'Consorcio'})
+                      </p>
                     </div>
-                    {result.breakdown.emailVerification?.country && (
-                      <div className="flex items-center justify-between text-indigo-400/80 text-[11px] pl-5">
-                        <span className="flex items-center gap-1">
-                          <span>{result.breakdown.emailVerification.country.flag}</span>
-                          País: {result.breakdown.emailVerification.country.countryName}
-                        </span>
-                        <span className="font-mono text-slate-500">{result.breakdown.emailVerification.country.countryCode}</span>
-                      </div>
-                    )}
-                    {result.breakdown.emailVerification?.age && result.breakdown.emailVerification.age.agePenalty > 0 && (
-                      <div className="flex items-center justify-between text-orange-400/80 text-[11px] pl-5">
-                        <span className="flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          Penalidad Antigüedad Dominio ({result.breakdown.emailVerification.age.ageLabel})
-                        </span>
-                        <span className="font-mono font-bold">+{result.breakdown.emailVerification.age.agePenalty} pts</span>
-                      </div>
-                    )}
                   </div>
-                ) : result.breakdown.emailVerification?.country ? (
-                  <div className="flex items-center justify-between text-indigo-400/70 text-[11px]">
-                    <span className="flex items-center gap-1">
-                      <span>{result.breakdown.emailVerification.country.flag}</span>
-                      <Mail className="h-3 w-3" />
-                      Email: {result.breakdown.emailVerification.country.countryName} — {result.breakdown.emailVerification.age?.ageLabel}
-                    </span>
-                    <span className="font-mono text-slate-500">0 pts</span>
-                  </div>
-                ) : null}
 
-                {/* Dim 4: Critical Override */}
-                {result.breakdown.criticalOverride && (
-                  <div className="flex items-center justify-between text-rose-300 font-semibold">
-                    <span className="flex items-center gap-1">
-                      <span className="text-[10px]">④</span>
-                      <Zap className="h-3.5 w-3.5" /> Critical Override ({result.breakdown.criticalOverrideSource})
-                    </span>
-                    <span className="font-mono font-bold">FORZADO</span>
-                  </div>
-                )}
+                  {/* Lado derecho: Acción recomendada clara junto a dos datos clave y botón Marcar OK */}
+                  <div className="flex-1 w-full lg:w-auto flex flex-col sm:flex-row items-center justify-center lg:justify-end gap-4 sm:gap-6 border-t lg:border-t-0 lg:border-l border-white/10 pt-5 lg:pt-0 lg:pl-6">
+                    {/* Acción recomendada */}
+                    <div className="text-center sm:text-left space-y-1.5 w-full sm:w-auto flex flex-col items-center sm:items-start">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Acción recomendada
+                      </span>
+                      <span className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black border shadow-md ${rec.class}`}>
+                        <span className="text-sm">{rec.icon}</span>
+                        <span>{rec.text}</span>
+                      </span>
+                    </div>
 
-                <div className="border-t border-white/10 pt-2 flex items-center justify-between font-bold">
-                  <span className="text-white">Score Final Computado</span>
-                  <span className="font-mono text-sm" style={{ color: scoreColor(result.breakdown.finalScore) }}>
-                    {result.breakdown.finalScore} / 100
-                  </span>
+                    {/* Dos datos clave */}
+                    <div className="grid grid-cols-2 gap-3 w-full sm:w-auto">
+                      <div className="rounded-xl bg-slate-950/70 border border-white/10 p-3 min-w-[135px]">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                          <Clock className="h-3 w-3 text-cyan-400 shrink-0" /> Último incidente
+                        </span>
+                        <p className="text-xs font-bold text-white mt-1.5 truncate">
+                          {lastIncidentText}
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl bg-slate-950/70 border border-white/10 p-3 min-w-[145px]">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                          <ShieldAlert className="h-3 w-3 text-amber-400 shrink-0" /> Tipología predominante
+                        </span>
+                        <p className="text-xs font-bold text-white mt-1.5 truncate" title={predominantTypology}>
+                          {predominantTypology}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Botón Marcar OK en verde corporativo */}
+                    <div className="shrink-0 w-full sm:w-auto flex justify-center">
+                      <button
+                        type="button"
+                        onClick={handleMarkOK}
+                        disabled={okLoading || okDone}
+                        className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold shadow-lg transition active:scale-95 whitespace-nowrap ${
+                          okDone
+                            ? 'bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 cursor-default'
+                            : 'bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/50 shadow-emerald-950/50 hover:shadow-emerald-900/60'
+                        }`}
+                        title="Atenúa el score de riesgo restando −35 pts por reporte comunitario"
+                      >
+                        {okDone ? (
+                          <>
+                            <CheckCircle className="h-4 w-4 text-emerald-400" />
+                            <span>Voto OK Registrado</span>
+                          </>
+                        ) : okLoading ? (
+                          <>
+                            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                            <span>Aplicando...</span>
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle className="h-4 w-4" />
+                            <span>Marcar OK</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Resumen Comunitario ZK (SIN HASHES) */}
-              {(() => {
-                const edges = result.breakdown.matchingEdges || [];
-                const distinctEntitiesCount = new Set(edges.map(e => e.reportedByEntityId)).size;
-                const mostRecentTimestamp = edges.length > 0
-                  ? Math.max(...edges.map(e => new Date(e.timestamp).getTime()))
-                  : null;
-                return (
-                  <div className="space-y-2 pt-1">
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="rounded-xl border border-white/5 bg-slate-800/40 p-2.5">
-                        <span className="text-[11px] text-slate-400 block">Consenso en la Red:</span>
-                        <div className="mt-1 flex items-center gap-1.5 font-bold text-white">
-                          <Building className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-                          {distinctEntitiesCount > 0 ? (
-                            <span>Reportado en <strong className="text-cyan-300">{distinctEntitiesCount}</strong> {distinctEntitiesCount === 1 ? 'entidad' : 'entidades'}</span>
-                          ) : (
-                            <span className="text-emerald-400">0 entidades reportaron</span>
-                          )}
-                        </div>
-                        <span className="text-[10px] text-slate-500 block mt-0.5">{edges.length} reporte(s) en historial</span>
-                      </div>
-                      <div className="rounded-xl border border-white/5 bg-slate-800/40 p-2.5">
-                        <span className="text-[11px] text-slate-400 block">Antigüedad del incidente:</span>
-                        <div className="mt-1 flex items-center gap-1.5 font-bold text-white">
-                          <Clock className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-                          {mostRecentTimestamp ? <span>{formatTimeAgo(mostRecentTimestamp)}</span> : <span className="text-emerald-400">Sin registros</span>}
-                        </div>
-                      </div>
-                    </div>
+              {/* Alertas críticas del buzón (sin botones de prueba) */}
+              {isNonExistent && (
+                <div className="rounded-xl border border-rose-500/50 bg-rose-950/40 p-3.5 text-xs text-rose-200 flex items-center gap-3 shadow-lg">
+                  <AlertTriangle className="h-5 w-5 text-rose-400 shrink-0" />
+                  <div>
+                    <span className="font-bold text-rose-300 uppercase tracking-wide block">
+                      Alerta Crítica: El correo no existe (+35 pts)
+                    </span>
+                    <p className="mt-0.5 text-rose-200/90 text-[11px]">
+                      El buzón <strong>{verification?.email}</strong> no posee servidores MX o fue rechazado (550 Mailbox not found).
+                    </p>
+                  </div>
+                </div>
+              )}
 
-                    {edges.length > 0 && (
-                      <div className="rounded-xl border border-rose-500/20 bg-rose-950/20 p-2.5">
-                        <span className="text-[11px] font-bold text-rose-300 block mb-1.5">Tipologías de fraude registradas:</span>
+              {isDisposable && (
+                <div className="rounded-xl border border-amber-500/50 bg-amber-950/40 p-3.5 text-xs text-amber-200 flex items-center gap-3 shadow-lg">
+                  <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0" />
+                  <div>
+                    <span className="font-bold text-amber-300 uppercase tracking-wide block">
+                      Proveedor de Correo Temporal / Descartable (+25 pts)
+                    </span>
+                    <p className="mt-0.5 text-amber-200/90 text-[11px]">
+                      El dominio @{verification?.domain} pertenece a un servicio de correo efímero o temporal.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* ── 3. SÍNTESIS DE "EMAIL INTELLIGENCE" (MÁXIMO 4 TARJETAS) ── */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                  <div className="flex items-center gap-2">
+                    <Globe className="h-4 w-4 text-cyan-400" />
+                    <h5 className="text-xs font-bold text-white uppercase tracking-wider">
+                      Inteligencia de Correo Electrónico
+                    </h5>
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-400">
+                    RDAP Oficial · DNS MX · ICANN Verificado
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                  {/* Tarjeta 1: Antigüedad del correo / dominio */}
+                  <div className="rounded-2xl bg-slate-950/70 border border-white/10 p-4 flex flex-col justify-between hover:border-indigo-500/30 transition shadow-lg space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <Clock className="h-3.5 w-3.5 text-emerald-400" /> 1. Antigüedad
+                      </span>
+                      <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                        {firstSeen?.isHistoric ? 'Histórico' : firstSeen?.isMature ? 'Maduro' : 'Verificado'}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-2xl font-black text-white tracking-tight font-mono">
+                        {antiguedadValor}
+                      </p>
+                      <p className="text-xs text-emerald-400 font-semibold mt-1">
+                        {antiguedadSubtitulo}
+                      </p>
+                    </div>
+                    <p className="text-[10px] text-slate-400 border-t border-white/5 pt-2 truncate" title={antiguedadDetalle}>
+                      {antiguedadDetalle}
+                    </p>
+                  </div>
+
+                  {/* Tarjeta 2: Estado del buzón */}
+                  <div className="rounded-2xl bg-slate-950/70 border border-white/10 p-4 flex flex-col justify-between hover:border-indigo-500/30 transition shadow-lg space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <CheckCircle className={`h-3.5 w-3.5 ${isNonExistent ? 'text-rose-400' : isDisposable ? 'text-amber-400' : 'text-emerald-400'}`} /> 2. Estado del Buzón
+                      </span>
+                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded border ${
+                        isNonExistent ? 'bg-rose-500/20 text-rose-300 border-rose-500/30' :
+                        isDisposable ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' :
+                        'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                      }`}>
+                        {isNonExistent ? 'Inexistente' : isDisposable ? 'Temporal' : 'Activo'}
+                      </span>
+                    </div>
+                    <div>
+                      <p className={`text-sm font-bold tracking-tight leading-snug line-clamp-2 ${isNonExistent ? 'text-rose-300' : isDisposable ? 'text-amber-300' : 'text-emerald-300'}`}>
+                        {estadoBuzonValor}
+                      </p>
+                      <p className="text-xs text-slate-300 font-medium mt-1">
+                        {estadoBuzonSubtitulo}
+                      </p>
+                    </div>
+                    <p className="text-[10px] text-slate-400 border-t border-white/5 pt-2 truncate" title={estadoBuzonDetalle}>
+                      {estadoBuzonDetalle}
+                    </p>
+                  </div>
+
+                  {/* Tarjeta 3: Proveedor / Tipo */}
+                  <div className="rounded-2xl bg-slate-950/70 border border-white/10 p-4 flex flex-col justify-between hover:border-indigo-500/30 transition shadow-lg space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <Building2 className="h-3.5 w-3.5 text-indigo-400" /> 3. Proveedor / Tipo
+                      </span>
+                      <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                        {categoryLabel}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-white tracking-tight leading-snug truncate" title={proveedorTipoValor}>
+                        {proveedorTipoValor}
+                      </p>
+                      <p className="text-xs text-indigo-300 font-semibold mt-1">
+                        {proveedorTipoSubtitulo}
+                      </p>
+                    </div>
+                    <p className="text-[10px] text-slate-400 border-t border-white/5 pt-2 truncate" title={proveedorTipoDetalle}>
+                      {proveedorTipoDetalle}
+                    </p>
+                  </div>
+
+                  {/* Tarjeta 4: Geolocalización detectada */}
+                  <div className="rounded-2xl bg-slate-950/70 border border-white/10 p-4 flex flex-col justify-between hover:border-indigo-500/30 transition shadow-lg space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <MapPin className="h-3.5 w-3.5 text-cyan-400" /> 4. Geolocalización
+                      </span>
+                      <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
+                        <span>{userFlag}</span> {userCode}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-base font-black text-white tracking-tight flex items-center gap-1.5 truncate">
+                        <span>{geolocValor}</span>
+                        <span>{userFlag}</span>
+                      </p>
+                      <p className="text-xs text-cyan-300 font-semibold mt-1">
+                        {geolocSubtitulo}
+                      </p>
+                    </div>
+                    <p className="text-[10px] text-slate-400 border-t border-white/5 pt-2 truncate" title={geolocDetalle}>
+                      {geolocDetalle}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── 4. DESGLOSE TÉCNICO COLAPSABLE (ACORDEÓN AUDITORÍA) ── */}
+              <div className="rounded-2xl border border-white/10 bg-slate-950/60 overflow-hidden shadow-xl transition">
+                <button
+                  type="button"
+                  onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
+                  className="w-full flex items-center justify-between p-4 px-5 text-left hover:bg-white/[0.03] transition group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-800 text-slate-300 border border-white/5 group-hover:border-cyan-500/30 transition">
+                      <Sliders className="h-4 w-4 text-cyan-400" />
+                    </div>
+                    <div>
+                      <span className="text-sm font-bold text-white block">
+                        Ver desglose técnico y auditoría
+                      </span>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Detalle del motor matemático (4 dimensiones), tokens ZK y telemetría de red
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 group-hover:text-cyan-300 transition">
+                    <span>{showTechnicalDetails ? 'Ocultar auditoría' : 'Expandir desglose'}</span>
+                    <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${showTechnicalDetails ? 'rotate-180 text-cyan-400' : ''}`} />
+                  </div>
+                </button>
+
+                {showTechnicalDetails && (
+                  <div className="p-5 border-t border-white/10 space-y-5 bg-slate-950/90 animate-fade-in">
+                    {/* Reason Codes detallados para auditoría */}
+                    {result.breakdown.reasonCodes && result.breakdown.reasonCodes.length > 0 && (
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Reason Codes Registrados:
+                        </span>
                         <div className="flex flex-wrap gap-1.5">
-                          {Array.from(new Set(edges.map(e => e.incidentCategory))).map(cat => (
-                            <span key={cat} className="rounded-lg bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-300 border border-rose-500/30">
-                              {cat.replace(/_/g, ' ')}
-                            </span>
+                          {result.breakdown.reasonCodes.map(code => {
+                            const cfg = REASON_CODE_LABELS[code] || {
+                              label: String(code).replace(/_/g, ' '),
+                              icon: '⚠️',
+                              color: 'bg-slate-700/30 text-slate-300 border-slate-600/40',
+                            };
+                            return (
+                              <span key={code} className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-bold ${cfg.color}`}>
+                                <span>{cfg.icon}</span>
+                                {cfg.label}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Desglose Dato por Dato */}
+                    {result.breakdown.identifierDetails && result.breakdown.identifierDetails.length > 0 && (
+                      <div className="space-y-2 pt-1">
+                        <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                          <Filter className="h-3.5 w-3.5 text-cyan-400" />
+                          Tokens ZK y Correlación de Identificadores:
+                        </span>
+                        <div className="grid gap-2.5 grid-cols-1">
+                          {result.breakdown.identifierDetails.map(detail => (
+                            <div
+                              key={detail.type}
+                              className={`rounded-xl p-3 border text-xs transition ${
+                                detail.matched
+                                  ? 'bg-rose-950/20 border-rose-500/40 text-rose-200'
+                                  : 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-1.5">
+                                <span className="font-bold flex items-center gap-1.5 text-white">
+                                  <Mail className="h-3.5 w-3.5 text-cyan-400" />
+                                  {detail.type}
+                                </span>
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                                    detail.matched
+                                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                                      : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                  }`}
+                                >
+                                  {detail.matched
+                                    ? `🚨 ${detail.reportsCount} ${detail.reportsCount === 1 ? 'reporte' : 'reportes'}`
+                                    : '✅ Sin reportes'}
+                                </span>
+                              </div>
+
+                              <div className="font-mono text-[11px] text-slate-300 mb-1.5 flex items-center justify-between">
+                                <span>{detail.valueMasked}</span>
+                                <span className="text-[10px] text-slate-500 font-sans">Tokenizado ZK</span>
+                              </div>
+
+                              <div className="rounded-lg bg-black/40 border border-white/5 p-2 mb-2 space-y-1">
+                                <div className="flex items-center gap-1.5 text-[11px]">
+                                  <Clock className="h-3 w-3 text-cyan-400 shrink-0" />
+                                  <span className="text-slate-400 font-medium">Fecha del último incidente reportado:</span>
+                                </div>
+                                <p className="font-mono text-xs font-bold text-white pl-4.5">
+                                  {detail.matched
+                                    ? (detail.lastReportedAt || (detail.lastSeenDaysAgo ? `Hace ${detail.lastSeenDaysAgo} días` : '14/09/2026 18:32 hs'))
+                                    : 'Sin incidentes reportados'}
+                                </p>
+                              </div>
+
+                              {detail.matched && detail.categories.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {detail.categories.map(c => (
+                                    <span key={c} className="rounded bg-rose-500/30 px-1.5 py-0.2 text-[9px] font-bold text-rose-200">
+                                      {c.replace(/_/g, ' ')}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           ))}
                         </div>
                       </div>
                     )}
 
-                    <div className="flex items-center gap-2 text-[11px] text-slate-400 bg-white/[0.02] rounded-xl px-3 py-2 border border-white/5">
-                      <Lock className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-                      <span>Zero-Knowledge: La consulta evalúa datos anonimizados sin exponer hashes ni PII confidencial.</span>
+                    {/* Desglose del Motor Matemático (4 Dimensiones) */}
+                    <div className="space-y-1.5 text-xs bg-black/40 rounded-xl p-3.5 border border-white/5">
+                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                        Desglose del Motor Matemático (4 Dimensiones)
+                      </div>
+
+                      {/* Dim 1: Severidad Base */}
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 flex items-center gap-1">
+                          <span className="text-[10px]">①</span> Severidad Base (con Time Decay)
+                          {result.breakdown.timeDecayApplied && (
+                            <span className="ml-1 rounded bg-slate-600/30 px-1 py-0.5 text-[9px] font-bold text-slate-400 border border-slate-500/20">
+                              DECAY ×{result.breakdown.timeDecayFactor.toFixed(2)}
+                            </span>
+                          )}
+                        </span>
+                        <span className="font-mono font-bold text-slate-200">+{result.breakdown.historicalReportsScore} pts</span>
+                      </div>
+
+                      {/* Dim 2: Multi-Entidad + Velocity + Mismatch */}
+                      <div className="flex items-center justify-between">
+                        <span className={`flex items-center gap-1 ${result.breakdown.mismatchDetected ? 'text-rose-400 font-semibold' : 'text-slate-500'}`}>
+                          <span className="text-[10px]">②</span> Discrepancia de Identidad
+                          {result.breakdown.mismatchDetected && <span className="ml-1 rounded bg-rose-500/20 px-1 py-0.5 text-[10px] font-bold text-rose-400 border border-rose-500/30">DETECTADO</span>}
+                        </span>
+                        <span className={`font-mono font-bold ${result.breakdown.mismatchDetected ? 'text-rose-400' : 'text-slate-600'}`}>+{result.breakdown.mismatchPenalty} pts</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className={`flex items-center gap-1 ${result.breakdown.velocityTriggered ? 'text-amber-400 font-semibold' : 'text-slate-500'}`}>
+                          <span className="text-[10px]">②</span> Velocity Spike
+                          {result.breakdown.velocityTriggered && <span className="ml-1 rounded bg-amber-500/20 px-1 py-0.5 text-[10px] font-bold text-amber-400 border border-amber-500/30">ACTIVO</span>}
+                        </span>
+                        <span className={`font-mono font-bold ${result.breakdown.velocityTriggered ? 'text-amber-400' : 'text-slate-600'}`}>+{result.breakdown.velocityPenalty} pts</span>
+                      </div>
+
+                      {/* Dim 3: Penalidad por Correo */}
+                      {result.breakdown.emailPenalty ? (
+                        <div className="flex items-center justify-between text-rose-400 font-semibold">
+                          <span className="flex items-center gap-1">
+                            <span className="text-[10px]">③</span>
+                            <Mail className="h-3.5 w-3.5" />
+                            Penalidad de Correo ({result.breakdown.emailVerification?.badgeText})
+                          </span>
+                          <span className="font-mono font-bold">+{result.breakdown.emailPenalty} pts</span>
+                        </div>
+                      ) : null}
+
+                      {/* Dim 4: Critical Override */}
+                      {result.breakdown.criticalOverride && (
+                        <div className="flex items-center justify-between text-rose-300 font-semibold">
+                          <span className="flex items-center gap-1">
+                            <span className="text-[10px]">④</span>
+                            <Zap className="h-3.5 w-3.5" /> Critical Override ({result.breakdown.criticalOverrideSource})
+                          </span>
+                          <span className="font-mono font-bold">FORZADO</span>
+                        </div>
+                      )}
+
+                      <div className="border-t border-white/10 pt-2 flex items-center justify-between font-bold">
+                        <span className="text-white">Score Final Computado</span>
+                        <span className="font-mono text-sm" style={{ color: scoreColor(result.breakdown.finalScore) }}>
+                          {result.breakdown.finalScore} / 100
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Resumen Comunitario ZK */}
+                    <div className="space-y-2 pt-1">
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded-xl border border-white/5 bg-slate-800/40 p-2.5">
+                          <span className="text-[11px] text-slate-400 block">Consenso en la Red:</span>
+                          <div className="mt-1 flex items-center gap-1.5 font-bold text-white">
+                            <Building className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                            {edges.length > 0 ? (
+                              <span>Reportado en <strong className="text-cyan-300">{new Set(edges.map(e => e.reportedByEntityId)).size}</strong> entidad(es)</span>
+                            ) : (
+                              <span className="text-emerald-400">0 entidades reportaron</span>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-slate-500 block mt-0.5">{edges.length} reporte(s) en historial</span>
+                        </div>
+                        <div className="rounded-xl border border-white/5 bg-slate-800/40 p-2.5">
+                          <span className="text-[11px] text-slate-400 block">Antigüedad del incidente:</span>
+                          <div className="mt-1 flex items-center gap-1.5 font-bold text-white">
+                            <Clock className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                            {mostRecentTimestamp ? <span>{formatTimeAgo(mostRecentTimestamp)}</span> : <span className="text-emerald-400">Sin registros</span>}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 text-[11px] text-slate-400 bg-white/[0.02] rounded-xl px-3 py-2 border border-white/5">
+                        <Lock className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                        <span>Zero-Knowledge: La consulta evalúa datos anonimizados sin exponer hashes ni PII confidencial.</span>
+                      </div>
                     </div>
                   </div>
-                );
+                )}
+              </div>
+            </div>
+          );
+        }
+
+        // ── VISTA PARA OTROS IDENTIFICADORES (DNI, CBU, SET) ──
+        return (
+          <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-5 space-y-5 animate-fade-in shadow-xl">
+            {/* Header del Resultado */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/20 text-cyan-300 font-bold text-xs">
+                  ZK
+                </span>
+                <div>
+                  <h4 className="text-sm font-bold text-white">
+                    {searchMode === 'single'
+                      ? `Resultado de Consulta: ${singleType === 'DNI' ? 'DNI' : singleType === 'CBU' ? 'CBU/CVU' : singleType}`
+                      : 'Resultado de la Evaluación del Conjunto de Datos'}
+                  </h4>
+                  <p className="text-[11px] text-slate-400">
+                    Evaluado con arquitectura Zero-Knowledge y Fingerprinting criptográfico
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleMarkOK}
+                  disabled={okLoading || okDone}
+                  className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-1.5 text-xs font-bold transition active:scale-95 shadow-md ${
+                    okDone
+                      ? 'border-emerald-500/40 bg-emerald-950/60 text-emerald-300 cursor-default'
+                      : 'border-emerald-400/50 bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/40'
+                  }`}
+                  title="Atenúa el score de riesgo restando −35 pts por reporte comunitario"
+                >
+                  {okDone ? (
+                    <>
+                      <CheckCircle className="h-4 w-4 text-emerald-400" />
+                      Voto OK Registrado
+                    </>
+                  ) : okLoading ? (
+                    <>
+                      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      Aplicando...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="h-3.5 w-3.5 text-white" />
+                      Marcar OK
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Score de Riesgo: Entidad vs Consorcio */}
+            <div className="space-y-4">
+              <div className={`grid gap-4 ${isInternal ? 'grid-cols-1 max-w-xl mx-auto' : 'grid-cols-1 md:grid-cols-2'}`}>
+                {/* Score 1: Según la Entidad */}
+                {(() => {
+                  const internalBadge = internalScore >= 70
+                    ? { text: 'ALTO RIESGO PROPIO', color: 'bg-rose-500/20 text-rose-300 border-rose-500/40' }
+                    : internalScore >= 30
+                    ? { text: 'RIESGO MEDIO INTERNO', color: 'bg-amber-500/20 text-amber-300 border-amber-500/40' }
+                    : { text: 'BAJO RIESGO PROPIO', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' };
+
+                  return (
+                    <ScoreGauge
+                      score={internalScore}
+                      title="1. Score de la Entidad"
+                      subtitle={`Basado en los reportes y antecedentes internos cargados por tu entidad (${activeFintech?.name || 'Tu Entidad'}).`}
+                      badge={internalBadge}
+                      icon={Building2}
+                    />
+                  );
+                })()}
+
+                {/* Score 2: Del Consorcio Federal */}
+                {!isInternal && (() => {
+                  const consortiumBadge = consortiumScore >= 70
+                    ? { text: 'ALERTA CONSORCIO', color: 'bg-rose-500/20 text-rose-300 border-rose-500/40' }
+                    : consortiumScore >= 30
+                    ? { text: 'SOSPECHA COMUNITARIA', color: 'bg-amber-500/20 text-amber-300 border-amber-500/40' }
+                    : { text: 'LIMPIO EN CONSORCIO', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' };
+
+                  return (
+                    <ScoreGauge
+                      score={consortiumScore}
+                      title="2. Score del Consorcio"
+                      subtitle="Calculado con la inteligencia colectiva y cruces ZK aportados por todo el Consorcio."
+                      badge={consortiumBadge}
+                      icon={Network}
+                    />
+                  );
+                })()}
+              </div>
+
+              {/* Banner Comparativo */}
+              {!isInternal && (() => {
+                if (internalScore < 30 && consortiumScore >= 70) {
+                  return (
+                    <div className="rounded-xl border border-rose-500/40 bg-rose-950/40 p-3.5 text-xs text-rose-200 flex items-start gap-3 shadow-lg">
+                      <ShieldAlert className="h-5 w-5 text-rose-400 shrink-0 mt-0.5 animate-pulse" />
+                      <div>
+                        <span className="font-bold text-rose-300 uppercase tracking-wide block">
+                          🛡️ Detección Preventiva del Consorcio Federal
+                        </span>
+                        <p className="mt-0.5 text-rose-200/90 leading-relaxed text-[11px]">
+                          Tu entidad no registraba este identificador como fraude interno, pero la Red Federal del Consorcio detectó antecedentes críticos reportados por otras entidades financieras.
+                        </p>
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
               })()}
-        </div>
-      )}
+
+              {/* Badge + Controles de Acción */}
+              <div className="flex items-center flex-wrap gap-2.5 pt-1">
+                <span className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-sm font-bold ${rec.class}`}>
+                  <span>{rec.icon}</span>
+                  {rec.text}
+                </span>
+
+                <span className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-bold ${
+                  result.scope === 'INTERNAL'
+                    ? 'bg-indigo-500/15 border-indigo-500/25 text-indigo-300'
+                    : 'bg-cyan-500/15 border-cyan-500/25 text-cyan-300'
+                }`}>
+                  {result.scope === 'INTERNAL' ? <Building2 className="h-3 w-3" /> : <Network className="h-3 w-3" />}
+                  {result.scope === 'INTERNAL' ? 'VISTA: ESPACIO INTERNO' : 'VISTA: CONSORCIO FEDERAL'}
+                </span>
+              </div>
+            </div>
+
+            {okDone && (
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/30 p-2.5 text-xs text-emerald-300 flex items-center gap-2">
+                <CheckCircle className="h-4 w-4 shrink-0 text-emerald-400" />
+                <span>Voto de legitimidad computado. El score de riesgo fue atenuado en tiempo real en la red federada.</span>
+              </div>
+            )}
+
+            {/* Desglose Dato por Dato */}
+            {result.breakdown.identifierDetails && result.breakdown.identifierDetails.length > 0 && (
+              <div className="space-y-2 pt-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                    <Filter className="h-3.5 w-3.5 text-cyan-400" />
+                    {result.breakdown.identifierDetails.length > 1
+                      ? 'Desglose Dato por Dato del Conjunto Evaluado:'
+                      : 'Resultado del Identificador Consultado:'}
+                  </span>
+                  <span className="text-[11px] font-mono text-slate-500">
+                    {result.breakdown.identifierDetails.filter(d => d.matched).length} con incidentes / {result.breakdown.identifierDetails.length} consultados
+                  </span>
+                </div>
+
+                <div className={`grid gap-2.5 ${result.breakdown.identifierDetails.length > 1 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1'}`}>
+                  {result.breakdown.identifierDetails.map(detail => (
+                    <div
+                      key={detail.type}
+                      className={`rounded-xl p-3 border text-xs transition ${
+                        detail.matched
+                          ? 'bg-rose-950/20 border-rose-500/40 text-rose-200'
+                          : 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="font-bold flex items-center gap-1.5 text-white">
+                          {detail.type === 'DNI' && <CreditCard className="h-3.5 w-3.5 text-cyan-400" />}
+                          {detail.type === 'EMAIL' && <Mail className="h-3.5 w-3.5 text-cyan-400" />}
+                          {detail.type === 'PHONE' && <Phone className="h-3.5 w-3.5 text-cyan-400" />}
+                          {detail.type === 'CBU' && <Building className="h-3.5 w-3.5 text-cyan-400" />}
+                          {detail.type === 'IP' && <Globe className="h-3.5 w-3.5 text-cyan-400" />}
+                          {detail.type === 'DEVICE' && <Fingerprint className="h-3.5 w-3.5 text-purple-400" />}
+                          {detail.type === 'CUIT' && <Hash className="h-3.5 w-3.5 text-cyan-400" />}
+                          {detail.type === 'DNI' ? 'DNI / CUIL' : detail.type === 'CBU' ? 'CBU / CVU' : detail.type === 'DEVICE' ? 'Device ID' : detail.type}
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                            detail.matched
+                              ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                              : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                          }`}
+                        >
+                          {detail.matched
+                            ? `🚨 ${detail.reportsCount} ${detail.reportsCount === 1 ? 'reporte' : 'reportes'}`
+                            : '✅ Sin reportes'}
+                        </span>
+                      </div>
+
+                      <div className="font-mono text-[11px] text-slate-300 mb-1.5 flex items-center justify-between">
+                        <span>{detail.valueMasked}</span>
+                        <span className="text-[10px] text-slate-500 font-sans">Tokenizado ZK</span>
+                      </div>
+
+                      <div className="rounded-lg bg-black/40 border border-white/5 p-2 mb-2 space-y-1">
+                        <div className="flex items-center gap-1.5 text-[11px]">
+                          <Clock className="h-3 w-3 text-cyan-400 shrink-0" />
+                          <span className="text-slate-400 font-medium">Fecha del último incidente reportado:</span>
+                        </div>
+                        <p className="font-mono text-xs font-bold text-white pl-4.5">
+                          {detail.matched
+                            ? (detail.lastReportedAt || (detail.lastSeenDaysAgo ? `Hace ${detail.lastSeenDaysAgo} días` : '14/09/2026 18:32 hs'))
+                            : 'Sin incidentes reportados'}
+                        </p>
+                      </div>
+
+                      {detail.matched ? (
+                        <div className="text-[11px] text-rose-300/90 space-y-0.5">
+                          <p>Reportado en: <strong>{detail.distinctEntitiesCount}</strong> entidad(es)</p>
+                          {detail.categories.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {detail.categories.map(c => (
+                                <span key={c} className="rounded bg-rose-500/30 px-1.5 py-0.2 text-[9px] font-bold text-rose-200">
+                                  {c.replace(/_/g, ' ')}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-emerald-400/90">
+                          Identificador sin antecedentes en la red.
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Factores del Motor de Scoring v2 — 4 Dimensiones */}
+            <div className="space-y-1.5 text-xs bg-black/30 rounded-xl p-3 border border-white/5">
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Desglose del Motor Matemático (4 Dimensiones)</div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400 flex items-center gap-1">
+                  <span className="text-[10px]">①</span> Severidad Base (con Time Decay)
+                  {result.breakdown.timeDecayApplied && (
+                    <span className="ml-1 rounded bg-slate-600/30 px-1 py-0.5 text-[9px] font-bold text-slate-400 border border-slate-500/20">DECAY ×{result.breakdown.timeDecayFactor.toFixed(2)}</span>
+                  )}
+                </span>
+                <span className="font-mono font-bold text-slate-200">+{result.breakdown.historicalReportsScore} pts</span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className={`flex items-center gap-1 ${result.breakdown.mismatchDetected ? 'text-rose-400 font-semibold' : 'text-slate-500'}`}>
+                  <span className="text-[10px]">②</span> Discrepancia de Identidad
+                  {result.breakdown.mismatchDetected && <span className="ml-1 rounded bg-rose-500/20 px-1 py-0.5 text-[10px] font-bold text-rose-400 border border-rose-500/30">DETECTADO</span>}
+                </span>
+                <span className={`font-mono font-bold ${result.breakdown.mismatchDetected ? 'text-rose-400' : 'text-slate-600'}`}>+{result.breakdown.mismatchPenalty} pts</span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className={`flex items-center gap-1 ${result.breakdown.velocityTriggered ? 'text-amber-400 font-semibold' : 'text-slate-500'}`}>
+                  <span className="text-[10px]">②</span> Velocity Spike
+                  {result.breakdown.velocityTriggered && <span className="ml-1 rounded bg-amber-500/20 px-1 py-0.5 text-[10px] font-bold text-amber-400 border border-amber-500/30">ACTIVO</span>}
+                </span>
+                <span className={`font-mono font-bold ${result.breakdown.velocityTriggered ? 'text-amber-400' : 'text-slate-600'}`}>+{result.breakdown.velocityPenalty} pts</span>
+              </div>
+
+              <div className="border-t border-white/10 pt-2 flex items-center justify-between font-bold">
+                <span className="text-white">Score Final Computado</span>
+                <span className="font-mono text-sm" style={{ color: scoreColor(result.breakdown.finalScore) }}>
+                  {result.breakdown.finalScore} / 100
+                </span>
+              </div>
+            </div>
+
+            {/* Resumen Comunitario ZK */}
+            <div className="space-y-2 pt-1">
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="rounded-xl border border-white/5 bg-slate-800/40 p-2.5">
+                  <span className="text-[11px] text-slate-400 block">Consenso en la Red:</span>
+                  <div className="mt-1 flex items-center gap-1.5 font-bold text-white">
+                    <Building className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                    {edges.length > 0 ? (
+                      <span>Reportado en <strong className="text-cyan-300">{new Set(edges.map(e => e.reportedByEntityId)).size}</strong> entidad(es)</span>
+                    ) : (
+                      <span className="text-emerald-400">0 entidades reportaron</span>
+                    )}
+                  </div>
+                  <span className="text-[10px] text-slate-500 block mt-0.5">{edges.length} reporte(s) en historial</span>
+                </div>
+                <div className="rounded-xl border border-white/5 bg-slate-800/40 p-2.5">
+                  <span className="text-[11px] text-slate-400 block">Antigüedad del incidente:</span>
+                  <div className="mt-1 flex items-center gap-1.5 font-bold text-white">
+                    <Clock className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                    {mostRecentTimestamp ? <span>{formatTimeAgo(mostRecentTimestamp)}</span> : <span className="text-emerald-400">Sin registros</span>}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 text-[11px] text-slate-400 bg-white/[0.02] rounded-xl px-3 py-2 border border-white/5">
+                <Lock className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                <span>Zero-Knowledge: La consulta evalúa datos anonimizados sin exponer hashes ni PII confidencial.</span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

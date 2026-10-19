@@ -32,6 +32,7 @@ import ScoringLabAdmin from '@/components/ScoringLabAdmin';
 import RegulatoryAuditTable from '@/components/RegulatoryAuditTable';
 import AdminUsersManagement from '@/components/AdminUsersManagement';
 import ConsortiumLogo from '@/components/ConsortiumLogo';
+import SessionTimeoutGuard from '@/components/SessionTimeoutGuard';
 
 interface AdminConsortiumPortalProps {
   onLogout: () => void;
@@ -217,6 +218,7 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
 
   return (
     <div className="min-h-screen bg-[#070d18] text-[#f1f5f9] font-sans flex flex-col justify-between selection:bg-[#1d4ed8] selection:text-white">
+      <SessionTimeoutGuard />
       {/* ── Top Executive Bar ── */}
       <header className="border-b border-[#17253d] bg-[#0c1628]/95 backdrop-blur-md px-6 py-4 sticky top-0 z-30 shadow-lg">
         <div className="max-w-7xl mx-auto flex items-center justify-between">

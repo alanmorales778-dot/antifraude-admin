@@ -27,6 +27,7 @@ import DashboardKPIs from '@/components/DashboardKPIs';
 import ThreatAnalytics from '@/components/ThreatAnalytics';
 import AICopilotDrawer from '@/components/AICopilotDrawer';
 import ConsortiumLogo from '@/components/ConsortiumLogo';
+import SessionTimeoutGuard from '@/components/SessionTimeoutGuard';
 import { useConsortiumStore } from '@/lib/store';
 import { ServiceScope, FintechEntity } from '@/lib/types';
 
@@ -188,6 +189,7 @@ export default function EntityPortal({
 
   return (
     <div className="min-h-screen flex bg-[#070d18] text-[#e2e8f0] font-sans selection:bg-[#1b3b36] selection:text-white">
+      <SessionTimeoutGuard />
       {/* ── SIDEBAR ── */}
       <aside
         className={`fixed inset-y-0 left-0 z-40 w-60 flex flex-col bg-[#0a1222] border-r border-[#17253d] transition-transform duration-300 ${

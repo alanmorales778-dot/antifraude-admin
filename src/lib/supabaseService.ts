@@ -8,8 +8,8 @@ import {
   ServiceScope,
   AppUser,
   ScoringConfig,
-} from './types';
-import { supabaseFetch, getSupabaseConfig, getSupabaseBrowserClient } from './supabaseClient';
+} from '@/lib/types';
+import { supabaseFetch, getSupabaseConfig, getSupabaseBrowserClient } from '@/lib/supabaseClient';
 
 /**
  * Servicio de sincronización y persistencia con Supabase

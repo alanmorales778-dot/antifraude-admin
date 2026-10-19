@@ -31,6 +31,7 @@ export default function AdminUsersManagement() {
     addUser,
     updateUserRole,
     toggleUserStatus,
+    updateUserTotp,
     adminSession,
     fintechs,
   } = useConsortiumStore();
@@ -42,6 +43,7 @@ export default function AdminUsersManagement() {
   const [newRole, setNewRole] = useState<'admin' | 'usuario'>('usuario');
   const [newEntityId, setNewEntityId] = useState('CONSORCIO');
   const [tempPassword, setTempPassword] = useState('TempPass#2026');
+  const [autoEnroll2FA, setAutoEnroll2FA] = useState(true);
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -70,6 +72,7 @@ export default function AdminUsersManagement() {
       entityId: newEntityId,
       entityName,
       tempPassword,
+      autoEnroll2FA,
     });
 
     setIsLoading(false);
@@ -97,6 +100,18 @@ export default function AdminUsersManagement() {
     if (res.success) {
       setStatusMsg({ type: 'success', text: res.message });
       setTimeout(() => setStatusMsg(null), 4000);
+    }
+  };
+
+  const handleToggleTotp = async (userId: string, currentEnrolled: boolean) => {
+    setIsLoading(true);
+    const res = await updateUserTotp(userId, !currentEnrolled);
+    setIsLoading(false);
+    if (res.success) {
+      setStatusMsg({ type: 'success', text: res.message });
+      setTimeout(() => setStatusMsg(null), 4000);
+    } else {
+      setStatusMsg({ type: 'error', text: res.message });
     }
   };
 
@@ -253,22 +268,37 @@ export default function AdminUsersManagement() {
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setIsAddingUser(false)}
-                className="px-4 py-2 rounded-xl bg-[#13233e] text-[#94a3b8] text-xs font-medium hover:bg-[#1a3052] border border-[#203c68]"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="px-5 py-2 rounded-xl bg-[#1d4ed8] hover:bg-[#2563eb] text-white text-xs font-semibold shadow-sm border border-[#3b82f6]/50 flex items-center gap-2"
-              >
-                {isLoading && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                <span>Crear Cuenta y Autorizar</span>
-              </button>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 border-t border-[#17253d]">
+              <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={autoEnroll2FA}
+                  onChange={e => setAutoEnroll2FA(e.target.checked)}
+                  className="w-4 h-4 rounded bg-[#060c17] border-[#1e365b] text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                />
+                <span className="text-xs text-[#cbd5e1]">
+                  <strong className="text-emerald-400">Vincular 2FA en el momento</strong>
+                  <span className="text-[#94a3b8] ml-1.5">(Activa el acceso inmediatamente sin forzar pantalla de QR)</span>
+                </span>
+              </label>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsAddingUser(false)}
+                  className="px-4 py-2 rounded-xl bg-[#13233e] text-[#94a3b8] text-xs font-medium hover:bg-[#1a3052] border border-[#203c68]"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="px-5 py-2 rounded-xl bg-[#1d4ed8] hover:bg-[#2563eb] text-white text-xs font-semibold shadow-sm border border-[#3b82f6]/50 flex items-center gap-2"
+                >
+                  {isLoading && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                  <span>Crear Cuenta y Autorizar</span>
+                </button>
+              </div>
             </div>
           </form>
         </div>
@@ -402,15 +432,35 @@ export default function AdminUsersManagement() {
 
                       <td className="px-5 py-3.5">
                         {user.totpEnrolled ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 font-medium text-[11px]">
-                            <Smartphone className="w-3 h-3 text-emerald-400" />
-                            <span>TOTP Enrolado</span>
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 font-medium text-[11px]">
+                              <Smartphone className="w-3 h-3 text-emerald-400" />
+                              <span>2FA Vinculado (TOTP)</span>
+                            </span>
+                            {!isSuperAdminEmail && (
+                              <button
+                                onClick={() => handleToggleTotp(user.id, true)}
+                                title="Desvincular 2FA para exigir nuevo enrolamiento"
+                                className="text-[10px] text-[#64748b] hover:text-amber-400 underline transition cursor-pointer"
+                              >
+                                Reset
+                              </button>
+                            )}
+                          </div>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-950/60 border border-amber-500/40 text-amber-300 font-medium text-[11px]">
-                            <AlertTriangle className="w-3 h-3 text-amber-400" />
-                            <span>Pendiente de Vinculación</span>
-                          </span>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-950/60 border border-amber-500/40 text-amber-300 font-medium text-[11px]">
+                              <AlertTriangle className="w-3 h-3 text-amber-400" />
+                              <span>Pendiente de Vinculación</span>
+                            </span>
+                            <button
+                              onClick={() => handleToggleTotp(user.id, false)}
+                              title="Aprobar y vincular 2FA inmediatamente"
+                              className="px-2 py-0.5 rounded-lg bg-blue-600/30 hover:bg-blue-600/60 text-blue-200 border border-blue-400/50 text-[10px] font-bold transition flex items-center gap-1 shadow-sm active:scale-95 cursor-pointer"
+                            >
+                              <span>⚡ Vincular Ahora</span>
+                            </button>
+                          </div>
                         )}
                       </td>
 
@@ -440,7 +490,17 @@ export default function AdminUsersManagement() {
                           : 'Nunca'}
                       </td>
 
-                      <td className="px-5 py-3.5 text-right">
+                      <td className="px-5 py-3.5 text-right whitespace-nowrap space-x-2">
+                        {!user.totpEnrolled && (
+                          <button
+                            onClick={() => handleToggleTotp(user.id, false)}
+                            className="px-2.5 py-1 rounded-lg text-xs font-semibold border bg-blue-950/50 border-blue-500/50 text-blue-300 hover:bg-blue-900/70 transition inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
+                            title="Vincular 2FA de este usuario en el momento"
+                          >
+                            <Smartphone className="w-3.5 h-3.5 text-blue-400" />
+                            <span>Vincular 2FA</span>
+                          </button>
+                        )}
                         <button
                           onClick={() => handleToggleStatus(user.id)}
                           disabled={isSuperAdminEmail}
@@ -448,7 +508,7 @@ export default function AdminUsersManagement() {
                             user.status === 'ACTIVE'
                               ? 'bg-rose-950/40 border-rose-600/40 text-rose-300 hover:bg-rose-900/60'
                               : 'bg-emerald-950/40 border-emerald-600/40 text-emerald-300 hover:bg-emerald-900/60'
-                          } ${isSuperAdminEmail ? 'opacity-40 cursor-not-allowed' : ''}`}
+                          } ${isSuperAdminEmail ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
                         >
                           {user.status === 'ACTIVE' ? 'Suspender' : 'Reactivar'}
                         </button>

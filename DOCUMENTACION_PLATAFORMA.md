@@ -54,6 +54,14 @@ Tras completar con éxito el desafío 2FA, el sistema lee el rol asignado al usu
 - **Rol `admin` (Gobernanza Central):** Redirección inmediata al **Panel Central de Gobernanza** (`AdminConsortiumPortal.tsx` / `/admin`).
 - **Rol `usuario` (Analista de Entidad):** Asociación automática a su `entity_id` bancario correspondiente y redirección al **Workspace Interno de Analistas** (`EntityPortal.tsx` / `/workspace`).
 
+### 1.5. Sistema de Timeout Seguro por Inactividad (`SessionTimeoutGuard`)
+En cumplimiento de las directrices bancarias del BCRA (Com. A7370 / Seguridad de Canales Digitales) y mitigación de fuga de datos en estaciones desatendidas:
+- **Límite de Inactividad:** 15 minutos (900.000 ms) sin interacción del operador.
+- **Detección Omnicanal:** Monitoreo throttled (1s) de clics, movimientos del ratón, pulsaciones de teclas, desplazamientos (scroll) y toques en pantalla.
+- **Sincronización Multi-Pestaña:** Coordinación cross-tab mediante `localStorage` (`antifraude_last_activity_ts`) y eventos `storage`, evitando cierres prematuros si el analista opera en múltiples ventanas en paralelo.
+- **Aviso Previo Flotante:** Modal de alta visibilidad que emerge 2 minutos (120 s) antes de la expiración con contador en tiempo real, barra de progreso y botón para extender sesión ("Mantener Sesión Activa") o cerrar voluntariamente.
+- **Cierre Criptográfico y Sanitización:** Al expirar, se invoca `auth.signOut()`, se eliminan tokens en memoria y almacenamiento local, se genera un registro inmutable en auditoría (`SESSION_TIMEOUT_EXPIRED`) y se redirige al login unificado con banner explicativo de seguridad.
+
 ---
 
 ## 2. Arquitectura de Tokenización Zero-Knowledge y Secreto Bancario
