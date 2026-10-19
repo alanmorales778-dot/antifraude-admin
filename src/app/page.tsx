@@ -4,7 +4,6 @@ import React, { useEffect, useState } from 'react';
 import { useConsortiumStore } from '@/lib/store';
 import EntityPortal from '@/components/EntityPortal';
 import PartnerLogin from '@/components/PartnerLogin';
-import SessionTimeoutGuard from '@/components/SessionTimeoutGuard';
 
 export default function Page() {
   const { partnerSession, logoutPartner, initSeedData } = useConsortiumStore();
@@ -22,15 +21,12 @@ export default function Page() {
   // Si la sesión de partner está activa, renderizar exclusivamente el portal de la entidad financiera
   if (partnerSession?.isAuthenticated) {
     return (
-      <>
-        <SessionTimeoutGuard />
-        <EntityPortal
-          fintechId={partnerSession.entityId}
-          onLogout={() => {
-            logoutPartner();
-          }}
-        />
-      </>
+      <EntityPortal
+        fintechId={partnerSession.entityId}
+        onLogout={() => {
+          logoutPartner();
+        }}
+      />
     );
   }
 

@@ -5,22 +5,21 @@ import { ShieldAlert, Clock, LogOut, CheckCircle2, AlertTriangle } from 'lucide-
 import { useConsortiumStore } from '@/lib/store';
 
 // ── Configuración Estándar de Inactividad Bancaria ─────────────────────────────
-// 15 minutos totales de inactividad permitidos
+// 15 minutos totales de inactividad permitidos por defecto
 export const DEFAULT_INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 900,000 ms (15 min)
 
 // 2 minutos de aviso previo flotante antes de la desconexión definitiva
 export const DEFAULT_WARNING_THRESHOLD_MS = 2 * 60 * 1000; // 120,000 ms (2 min)
 
-// Clave de sincronización multi-pestaña
+// Claves de sincronización multi-pestaña
 const ACTIVITY_STORAGE_KEY = 'antifraude_last_activity_ts';
-const THROTTLE_INTERVAL_MS = 1000; // Máximo 1 actualización por segundo
+const SESSION_SYNC_CHANNEL_NAME = 'antifraude_session_sync_ch';
+const THROTTLE_INTERVAL_MS = 1000; // Máximo 1 actualización de timestamp por segundo
 
 interface SessionTimeoutGuardProps {
   timeoutMs?: number;
   warningThresholdMs?: number;
 }
-
-let activeGuardCount = 0;
 
 export default function SessionTimeoutGuard({
   timeoutMs = DEFAULT_INACTIVITY_TIMEOUT_MS,
@@ -32,34 +31,43 @@ export default function SessionTimeoutGuard({
   const activeUserEmail = adminSession?.email || partnerSession?.operatorEmail || 'Usuario';
   const activeEntityName = partnerSession?.entityName || (adminSession ? 'Gobernanza Central' : 'Entidad');
 
-  const [showWarning, setShowWarning] = useState<boolean>(false);
-  const [secondsRemaining, setSecondsRemaining] = useState<number>(Math.floor(warningThresholdMs / 1000));
+  // Permitir sobreescritura dinámica de tiempo para pruebas rápidas
+  // Ej: en la URL ?timeout_sec=30 o localStorage.setItem('antifraude_timeout_debug_sec', '30')
+  const [actualTimeoutMs, setActualTimeoutMs] = useState<number>(timeoutMs);
+  const [actualWarningMs, setActualWarningMs] = useState<number>(warningThresholdMs);
 
-  const isPrimaryInstanceRef = useRef<boolean>(false);
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const urlParam = new URLSearchParams(window.location.search).get('timeout_sec');
+        const debugStorage = localStorage.getItem('antifraude_timeout_debug_sec');
+        const customSec = Number(urlParam || debugStorage);
+
+        if (!isNaN(customSec) && customSec > 5) {
+          const customTimeout = customSec * 1000;
+          // Si el tiempo es corto (< 2 min), advertir al 50% del tiempo
+          const customWarning = customSec <= 120 ? Math.floor(customTimeout / 2) : warningThresholdMs;
+          setActualTimeoutMs(customTimeout);
+          setActualWarningMs(customWarning);
+          console.log(`[Seguridad] Modo de prueba activo: Timeout configurado a ${customSec}s (Aviso a los ${Math.floor(customWarning / 1000)}s)`);
+          return;
+        }
+      } catch {}
+    }
+    setActualTimeoutMs(timeoutMs);
+    setActualWarningMs(warningThresholdMs);
+  }, [timeoutMs, warningThresholdMs]);
+
+  const [showWarning, setShowWarning] = useState<boolean>(false);
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(Math.floor(actualWarningMs / 1000));
+
   const lastActivityRef = useRef<number>(Date.now());
   const lastThrottleRef = useRef<number>(0);
   const isLoggingOutRef = useRef<boolean>(false);
 
-  // Garantizar que solo una instancia en todo el árbol de componentes esté activa
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    if (activeGuardCount > 0 && !isPrimaryInstanceRef.current) {
-      return;
-    }
-    activeGuardCount++;
-    isPrimaryInstanceRef.current = true;
-
-    return () => {
-      if (isPrimaryInstanceRef.current) {
-        activeGuardCount = Math.max(0, activeGuardCount - 1);
-        isPrimaryInstanceRef.current = false;
-      }
-    };
-  }, [isAuthenticated]);
-
   // ── Registrar Actividad del Usuario (Throttled a 1s) ──────────────────────
   const recordActivity = useCallback(() => {
-    if (!isAuthenticated || !isPrimaryInstanceRef.current || isLoggingOutRef.current) return;
+    if (!isAuthenticated || isLoggingOutRef.current) return;
 
     const now = Date.now();
     // Evitar sobrecarga por eventos de alta frecuencia (mousemove, scroll)
@@ -72,7 +80,7 @@ export default function SessionTimeoutGuard({
     // ocultar la advertencia
     setShowWarning(prev => {
       if (prev) {
-        setSecondsRemaining(Math.floor(warningThresholdMs / 1000));
+        setSecondsRemaining(Math.floor(actualWarningMs / 1000));
         return false;
       }
       return false;
@@ -82,7 +90,7 @@ export default function SessionTimeoutGuard({
     try {
       localStorage.setItem(ACTIVITY_STORAGE_KEY, now.toString());
     } catch {}
-  }, [isAuthenticated, warningThresholdMs]);
+  }, [isAuthenticated, actualWarningMs]);
 
   // ── Mantener Sesión Activa (Acción Explícita del Botón) ────────────────────
   const handleKeepAlive = () => {
@@ -90,7 +98,7 @@ export default function SessionTimeoutGuard({
     lastActivityRef.current = now;
     lastThrottleRef.current = now;
     setShowWarning(false);
-    setSecondsRemaining(Math.floor(warningThresholdMs / 1000));
+    setSecondsRemaining(Math.floor(actualWarningMs / 1000));
     try {
       localStorage.setItem(ACTIVITY_STORAGE_KEY, now.toString());
     } catch {}
@@ -137,10 +145,25 @@ export default function SessionTimeoutGuard({
         if (!isNaN(remoteTimestamp) && remoteTimestamp > lastActivityRef.current) {
           lastActivityRef.current = remoteTimestamp;
           setShowWarning(false);
-          setSecondsRemaining(Math.floor(warningThresholdMs / 1000));
+          setSecondsRemaining(Math.floor(actualWarningMs / 1000));
         }
       }
     };
+
+    // Canal Broadcast para sincronización instantánea de logout entre pestañas
+    let broadcastChannel: BroadcastChannel | null = null;
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        broadcastChannel = new BroadcastChannel(SESSION_SYNC_CHANNEL_NAME);
+        broadcastChannel.onmessage = (event) => {
+          if (event.data?.type === 'FORCE_LOGOUT_ALL_TABS') {
+            isLoggingOutRef.current = true;
+            setShowWarning(false);
+            handleInactivityTimeout(event.data?.reason);
+          }
+        };
+      }
+    } catch {}
 
     events.forEach(eventName => {
       window.addEventListener(eventName, onUserAction, { passive: true });
@@ -152,36 +175,51 @@ export default function SessionTimeoutGuard({
         window.removeEventListener(eventName, onUserAction);
       });
       window.removeEventListener('storage', onStorageChange);
+      if (broadcastChannel) {
+        try {
+          broadcastChannel.close();
+        } catch {}
+      }
     };
-  }, [isAuthenticated, recordActivity, warningThresholdMs]);
+  }, [isAuthenticated, recordActivity, actualWarningMs, handleInactivityTimeout]);
 
   // ── Loop de Verificación de Inactividad (Cada 1 segundo) ───────────────────
   useEffect(() => {
-    if (!isAuthenticated || !isPrimaryInstanceRef.current) {
+    if (!isAuthenticated) {
       setShowWarning(false);
       return;
     }
 
     const interval = setInterval(() => {
-      if (isLoggingOutRef.current || !isPrimaryInstanceRef.current) return;
+      if (isLoggingOutRef.current) return;
 
       const now = Date.now();
       const elapsed = now - lastActivityRef.current;
-      const remainingMs = timeoutMs - elapsed;
+      const remainingMs = actualTimeoutMs - elapsed;
 
       // Caso 1: Expiración definitiva
       if (remainingMs <= 0) {
         isLoggingOutRef.current = true;
         clearInterval(interval);
         setShowWarning(false);
-        handleInactivityTimeout(
-          'Tu sesión ha expirado por inactividad (15 min). Por motivos de seguridad bancaria, vuelve a iniciar sesión.'
-        );
+
+        const timeoutMsg = `Tu sesión ha expirado por inactividad (${Math.round(actualTimeoutMs / 60000)} min). Por motivos de seguridad bancaria, vuelve a iniciar sesión.`;
+
+        // Notificar a otras pestañas para cierre sincronizado
+        try {
+          if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+            const bc = new BroadcastChannel(SESSION_SYNC_CHANNEL_NAME);
+            bc.postMessage({ type: 'FORCE_LOGOUT_ALL_TABS', reason: timeoutMsg });
+            bc.close();
+          }
+        } catch {}
+
+        handleInactivityTimeout(timeoutMsg);
         return;
       }
 
       // Caso 2: Entró en ventana de advertencia (últimos minutos)
-      if (remainingMs <= warningThresholdMs) {
+      if (remainingMs <= actualWarningMs) {
         setShowWarning(true);
         const secs = Math.max(0, Math.ceil(remainingMs / 1000));
         setSecondsRemaining(secs);
@@ -191,10 +229,10 @@ export default function SessionTimeoutGuard({
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isAuthenticated, timeoutMs, warningThresholdMs, handleInactivityTimeout]);
+  }, [isAuthenticated, actualTimeoutMs, actualWarningMs, handleInactivityTimeout]);
 
-  // Si no está autenticado, no es la instancia primaria o la advertencia no está activa, no renderizar nada
-  if (!isAuthenticated || !isPrimaryInstanceRef.current || !showWarning) {
+  // Si no está autenticado o la advertencia no está activa, no renderizar nada
+  if (!isAuthenticated || !showWarning) {
     return null;
   }
 
@@ -205,7 +243,7 @@ export default function SessionTimeoutGuard({
   const isUrgent = secondsRemaining <= 30;
 
   // Porcentaje restante del aviso previo para barra de progreso
-  const totalWarningSeconds = Math.max(1, Math.floor(warningThresholdMs / 1000));
+  const totalWarningSeconds = Math.max(1, Math.floor(actualWarningMs / 1000));
   const progressPercent = Math.min(100, Math.max(0, (secondsRemaining / totalWarningSeconds) * 100));
 
   return (
