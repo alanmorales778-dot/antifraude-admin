@@ -47,8 +47,17 @@ import {
   Sliders,
 } from 'lucide-react';
 import { useConsortiumStore } from '@/lib/store';
-import { LookupResult, IncidentCategory, ReasonCode } from '@/lib/types';
+import { LookupResult, IncidentCategory, ReasonCode, QueryReason } from '@/lib/types';
 import { simulateSendVerificationEmail } from '@/lib/emailVerifier';
+import {
+  validateCbuChecksum,
+  validateCuitChecksum,
+  validateDniFormat,
+  validateEmailFormat,
+  validatePhoneFormat,
+  detectIdentifierType,
+  computeHMACBlindHash,
+} from '@/lib/crypto';
 
 // ─────────────────────────────────────────────────────────────────
 // HELPERS
@@ -195,8 +204,16 @@ function ScoreGauge({
 // MÓDULO 1: CONSULTA DE RIESGO (UNITARIA - DNI, EMAIL, TEL, IP, CBU)
 // ─────────────────────────────────────────────────────────────────
 
+const QUERY_REASON_OPTIONS = [
+  { value: 'EVALUACION_TRANSFERENCIA', label: 'Evaluación de Transferencia (Inmediata / Debin)', icon: '💸' },
+  { value: 'ALTA_ONBOARDING', label: 'Alta / Onboarding de Cliente', icon: '👤' },
+  { value: 'INVESTIGACION_INTERNA', label: 'Investigación de Fraude / Alerta Interna', icon: '🔍' },
+  { value: 'AUDITORIA_COMPLIANCE', label: 'Auditoría Regulatoria y Compliance', icon: '⚖️' },
+  { value: 'MONITOREO_TRANSACCIONAL', label: 'Monitoreo Transaccional Continuo', icon: '🛡️' },
+];
+
 function SingleLookupView() {
-  const { lookupIdentity, markFalsePositive, activeFintechId, fintechs, lastLookupResult, activeService } = useConsortiumStore();
+  const { lookupIdentity, markFalsePositive, activeFintechId, fintechs, activeService } = useConsortiumStore();
 
   // Selector de Modo: 'single' (Dato por Dato) | 'set' (Conjunto de Datos)
   const [searchMode, setSearchMode] = useState<'single' | 'set'>('single');
@@ -214,35 +231,71 @@ function SingleLookupView() {
   const [device, setDevice] = useState('');
   const [cuit, setCuit] = useState('');
 
+  // Motivo de consulta obligatorio para cumplimiento y trazabilidad
+  const [queryReason, setQueryReason] = useState<string>('EVALUACION_TRANSFERENCIA');
+
+  // Toggle de modo demostración (apagado por defecto)
+  const [showDemoButtons, setShowDemoButtons] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [result, setResult] = useState<LookupResult | null>(lastLookupResult);
+  // Estado inicial siempre en NULL para no mostrar scores previos ni 0 ficticios
+  const [result, setResult] = useState<LookupResult | null>(null);
   const [okLoading, setOkLoading] = useState(false);
   const [okDone, setOkDone] = useState(false);
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
-  const [showGeneralTechnicalDetails, setShowGeneralTechnicalDetails] = useState(false);
 
   const isInternal = activeService === 'INTERNAL';
-
-  // Estado para la prueba de envío / verificación de correo
-  const [emailPingLoading, setEmailPingLoading] = useState(false);
-  const [emailPingResult, setEmailPingResult] = useState<{
-    success: boolean;
-    message: string;
-    otpCode?: string;
-    bounceCode?: string;
-  } | null>(null);
-
   const activeFintech = fintechs.find(f => f.id === activeFintechId);
 
+  // Autodetección de identificador al tipear o pegar
+  const handleSingleValueChange = (val: string) => {
+    setSingleValue(val);
+    const detected = detectIdentifierType(val);
+    if (detected && detected !== singleType) {
+      setSingleType(detected);
+    }
+  };
+
+  // Validación sintáctica en vivo del campo unitario
+  const getSingleValidationState = (): { valid: boolean; message?: string } | null => {
+    const val = singleValue.trim();
+    if (!val) return null;
+
+    if (singleType === 'CBU') {
+      const res = validateCbuChecksum(val);
+      return { valid: res.valid, message: res.valid ? 'CBU/CVU verificado (Módulo 10 BCRA)' : res.reason };
+    }
+    if (singleType === 'CUIT') {
+      const res = validateCuitChecksum(val);
+      return { valid: res.valid, message: res.valid ? 'CUIT verificado (Módulo 11 AFIP/BCRA)' : res.reason };
+    }
+    if (singleType === 'DNI') {
+      const res = validateDniFormat(val);
+      return { valid: res.valid, message: res.valid ? 'DNI con longitud válida' : res.reason };
+    }
+    if (singleType === 'EMAIL') {
+      const res = validateEmailFormat(val);
+      return { valid: res.valid, message: res.valid ? 'Formato de correo válido' : res.reason };
+    }
+    if (singleType === 'PHONE') {
+      const res = validatePhoneFormat(val);
+      return { valid: res.valid, message: res.valid ? 'Teléfono válido' : res.reason };
+    }
+    return null;
+  };
+
+  const validationState = getSingleValidationState();
+
   // Ejecución de Consulta
-  const handleLookup = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleLookup = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setError('');
     setOkDone(false);
-    setEmailPingResult(null);
 
-    let queryParams: { dni?: string; email?: string; phone?: string; ip?: string; cbu?: string; device?: string; cuit?: string } = {};
+    let queryParams: { dni?: string; email?: string; phone?: string; ip?: string; cbu?: string; device?: string; cuit?: string; reason?: string } = {
+      reason: queryReason,
+    };
 
     if (searchMode === 'single') {
       const val = singleValue.trim();
@@ -250,6 +303,16 @@ function SingleLookupView() {
         setError(`Por favor ingresá el valor de ${singleType === 'DNI' ? 'DNI' : singleType === 'CBU' ? 'CBU/CVU' : singleType} para consultar.`);
         return;
       }
+
+      // Validar si es CBU o CUIT antes de consultar
+      if (singleType === 'CBU' && val.length === 22) {
+        const cbuCheck = validateCbuChecksum(val);
+        if (!cbuCheck.valid) {
+          setError(`Aviso de validación: ${cbuCheck.reason}`);
+          // Permitir continuar si el usuario fuerza la búsqueda
+        }
+      }
+
       if (singleType === 'DNI') queryParams.dni = val;
       if (singleType === 'EMAIL') queryParams.email = val;
       if (singleType === 'PHONE') queryParams.phone = val;
@@ -263,6 +326,7 @@ function SingleLookupView() {
         return;
       }
       queryParams = {
+        ...queryParams,
         dni: dni.trim() || undefined,
         email: email.trim() || undefined,
         phone: phone.trim() || undefined,
@@ -315,7 +379,9 @@ function SingleLookupView() {
 
     // Re-evaluar automáticamente para mostrar el score reducido en vivo
     setTimeout(async () => {
-      let queryParams: { dni?: string; email?: string; phone?: string; ip?: string; cbu?: string } = {};
+      let queryParams: { dni?: string; email?: string; phone?: string; ip?: string; cbu?: string; reason?: string } = {
+        reason: queryReason,
+      };
       if (searchMode === 'single') {
         const val = singleValue.trim();
         if (singleType === 'DNI') queryParams.dni = val;
@@ -325,6 +391,7 @@ function SingleLookupView() {
         if (singleType === 'IP') queryParams.ip = val;
       } else {
         queryParams = {
+          ...queryParams,
           dni: dni.trim() || undefined,
           email: email.trim() || undefined,
           phone: phone.trim() || undefined,
@@ -335,20 +402,6 @@ function SingleLookupView() {
       const refreshed = await lookupIdentity(queryParams);
       setResult(refreshed);
     }, 250);
-  };
-
-  // Función para enviar correo de verificación / probar rebote
-  const handleSendEmailVerification = async () => {
-    const targetEmail =
-      searchMode === 'single' && singleType === 'EMAIL'
-        ? singleValue.trim()
-        : email.trim() || result?.breakdown.emailVerification?.email;
-    if (!targetEmail) return;
-    setEmailPingLoading(true);
-    setEmailPingResult(null);
-    const res = await simulateSendVerificationEmail(targetEmail);
-    setEmailPingResult(res);
-    setEmailPingLoading(false);
   };
 
   return (
@@ -388,19 +441,58 @@ function SingleLookupView() {
           </button>
         </div>
 
-        <span className="text-[11px] text-slate-400 px-2 font-mono">
-          {searchMode === 'single'
-            ? '🔍 Consulta atómica: evaluá un único DNI, CBU, Email o Teléfono.'
-            : '🔗 Evaluación cruzada: evaluá perfiles completos y detectá suplantación.'}
-        </span>
+        {/* Toggle para Modo Demostración */}
+        <div className="flex items-center gap-2 px-2">
+          <button
+            type="button"
+            onClick={() => setShowDemoButtons(!showDemoButtons)}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
+              showDemoButtons
+                ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                : 'bg-slate-800/60 border-white/10 text-slate-400 hover:text-slate-200'
+            }`}
+            title="Muestra u oculta los botones de datos de prueba preconfigurados"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            <span>{showDemoButtons ? 'Modo Demo Activo' : 'Modo Demo'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ── SELECTOR DE MOTIVO DE CONSULTA (OBLIGATORIO AUDITORÍA BANCARIA) ── */}
+      <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4 text-cyan-400 shrink-0" />
+          <div>
+            <label className="text-xs font-bold text-white block">
+              Motivo de Consulta (Auditoría Inmutable / Cumplimiento BCRA):
+            </label>
+            <p className="text-[11px] text-slate-400">
+              Quedará asentado en el log inmutable con firma de analista según comunicación BCRA.
+            </p>
+          </div>
+        </div>
+
+        <select
+          value={queryReason}
+          onChange={e => setQueryReason(e.target.value)}
+          className="rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2 text-xs font-semibold text-white focus:border-cyan-400 focus:outline-none transition shadow-inner"
+        >
+          {QUERY_REASON_OPTIONS.map(opt => (
+            <option key={opt.value} value={opt.value}>
+              {opt.icon} {opt.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* ── FORMULARIO: MODALIDAD 1 - DATO POR DATO ── */}
       {searchMode === 'single' && (
         <form onSubmit={handleLookup} className="rounded-2xl border border-cyan-500/20 bg-slate-900/60 p-5 space-y-4 shadow-xl">
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-2">
-              Seleccioná el tipo de identificador a consultar:
+            <label className="block text-xs font-semibold text-slate-300 mb-2 flex items-center justify-between">
+              <span>Seleccioná el tipo de identificador a consultar:</span>
+              <span className="text-[11px] text-slate-500">Detecta automáticamente al pegar</span>
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
               {[
@@ -436,11 +528,7 @@ function SingleLookupView() {
             <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center justify-between">
               <span>Valor de {singleType === 'DNI' ? 'DNI / CUIL' : singleType === 'CBU' ? 'CBU / CVU' : singleType}</span>
               <span className="text-[11px] text-slate-500 font-mono">
-                {singleType === 'DNI' && 'Ingresá el DNI sin puntos ni espacios (ej: 30111222)'}
-                {singleType === 'EMAIL' && 'Ingresá el correo electrónico a verificar'}
-                {singleType === 'PHONE' && 'Formato internacional recomendado (ej: +5491122334455)'}
-                {singleType === 'CBU' && 'Clave Bancaria Uniforme (22 dígitos numéricos)'}
-                {singleType === 'IP' && 'Dirección IP pública del usuario'}
+                Presioná Enter ↵ para consultar
               </span>
             </label>
             <div className="relative">
@@ -449,9 +537,15 @@ function SingleLookupView() {
                 value={singleValue}
                 onChange={e => {
                   if (singleType === 'CBU') {
-                    setSingleValue(e.target.value.replace(/\D/g, '').slice(0, 22));
+                    handleSingleValueChange(e.target.value.replace(/\D/g, '').slice(0, 22));
                   } else {
-                    setSingleValue(e.target.value);
+                    handleSingleValueChange(e.target.value);
+                  }
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleLookup();
                   }
                 }}
                 placeholder={
@@ -462,79 +556,88 @@ function SingleLookupView() {
                     : singleType === 'PHONE'
                     ? 'Ej: +5491122334455'
                     : singleType === 'CBU'
-                    ? 'Ej: 0000003100010000000001'
+                    ? 'Ej: 0000003100010000000001 (22 dígitos)'
+                    : singleType === 'CUIT'
+                    ? 'Ej: 20301112227'
                     : 'Ej: 190.191.200.45'
                 }
                 className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-base text-white placeholder-slate-600 focus:border-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-400/40 transition font-mono shadow-inner"
               />
             </div>
+
+            {/* Feedback de Validación en Vivo */}
+            {validationState && (
+              <div className="mt-1.5 flex items-center gap-1.5 text-xs">
+                {validationState.valid ? (
+                  <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                    <CheckCircle className="h-3.5 w-3.5 text-emerald-400" />
+                    {validationState.message}
+                  </span>
+                ) : (
+                  <span className="text-amber-400 font-semibold flex items-center gap-1">
+                    <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />
+                    {validationState.message}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Botones de Prueba Rápida con 1 Clic (Ocultos en EMAIL para eliminar ruido y sobrecarga) */}
-          {singleType !== 'EMAIL' && (
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
-                <Sparkles className="h-3 w-3 text-cyan-400" /> Demos rápidas:
+          {/* Botones de Prueba Rápida con 1 Clic (Solo visibles si se activa Modo Demo) */}
+          {showDemoButtons && (
+            <div className="flex flex-wrap items-center gap-2 pt-1 p-3 bg-slate-950/50 rounded-xl border border-amber-500/20">
+              <span className="text-[11px] font-semibold text-amber-300 flex items-center gap-1">
+                <Sparkles className="h-3 w-3 text-amber-400" /> Demos:
               </span>
               {singleType === 'DNI' && (
                 <>
                   <button
                     type="button"
-                    onClick={() => setSingleValue('30111222')}
+                    onClick={() => { setSingleValue('30111222'); }}
                     className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition font-mono"
                   >
                     🚨 DNI Mula (30111222)
                   </button>
                   <button
                     type="button"
-                    onClick={() => setSingleValue('20123456789')}
-                    className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition font-mono"
-                  >
-                    🚨 DNI Ficticio (20123456789)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSingleValue('40999888')}
+                    onClick={() => { setSingleValue('40999888'); }}
                     className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20 transition font-mono"
                   >
                     ✅ DNI Limpio (40999888)
                   </button>
                 </>
               )}
-
               {singleType === 'CBU' && (
                 <>
                   <button
                     type="button"
-                    onClick={() => setSingleValue('0000003100010000000001')}
+                    onClick={() => { setSingleValue('0000003100010000000001'); }}
                     className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition font-mono"
                   >
                     🚨 CBU Mula (0000003100010000000001)
                   </button>
                   <button
                     type="button"
-                    onClick={() => setSingleValue('0000003199990000000099')}
+                    onClick={() => { setSingleValue('0000003199990000000099'); }}
                     className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20 transition font-mono"
                   >
                     ✅ CBU Limpio (0000003199990000000099)
                   </button>
                 </>
               )}
-
               {singleType === 'PHONE' && (
                 <button
                   type="button"
-                  onClick={() => setSingleValue('+5491122334455')}
+                  onClick={() => { setSingleValue('+5491122334455'); }}
                   className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition font-mono"
                 >
                   🚨 Teléfono Sospechoso (+5491122334455)
                 </button>
               )}
-
               {singleType === 'IP' && (
                 <button
                   type="button"
-                  onClick={() => setSingleValue('190.191.200.45')}
+                  onClick={() => { setSingleValue('190.191.200.45'); }}
                   className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition font-mono"
                 >
                   🚨 IP Botnet (190.191.200.45)
@@ -600,9 +703,10 @@ function SingleLookupView() {
                 className="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400/30 transition font-mono"
               />
             </div>
+
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1">
-                <Mail className="h-3.5 w-3.5 text-cyan-400" /> Email
+                <Mail className="h-3.5 w-3.5 text-indigo-400" /> Correo Electrónico
               </label>
               <input
                 type="email"
@@ -612,9 +716,10 @@ function SingleLookupView() {
                 className="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400/30 transition"
               />
             </div>
+
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1">
-                <Phone className="h-3.5 w-3.5 text-cyan-400" /> Teléfono
+                <Phone className="h-3.5 w-3.5 text-emerald-400" /> Teléfono Celular
               </label>
               <input
                 type="text"
@@ -624,9 +729,24 @@ function SingleLookupView() {
                 className="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400/30 transition font-mono"
               />
             </div>
+
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1">
-                <Globe className="h-3.5 w-3.5 text-cyan-400" /> Dirección IP
+                <Building className="h-3.5 w-3.5 text-amber-400" /> CBU / CVU Destino
+              </label>
+              <input
+                type="text"
+                value={cbu}
+                onChange={e => setCbu(e.target.value.replace(/\D/g, '').slice(0, 22))}
+                placeholder="22 dígitos numéricos"
+                maxLength={22}
+                className="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400/30 transition font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1">
+                <Globe className="h-3.5 w-3.5 text-sky-400" /> IP de Conexión
               </label>
               <input
                 type="text"
@@ -636,91 +756,68 @@ function SingleLookupView() {
                 className="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400/30 transition font-mono"
               />
             </div>
+
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1">
-                <Building className="h-3.5 w-3.5 text-cyan-400" /> CBU / CVU
-              </label>
-              <input
-                type="text"
-                value={cbu}
-                onChange={e => setCbu(e.target.value.replace(/\D/g, '').slice(0, 22))}
-                placeholder="Ej: 0000003100010000000001"
-                maxLength={22}
-                className="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400/30 transition font-mono"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1">
-                <Fingerprint className="h-3.5 w-3.5 text-purple-400" /> Device ID / Fingerprint
+                <Fingerprint className="h-3.5 w-3.5 text-purple-400" /> Device Fingerprint ID
               </label>
               <input
                 type="text"
                 value={device}
                 onChange={e => setDevice(e.target.value)}
-                placeholder="Ej: a1b2c3d4e5f6"
+                placeholder="Ej: dev_7f9c2a..."
                 className="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400/30 transition font-mono"
               />
             </div>
+
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1">
-                <Hash className="h-3.5 w-3.5 text-cyan-400" /> CUIT
+                <Hash className="h-3.5 w-3.5 text-rose-400" /> CUIT / CUIL Vinculado
               </label>
               <input
                 type="text"
                 value={cuit}
                 onChange={e => setCuit(e.target.value.replace(/\D/g, '').slice(0, 11))}
-                placeholder="Ej: 20301112227"
+                placeholder="11 dígitos"
                 maxLength={11}
                 className="w-full rounded-xl border border-white/10 bg-slate-950 px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400/30 transition font-mono"
               />
             </div>
           </div>
 
-          {/* Demos del Conjunto */}
-          <div className="flex flex-wrap items-center gap-2 pt-1">
-            <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
-              <Sparkles className="h-3 w-3 text-indigo-400" /> Demos de Conjunto:
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                setDni('30111222');
-                setEmail('estafador@gmail.com');
-                setPhone('+5491122334455');
-                setIp('190.191.200.45');
-                setCbu('0000003100010000000001');
-              }}
-              className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition"
-            >
-              🚨 Perfil de Fraude Completo (Mula)
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setDni('40999888');
-                setEmail('estafador@gmail.com');
-                setPhone('');
-                setIp('');
-                setCbu('');
-              }}
-              className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/20 transition"
-            >
-              ⚠️ Discrepancia Mismatch (DNI Limpio + Email Estafador)
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setDni('40999888');
-                setEmail('juan.perez@empresa.com');
-                setPhone('+5491199887766');
-                setIp('181.44.120.10');
-                setCbu('0000003199990000000099');
-              }}
-              className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20 transition"
-            >
-              ✅ Perfil Totalmente Limpio
-            </button>
-          </div>
+          {showDemoButtons && (
+            <div className="flex flex-wrap items-center gap-2 pt-1 p-3 bg-slate-950/50 rounded-xl border border-amber-500/20">
+              <span className="text-[11px] font-semibold text-amber-300 flex items-center gap-1">
+                <Sparkles className="h-3 w-3 text-indigo-400" /> Demos de Conjunto:
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setDni('30111222');
+                  setEmail('estafador@gmail.com');
+                  setPhone('+5491122334455');
+                  setIp('190.191.200.45');
+                  setCbu('0000003100010000000001');
+                }}
+                className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20 transition"
+              >
+                🚨 Perfil de Fraude Completo (Mula)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDni('40999888');
+                  setEmail('juan.perez@empresa.com');
+                  setPhone('+5491199887766');
+                  setIp('181.44.120.10');
+                  setCbu('0000003199990000000099');
+                }}
+                className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20 transition"
+              >
+                ✅ Perfil Limpio
+              </button>
+            </div>
+          )}
 
           {error && (
             <p className="text-xs text-rose-400 flex items-center gap-1.5 bg-rose-950/30 border border-rose-500/30 rounded-xl p-2.5">
@@ -751,26 +848,92 @@ function SingleLookupView() {
         </form>
       )}
 
-      {/* ── RESULTADO DE CONSULTA ── */}
-      {result && (() => {
-        const isEmailQuery = (searchMode === 'single' && singleType === 'EMAIL') || (Boolean(result.breakdown.emailVerification) && searchMode === 'single');
+      {/* ── 1. ESTADO INICIAL VACÍO (SIN CONSULTAS AÚN Y SIN ERROR) ── */}
+      {!result && !error && !loading && (
+        <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-8 text-center space-y-4 shadow-lg animate-fade-in">
+          <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
+            <Shield className="h-7 w-7" />
+          </div>
+          <div className="max-w-lg mx-auto space-y-1.5">
+            <h4 className="text-base font-bold text-white tracking-tight">
+              Plataforma Federal de Prevención y Consulta de Riesgo
+            </h4>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Ingresá un identificador (DNI, CBU/CVU, CUIT, Email o Teléfono) arriba para evaluar antecedentes en tiempo real contra la red de consorcio interbancario.
+            </p>
+          </div>
 
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-4 max-w-4xl mx-auto text-left">
+            <div className="p-3.5 rounded-xl bg-slate-950/60 border border-white/5 space-y-1.5">
+              <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block flex items-center gap-1">
+                <Lock className="h-3 w-3" /> Tokenización Ciega
+              </span>
+              <p className="text-[11px] text-slate-300 font-medium">HMAC-SHA256 con Pepper KMS</p>
+              <p className="text-[10px] text-slate-500">Matemáticamente irreversible para terceros y auditorías.</p>
+            </div>
+            <div className="p-3.5 rounded-xl bg-slate-950/60 border border-white/5 space-y-1.5">
+              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block flex items-center gap-1">
+                <ShieldCheck className="h-3 w-3" /> Secreto Bancario
+              </span>
+              <p className="text-[11px] text-slate-300 font-medium">Ley 25.326 & BCRA Com. A 7724</p>
+              <p className="text-[10px] text-slate-500">Ningún dato en claro viaja fuera del perímetro de la entidad.</p>
+            </div>
+            <div className="p-3.5 rounded-xl bg-slate-950/60 border border-white/5 space-y-1.5">
+              <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider block flex items-center gap-1">
+                <Network className="h-3 w-3" /> Detección de Mulas
+              </span>
+              <p className="text-[11px] text-slate-300 font-medium">Grafo Interbancario a 3 Saltos</p>
+              <p className="text-[10px] text-slate-500">Identifica clusters de triangulación y granjas de dispositivos.</p>
+            </div>
+            <div className="p-3.5 rounded-xl bg-slate-950/60 border border-white/5 space-y-1.5">
+              <span className="text-[10px] font-bold text-purple-400 uppercase tracking-wider block flex items-center gap-1">
+                <Activity className="h-3 w-3" /> Explicabilidad Real
+              </span>
+              <p className="text-[11px] text-slate-300 font-medium">Score 0 a 100 con Motivos</p>
+              <p className="text-[10px] text-slate-500">Recomendaciones operativas claras: Aprobar, Revisar o Bloquear.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 2. ESTADO DE ERROR VISIBLE Y REINTENTABLE ── */}
+      {error && !loading && (
+        <div className="rounded-2xl border border-rose-500/40 bg-rose-950/30 p-6 text-center space-y-3 shadow-xl">
+          <div className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-rose-500/20 text-rose-300">
+            <AlertCircle className="h-6 w-6" />
+          </div>
+          <div>
+            <h4 className="text-sm font-bold text-rose-200">No se pudo completar la consulta de riesgo</h4>
+            <p className="text-xs text-rose-300/80 mt-1 max-w-md mx-auto">{error}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => handleLookup()}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition shadow-lg shadow-rose-950/50"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            <span>Reintentar Consulta</span>
+          </button>
+        </div>
+      )}
+
+      {/* ── 3. RESULTADO DE CONSULTA (2 COLUMNAS LADO A LADO) ── */}
+      {result && (() => {
         // Cálculo de métricas principales unificadas
         const internalScore = result.internalRiskScore ?? result.breakdown.internalRiskScore ?? 0;
         const consortiumScore = result.consortiumRiskScore ?? result.breakdown.consortiumRiskScore ?? result.breakdown.finalScore ?? 0;
-        const displayScore = isInternal ? internalScore : consortiumScore;
-
-        const severityLevel = displayScore >= 70 ? 'ALTO RIESGO' : displayScore >= 30 ? 'RIESGO MEDIO' : 'BAJO RIESGO';
-        const severityBadgeClass = displayScore >= 70
-          ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-          : displayScore >= 30
-          ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-          : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
 
         const rec = recommendationBadge(result.breakdown.recommendation);
+        const edges = result.breakdown.matchingEdges || [];
+
+        // Cantidad de entidades distintas que reportaron
+        const distinctEntities = new Set(edges.map(e => e.reportedByEntityId));
+        const reportingEntitiesCount = distinctEntities.size;
+
+        // Cantidad de reportes de mi entidad
+        const myEntityReportsCount = edges.filter(e => e.reportedByEntityId === activeFintechId).length;
 
         // Último incidente & Tipología predominante
-        const edges = result.breakdown.matchingEdges || [];
         const mostRecentTimestamp = edges.length > 0
           ? Math.max(...edges.map(e => new Date(e.timestamp).getTime()))
           : null;
@@ -782,19 +945,13 @@ function SingleLookupView() {
           ? `Hace ${emailDetail.lastSeenDaysAgo} días`
           : emailDetail?.lastReportedAt
           ? emailDetail.lastReportedAt
-          : (displayScore >= 70 ? 'Hace 2 días' : 'Sin registros');
+          : (consortiumScore >= 70 ? 'Reciente (< 48 hs)' : 'Sin incidentes');
 
         const catCounts: Record<string, number> = {};
         edges.forEach(e => {
           if (e.incidentCategory) catCounts[e.incidentCategory] = (catCounts[e.incidentCategory] || 0) + 1;
         });
-        if (emailDetail?.categories) {
-          emailDetail.categories.forEach(c => {
-            catCounts[c] = (catCounts[c] || 0) + 1;
-          });
-        }
 
-        const predominantCatKey = Object.entries(catCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
         const CATEGORY_TRANSLATIONS: Record<string, string> = {
           MULE_ACCOUNT: 'Cuenta Mula',
           FRAUD_CONFIRMED: 'Fraude Confirmado',
@@ -805,641 +962,55 @@ function SingleLookupView() {
           SUSPICIOUS: 'Actividad Sospechosa',
         };
 
-        let predominantTypology = 'Sin incidentes';
+        const predominantCatKey = Object.entries(catCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
+        let predominantTypology = 'Sin incidentes reportados';
         if (predominantCatKey && CATEGORY_TRANSLATIONS[predominantCatKey]) {
           predominantTypology = CATEGORY_TRANSLATIONS[predominantCatKey];
-        } else if (result.breakdown.reasonCodes?.includes('MULE_ACCOUNT_RECENT') || result.breakdown.reasonCodes?.includes('MULE_NETWORK_CLUSTER')) {
+        } else if (consortiumScore >= 70) {
           predominantTypology = 'Cuenta Mula';
-        } else if (result.breakdown.reasonCodes?.includes('PHISHING_ORIGIN')) {
-          predominantTypology = 'Phishing';
-        } else if (result.breakdown.reasonCodes?.includes('IDENTITY_MISMATCH')) {
-          predominantTypology = 'Discrepancia de Identidad';
-        } else if (displayScore >= 70) {
-          predominantTypology = 'Cuenta Mula';
-        } else if (displayScore >= 30) {
+        } else if (consortiumScore >= 30) {
           predominantTypology = 'Actividad Sospechosa';
         }
 
-        // Si es consulta de EMAIL, renderizar la interfaz corporativa limpia y espaciosa
-        if (isEmailQuery) {
-          const verification = result.breakdown.emailVerification;
-          const country = verification?.country;
-          const age = verification?.age;
-          const firstSeen = verification?.emailFirstSeen || age?.emailFirstSeen;
-          const domainDetails = verification?.domainDetails || age?.domainDetails;
+        // Nivel de Confianza de la recomendación
+        const confidenceBadge = reportingEntitiesCount >= 2 || consortiumScore >= 75
+          ? { text: 'CONFIANZA ALTA', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30' }
+          : reportingEntitiesCount === 1 || consortiumScore >= 30
+          ? { text: 'CONFIANZA MEDIA', color: 'text-amber-400 bg-amber-500/10 border-amber-500/30' }
+          : { text: 'CONFIANZA ALTA (Sin Alertas)', color: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/30' };
 
-          // Parámetros para el Tacómetro Semicircular
-          const radius = 54;
-          const circumference = Math.PI * radius;
-          const clampedScore = Math.min(100, Math.max(0, displayScore));
-          const offset = circumference - (clampedScore / 100) * circumference;
-          const color = scoreColor(displayScore);
-
-          // Datos de las 4 tarjetas de Email Intelligence
-          const years = firstSeen?.firstSeenYears ? Math.floor(firstSeen.firstSeenYears) : domainDetails?.domainAgeYears || 11;
-          const antiguedadValor = `+${years} años`;
-          const antiguedadSubtitulo = `Buzón observado hace al menos ${years} años`;
-          const antiguedadDetalle = firstSeen?.firstSeenDays
-            ? `~${firstSeen.firstSeenDays.toLocaleString()} días · Huella digital ${firstSeen.digitalFootprintScore}/100`
-            : `Dominio registrado: ${domainDetails?.domainCreatedDate || '1995'} (${domainDetails?.domainAgeYears || 31} años)`;
-
-          const isNonExistent = verification?.status === 'NON_EXISTENT';
-          const isDisposable = verification?.status === 'DISPOSABLE';
-          const estadoBuzonValor = isNonExistent
-            ? 'Inexistente / Rechazado'
-            : isDisposable
-            ? 'Temporal / Descartable'
-            : 'Activo y con registros MX válidos';
-          const estadoBuzonSubtitulo = isNonExistent
-            ? 'Casilla rechazada (550 Mailbox not found)'
-            : isDisposable
-            ? 'Dominio temporal detectado'
-            : 'Buzón verificado y transaccional';
-          const estadoBuzonDetalle = isNonExistent
-            ? 'Sin servidores de correo activos'
-            : 'Protocolo SMTP y registros DNS SPF/MX confirmados';
-
-          const companyName = domainDetails?.companyName || (verification?.domain.includes('gmail') ? 'Google Workspace' : verification?.domain || 'Google Workspace');
-          const categoryLabel = domainDetails?.category === 'Webmail' ? 'Webmail Público' : (domainDetails?.category || 'Corporativo');
-          const proveedorTipoValor = `${companyName} / ${categoryLabel}`;
-          const proveedorTipoSubtitulo = 'Infraestructura corporativa oficial';
-          const riskTranslations: Record<string, string> = {
-            'Very Low': 'Muy Bajo',
-            'Low': 'Bajo',
-            'Moderate': 'Moderado',
-            'High': 'Alto',
-            'Very High': 'Muy Alto',
-          };
-          const proveedorTipoDetalle = `Riesgo de dominio: ${riskTranslations[domainDetails?.riskLevel || 'Moderate'] || 'Moderado'}`;
-
-          const userCountry = country?.userCountryName || 'Argentina';
-          const userCode = country?.userCountryCode || 'AR';
-          const userFlag = country?.userFlag || '🇦🇷';
-          const geolocValor = `${userCountry} / ${userCode}`;
-          const geolocSubtitulo = 'Titular localizado por Red Federal';
-          const hostCountry = country?.countryName === 'United States' ? 'Estados Unidos' : (country?.countryName || 'Estados Unidos');
-          const hostFlag = country?.flag || '🇺🇸';
-          const geolocDetalle = `Host de infraestructura: ${hostCountry} ${hostFlag}`;
-
-          return (
-            <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-6 space-y-6 animate-fade-in shadow-2xl backdrop-blur-sm">
-              {/* Encabezado Principal */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
-                <div className="flex items-center gap-2.5">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/20 text-cyan-300 font-bold text-xs">
-                    ZK
-                  </span>
-                  <div>
-                    <h4 className="text-sm font-bold text-white tracking-wide">
-                      Resultado de Consulta: EMAIL
-                    </h4>
-                    <p className="text-[11px] text-slate-400">
-                      Evaluado con arquitectura Zero-Knowledge y telemetría de Red Federal
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-mono text-slate-400">
-                    {verification?.email || singleValue || 'estafador@gmail.com'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Feedback de voto OK si fue aplicado */}
-              {okDone && (
-                <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/30 p-3 text-xs text-emerald-300 flex items-center gap-2.5">
-                  <CheckCircle className="h-4 w-4 shrink-0 text-emerald-400" />
-                  <span>Voto de legitimidad computado. El score de riesgo fue atenuado en tiempo real en la red federada.</span>
-                </div>
-              )}
-
-              {/* ── 2. ENCABEZADO UNIFICADO (SCORE & DECISIÓN) ── */}
-              <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-slate-900/90 via-slate-900/70 to-slate-950/90 p-5 sm:p-6 shadow-xl">
-                <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
-                  {/* Lado izquierdo: Tacómetro visual con el Score y etiqueta de severidad */}
-                  <div className="flex flex-col sm:flex-row items-center gap-5 sm:gap-6 w-full lg:w-auto justify-center lg:justify-start">
-                    <div className="relative flex items-center justify-center shrink-0">
-                      <svg width="150" height="84" viewBox="0 0 150 84" className="overflow-visible">
-                        <path
-                          d="M 19 76 A 56 56 0 0 1 131 76"
-                          fill="none"
-                          stroke="#1e293b"
-                          strokeWidth="11"
-                          strokeLinecap="round"
-                        />
-                        <path
-                          d="M 19 76 A 56 56 0 0 1 131 76"
-                          fill="none"
-                          stroke={color}
-                          strokeWidth="11"
-                          strokeLinecap="round"
-                          strokeDasharray={circumference}
-                          strokeDashoffset={offset}
-                          style={{ transition: 'stroke-dashoffset 0.8s ease, stroke 0.4s ease' }}
-                        />
-                        <text
-                          x="75"
-                          y="66"
-                          textAnchor="middle"
-                          fontSize="26"
-                          fontWeight="900"
-                          fontFamily="monospace"
-                          fill={color}
-                          style={{ transition: 'fill 0.4s ease' }}
-                        >
-                          {displayScore}
-                        </text>
-                        <text
-                          x="75"
-                          y="79"
-                          textAnchor="middle"
-                          fontSize="10"
-                          fontWeight="bold"
-                          fill="#64748b"
-                          fontFamily="sans-serif"
-                        >
-                          / 100
-                        </text>
-                      </svg>
-                    </div>
-
-                    <div className="text-center sm:text-left space-y-1.5">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                        Nivel de Severidad
-                      </span>
-                      <div>
-                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black tracking-wider uppercase border shadow-sm ${severityBadgeClass}`}>
-                          <span className="h-2 w-2 rounded-full bg-current animate-pulse" />
-                          {severityLevel}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-400 font-mono">
-                        Score Consolidado ({isInternal ? 'Interno' : 'Consorcio'})
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Lado derecho: Acción recomendada clara junto a dos datos clave y botón Marcar OK */}
-                  <div className="flex-1 w-full lg:w-auto flex flex-col sm:flex-row items-center justify-center lg:justify-end gap-4 sm:gap-6 border-t lg:border-t-0 lg:border-l border-white/10 pt-5 lg:pt-0 lg:pl-6">
-                    {/* Acción recomendada */}
-                    <div className="text-center sm:text-left space-y-1.5 w-full sm:w-auto flex flex-col items-center sm:items-start">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                        Acción recomendada
-                      </span>
-                      <span className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black border shadow-md ${rec.class}`}>
-                        <span className="text-sm">{rec.icon}</span>
-                        <span>{rec.text}</span>
-                      </span>
-                    </div>
-
-                    {/* Dos datos clave */}
-                    <div className="grid grid-cols-2 gap-3 w-full sm:w-auto">
-                      <div className="rounded-xl bg-slate-950/70 border border-white/10 p-3 min-w-[135px]">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-                          <Clock className="h-3 w-3 text-cyan-400 shrink-0" /> Último incidente
-                        </span>
-                        <p className="text-xs font-bold text-white mt-1.5 truncate">
-                          {lastIncidentText}
-                        </p>
-                      </div>
-
-                      <div className="rounded-xl bg-slate-950/70 border border-white/10 p-3 min-w-[145px]">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-                          <ShieldAlert className="h-3 w-3 text-amber-400 shrink-0" /> Tipología predominante
-                        </span>
-                        <p className="text-xs font-bold text-white mt-1.5 truncate" title={predominantTypology}>
-                          {predominantTypology}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Botón Marcar OK en verde corporativo */}
-                    <div className="shrink-0 w-full sm:w-auto flex justify-center">
-                      <button
-                        type="button"
-                        onClick={handleMarkOK}
-                        disabled={okLoading || okDone}
-                        className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold shadow-lg transition active:scale-95 whitespace-nowrap ${
-                          okDone
-                            ? 'bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 cursor-default'
-                            : 'bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/50 shadow-emerald-950/50 hover:shadow-emerald-900/60'
-                        }`}
-                        title="Atenúa el score de riesgo restando −35 pts por reporte comunitario"
-                      >
-                        {okDone ? (
-                          <>
-                            <CheckCircle className="h-4 w-4 text-emerald-400" />
-                            <span>Voto OK Registrado</span>
-                          </>
-                        ) : okLoading ? (
-                          <>
-                            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                            <span>Aplicando...</span>
-                          </>
-                        ) : (
-                          <>
-                            <CheckCircle className="h-4 w-4" />
-                            <span>Marcar OK</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Alertas críticas del buzón (sin botones de prueba) */}
-              {isNonExistent && (
-                <div className="rounded-xl border border-rose-500/50 bg-rose-950/40 p-3.5 text-xs text-rose-200 flex items-center gap-3 shadow-lg">
-                  <AlertTriangle className="h-5 w-5 text-rose-400 shrink-0" />
-                  <div>
-                    <span className="font-bold text-rose-300 uppercase tracking-wide block">
-                      Alerta Crítica: El correo no existe (+35 pts)
-                    </span>
-                    <p className="mt-0.5 text-rose-200/90 text-[11px]">
-                      El buzón <strong>{verification?.email}</strong> no posee servidores MX o fue rechazado (550 Mailbox not found).
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {isDisposable && (
-                <div className="rounded-xl border border-amber-500/50 bg-amber-950/40 p-3.5 text-xs text-amber-200 flex items-center gap-3 shadow-lg">
-                  <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0" />
-                  <div>
-                    <span className="font-bold text-amber-300 uppercase tracking-wide block">
-                      Proveedor de Correo Temporal / Descartable (+25 pts)
-                    </span>
-                    <p className="mt-0.5 text-amber-200/90 text-[11px]">
-                      El dominio @{verification?.domain} pertenece a un servicio de correo efímero o temporal.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* ── 3. SÍNTESIS DE "EMAIL INTELLIGENCE" (MÁXIMO 4 TARJETAS) ── */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between border-b border-white/5 pb-2">
-                  <div className="flex items-center gap-2">
-                    <Globe className="h-4 w-4 text-cyan-400" />
-                    <h5 className="text-xs font-bold text-white uppercase tracking-wider">
-                      Inteligencia de Correo Electrónico
-                    </h5>
-                  </div>
-                  <span className="text-[10px] font-mono text-slate-400">
-                    RDAP Oficial · DNS MX · ICANN Verificado
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-                  {/* Tarjeta 1: Antigüedad del correo / dominio */}
-                  <div className="rounded-2xl bg-slate-950/70 border border-white/10 p-4 flex flex-col justify-between hover:border-indigo-500/30 transition shadow-lg space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                        <Clock className="h-3.5 w-3.5 text-emerald-400" /> 1. Antigüedad
-                      </span>
-                      <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                        {firstSeen?.isHistoric ? 'Histórico' : firstSeen?.isMature ? 'Maduro' : 'Verificado'}
-                      </span>
-                    </div>
-                    <div>
-                      <p className="text-2xl font-black text-white tracking-tight font-mono">
-                        {antiguedadValor}
-                      </p>
-                      <p className="text-xs text-emerald-400 font-semibold mt-1">
-                        {antiguedadSubtitulo}
-                      </p>
-                    </div>
-                    <p className="text-[10px] text-slate-400 border-t border-white/5 pt-2 truncate" title={antiguedadDetalle}>
-                      {antiguedadDetalle}
-                    </p>
-                  </div>
-
-                  {/* Tarjeta 2: Estado del buzón */}
-                  <div className="rounded-2xl bg-slate-950/70 border border-white/10 p-4 flex flex-col justify-between hover:border-indigo-500/30 transition shadow-lg space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                        <CheckCircle className={`h-3.5 w-3.5 ${isNonExistent ? 'text-rose-400' : isDisposable ? 'text-amber-400' : 'text-emerald-400'}`} /> 2. Estado del Buzón
-                      </span>
-                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded border ${
-                        isNonExistent ? 'bg-rose-500/20 text-rose-300 border-rose-500/30' :
-                        isDisposable ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' :
-                        'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                      }`}>
-                        {isNonExistent ? 'Inexistente' : isDisposable ? 'Temporal' : 'Activo'}
-                      </span>
-                    </div>
-                    <div>
-                      <p className={`text-sm font-bold tracking-tight leading-snug line-clamp-2 ${isNonExistent ? 'text-rose-300' : isDisposable ? 'text-amber-300' : 'text-emerald-300'}`}>
-                        {estadoBuzonValor}
-                      </p>
-                      <p className="text-xs text-slate-300 font-medium mt-1">
-                        {estadoBuzonSubtitulo}
-                      </p>
-                    </div>
-                    <p className="text-[10px] text-slate-400 border-t border-white/5 pt-2 truncate" title={estadoBuzonDetalle}>
-                      {estadoBuzonDetalle}
-                    </p>
-                  </div>
-
-                  {/* Tarjeta 3: Proveedor / Tipo */}
-                  <div className="rounded-2xl bg-slate-950/70 border border-white/10 p-4 flex flex-col justify-between hover:border-indigo-500/30 transition shadow-lg space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                        <Building2 className="h-3.5 w-3.5 text-indigo-400" /> 3. Proveedor / Tipo
-                      </span>
-                      <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                        {categoryLabel}
-                      </span>
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-white tracking-tight leading-snug truncate" title={proveedorTipoValor}>
-                        {proveedorTipoValor}
-                      </p>
-                      <p className="text-xs text-indigo-300 font-semibold mt-1">
-                        {proveedorTipoSubtitulo}
-                      </p>
-                    </div>
-                    <p className="text-[10px] text-slate-400 border-t border-white/5 pt-2 truncate" title={proveedorTipoDetalle}>
-                      {proveedorTipoDetalle}
-                    </p>
-                  </div>
-
-                  {/* Tarjeta 4: Geolocalización detectada */}
-                  <div className="rounded-2xl bg-slate-950/70 border border-white/10 p-4 flex flex-col justify-between hover:border-indigo-500/30 transition shadow-lg space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                        <MapPin className="h-3.5 w-3.5 text-cyan-400" /> 4. Geolocalización
-                      </span>
-                      <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
-                        <span>{userFlag}</span> {userCode}
-                      </span>
-                    </div>
-                    <div>
-                      <p className="text-base font-black text-white tracking-tight flex items-center gap-1.5 truncate">
-                        <span>{geolocValor}</span>
-                        <span>{userFlag}</span>
-                      </p>
-                      <p className="text-xs text-cyan-300 font-semibold mt-1">
-                        {geolocSubtitulo}
-                      </p>
-                    </div>
-                    <p className="text-[10px] text-slate-400 border-t border-white/5 pt-2 truncate" title={geolocDetalle}>
-                      {geolocDetalle}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* ── 4. DESGLOSE TÉCNICO COLAPSABLE (ACORDEÓN AUDITORÍA) ── */}
-              <div className="rounded-2xl border border-white/10 bg-slate-950/60 overflow-hidden shadow-xl transition">
-                <button
-                  type="button"
-                  onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
-                  className="w-full flex items-center justify-between p-4 px-5 text-left hover:bg-white/[0.03] transition group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-800 text-slate-300 border border-white/5 group-hover:border-cyan-500/30 transition">
-                      <Sliders className="h-4 w-4 text-cyan-400" />
-                    </div>
-                    <div>
-                      <span className="text-sm font-bold text-white block">
-                        Ver auditoría de cálculo
-                      </span>
-                      <p className="text-[11px] text-slate-400 mt-0.5">
-                        Detalle del motor matemático (4 dimensiones), tokens ZK y telemetría de red
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 group-hover:text-cyan-300 transition">
-                    <span>{showTechnicalDetails ? 'Ocultar auditoría' : 'Ver auditoría de cálculo'}</span>
-                    <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${showTechnicalDetails ? 'rotate-180 text-cyan-400' : ''}`} />
-                  </div>
-                </button>
-
-                {showTechnicalDetails && (
-                  <div className="p-5 border-t border-white/10 space-y-5 bg-slate-950/90 animate-fade-in">
-                    {/* Reason Codes detallados para auditoría */}
-                    {result.breakdown.reasonCodes && result.breakdown.reasonCodes.length > 0 && (
-                      <div className="space-y-1.5">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                          Reason Codes Registrados:
-                        </span>
-                        <div className="flex flex-wrap gap-1.5">
-                          {result.breakdown.reasonCodes.map(code => {
-                            const cfg = REASON_CODE_LABELS[code] || {
-                              label: String(code).replace(/_/g, ' '),
-                              icon: '⚠️',
-                              color: 'bg-slate-700/30 text-slate-300 border-slate-600/40',
-                            };
-                            return (
-                              <span key={code} className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-bold ${cfg.color}`}>
-                                <span>{cfg.icon}</span>
-                                {cfg.label}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Desglose Dato por Dato */}
-                    {result.breakdown.identifierDetails && result.breakdown.identifierDetails.length > 0 && (
-                      <div className="space-y-2 pt-1">
-                        <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                          <Filter className="h-3.5 w-3.5 text-cyan-400" />
-                          Tokens ZK y Correlación de Identificadores:
-                        </span>
-                        <div className="grid gap-2.5 grid-cols-1">
-                          {result.breakdown.identifierDetails.map(detail => (
-                            <div
-                              key={detail.type}
-                              className={`rounded-xl p-3 border text-xs transition ${
-                                detail.matched
-                                  ? 'bg-rose-950/20 border-rose-500/40 text-rose-200'
-                                  : 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200'
-                              }`}
-                            >
-                              <div className="flex items-center justify-between mb-1.5">
-                                <span className="font-bold flex items-center gap-1.5 text-white">
-                                  <Mail className="h-3.5 w-3.5 text-cyan-400" />
-                                  {detail.type}
-                                </span>
-                                <span
-                                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                                    detail.matched
-                                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-                                      : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                                  }`}
-                                >
-                                  {detail.matched
-                                    ? `🚨 ${detail.reportsCount} ${detail.reportsCount === 1 ? 'reporte' : 'reportes'}`
-                                    : '✅ Sin reportes'}
-                                </span>
-                              </div>
-
-                              <div className="font-mono text-[11px] text-slate-300 mb-1.5 flex items-center justify-between">
-                                <span>{detail.valueMasked}</span>
-                                <span className="text-[10px] text-slate-500 font-sans">Tokenizado ZK</span>
-                              </div>
-
-                              <div className="rounded-lg bg-black/40 border border-white/5 p-2 mb-2 space-y-1">
-                                <div className="flex items-center gap-1.5 text-[11px]">
-                                  <Clock className="h-3 w-3 text-cyan-400 shrink-0" />
-                                  <span className="text-slate-400 font-medium">Fecha del último incidente reportado:</span>
-                                </div>
-                                <p className="font-mono text-xs font-bold text-white pl-4.5">
-                                  {detail.matched
-                                    ? (detail.lastReportedAt || (detail.lastSeenDaysAgo ? `Hace ${detail.lastSeenDaysAgo} días` : '14/09/2026 18:32 hs'))
-                                    : 'Sin incidentes reportados'}
-                                </p>
-                              </div>
-
-                              {detail.matched && detail.categories.length > 0 && (
-                                <div className="flex flex-wrap gap-1 mt-1">
-                                  {detail.categories.map(c => (
-                                    <span key={c} className="rounded bg-rose-500/30 px-1.5 py-0.2 text-[9px] font-bold text-rose-200">
-                                      {c.replace(/_/g, ' ')}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Desglose del Motor Matemático (4 Dimensiones) */}
-                    <div className="space-y-1.5 text-xs bg-black/40 rounded-xl p-3.5 border border-white/5">
-                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
-                        Desglose del Motor Matemático (4 Dimensiones)
-                      </div>
-
-                      {/* Dim 1: Severidad Base */}
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-400 flex items-center gap-1">
-                          <span className="text-[10px]">①</span> Severidad Base (con Time Decay)
-                          {result.breakdown.timeDecayApplied && (
-                            <span className="ml-1 rounded bg-slate-600/30 px-1 py-0.5 text-[9px] font-bold text-slate-400 border border-slate-500/20">
-                              DECAY ×{result.breakdown.timeDecayFactor.toFixed(2)}
-                            </span>
-                          )}
-                        </span>
-                        <span className="font-mono font-bold text-slate-200">+{result.breakdown.historicalReportsScore} pts</span>
-                      </div>
-
-                      {/* Dim 2: Multi-Entidad + Velocity + Mismatch */}
-                      <div className="flex items-center justify-between">
-                        <span className={`flex items-center gap-1 ${result.breakdown.mismatchDetected ? 'text-rose-400 font-semibold' : 'text-slate-500'}`}>
-                          <span className="text-[10px]">②</span> Discrepancia de Identidad
-                          {result.breakdown.mismatchDetected && <span className="ml-1 rounded bg-rose-500/20 px-1 py-0.5 text-[10px] font-bold text-rose-400 border border-rose-500/30">DETECTADO</span>}
-                        </span>
-                        <span className={`font-mono font-bold ${result.breakdown.mismatchDetected ? 'text-rose-400' : 'text-slate-600'}`}>+{result.breakdown.mismatchPenalty} pts</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className={`flex items-center gap-1 ${result.breakdown.velocityTriggered ? 'text-amber-400 font-semibold' : 'text-slate-500'}`}>
-                          <span className="text-[10px]">②</span> Velocity Spike
-                          {result.breakdown.velocityTriggered && <span className="ml-1 rounded bg-amber-500/20 px-1 py-0.5 text-[10px] font-bold text-amber-400 border border-amber-500/30">ACTIVO</span>}
-                        </span>
-                        <span className={`font-mono font-bold ${result.breakdown.velocityTriggered ? 'text-amber-400' : 'text-slate-600'}`}>+{result.breakdown.velocityPenalty} pts</span>
-                      </div>
-
-                      {/* Dim 3: Penalidad por Correo */}
-                      {result.breakdown.emailPenalty ? (
-                        <div className="flex items-center justify-between text-rose-400 font-semibold">
-                          <span className="flex items-center gap-1">
-                            <span className="text-[10px]">③</span>
-                            <Mail className="h-3.5 w-3.5" />
-                            Penalidad de Correo ({result.breakdown.emailVerification?.badgeText})
-                          </span>
-                          <span className="font-mono font-bold">+{result.breakdown.emailPenalty} pts</span>
-                        </div>
-                      ) : null}
-
-                      {/* Dim 4: Critical Override */}
-                      {result.breakdown.criticalOverride && (
-                        <div className="flex items-center justify-between text-rose-300 font-semibold">
-                          <span className="flex items-center gap-1">
-                            <span className="text-[10px]">④</span>
-                            <Zap className="h-3.5 w-3.5" /> Critical Override ({result.breakdown.criticalOverrideSource})
-                          </span>
-                          <span className="font-mono font-bold">FORZADO</span>
-                        </div>
-                      )}
-
-                      <div className="border-t border-white/10 pt-2 flex items-center justify-between font-bold">
-                        <span className="text-white">Score Final Computado</span>
-                        <span className="font-mono text-sm" style={{ color: scoreColor(result.breakdown.finalScore) }}>
-                          {result.breakdown.finalScore} / 100
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Resumen Comunitario ZK */}
-                    <div className="space-y-2 pt-1">
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div className="rounded-xl border border-white/5 bg-slate-800/40 p-2.5">
-                          <span className="text-[11px] text-slate-400 block">Consenso en la Red:</span>
-                          <div className="mt-1 flex items-center gap-1.5 font-bold text-white">
-                            <Building className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-                            {edges.length > 0 ? (
-                              <span>Reportado en <strong className="text-cyan-300">{new Set(edges.map(e => e.reportedByEntityId)).size}</strong> entidad(es)</span>
-                            ) : (
-                              <span className="text-emerald-400">0 entidades reportaron</span>
-                            )}
-                          </div>
-                          <span className="text-[10px] text-slate-500 block mt-0.5">{edges.length} reporte(s) en historial</span>
-                        </div>
-                        <div className="rounded-xl border border-white/5 bg-slate-800/40 p-2.5">
-                          <span className="text-[11px] text-slate-400 block">Antigüedad del incidente:</span>
-                          <div className="mt-1 flex items-center gap-1.5 font-bold text-white">
-                            <Clock className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-                            {mostRecentTimestamp ? <span>{formatTimeAgo(mostRecentTimestamp)}</span> : <span className="text-emerald-400">Sin registros</span>}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 text-[11px] text-slate-400 bg-white/[0.02] rounded-xl px-3 py-2 border border-white/5">
-                        <Lock className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-                        <span>Zero-Knowledge: La consulta evalúa datos anonimizados sin exponer hashes ni PII confidencial.</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        }
-
-        // ── VISTA PARA OTROS IDENTIFICADORES (DNI, CBU, SET) ──
         return (
-          <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-5 space-y-5 animate-fade-in shadow-xl">
+          <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-6 space-y-6 animate-fade-in shadow-xl">
             {/* Header del Resultado */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/20 text-cyan-300 font-bold text-xs">
-                  ZK
-                </span>
+                <div className="h-8 w-8 rounded-xl bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center text-cyan-300 font-bold text-xs">
+                  <ShieldCheck className="h-4 w-4" />
+                </div>
                 <div>
-                  <h4 className="text-sm font-bold text-white">
-                    {searchMode === 'single'
-                      ? `Resultado de Consulta: ${singleType === 'DNI' ? 'DNI' : singleType === 'CBU' ? 'CBU/CVU' : singleType}`
-                      : 'Resultado de la Evaluación del Conjunto de Datos'}
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span>
+                      {searchMode === 'single'
+                        ? `Evaluación de Riesgo: ${singleType === 'DNI' ? 'DNI / CUIL' : singleType === 'CBU' ? 'CBU / CVU' : singleType}`
+                        : 'Evaluación del Conjunto de Identificadores'}
+                    </span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-white/10">
+                      Token Ciego HMAC
+                    </span>
                   </h4>
                   <p className="text-[11px] text-slate-400">
-                    Evaluado con arquitectura Zero-Knowledge y Fingerprinting criptográfico
+                    Motivo: <strong className="text-slate-200">{QUERY_REASON_OPTIONS.find(o => o.value === queryReason)?.label}</strong>
                   </p>
                 </div>
               </div>
 
+              {/* Botón de Voto OK / Atenuación */}
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={handleMarkOK}
                   disabled={okLoading || okDone}
-                  className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-1.5 text-xs font-bold transition active:scale-95 shadow-md ${
+                  className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-bold transition active:scale-95 shadow-md ${
                     okDone
                       ? 'border-emerald-500/40 bg-emerald-950/60 text-emerald-300 cursor-default'
                       : 'border-emerald-400/50 bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/40'
@@ -1449,286 +1020,179 @@ function SingleLookupView() {
                   {okDone ? (
                     <>
                       <CheckCircle className="h-4 w-4 text-emerald-400" />
-                      Voto OK Registrado
+                      <span>Voto OK Registrado</span>
                     </>
                   ) : okLoading ? (
                     <>
                       <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                      Aplicando...
+                      <span>Aplicando...</span>
                     </>
                   ) : (
                     <>
-                      <CheckCircle className="h-3.5 w-3.5 text-white" />
-                      Marcar OK
+                      <CheckCircle className="h-4 w-4" />
+                      <span>Marcar OK / Atenuar</span>
                     </>
                   )}
                 </button>
               </div>
             </div>
 
-            {/* Score de Riesgo: Aislamiento Estricto por Entorno */}
-            <div className="space-y-4">
-              <div className="max-w-xl mx-auto w-full">
-                {/* 1. Si el usuario está en "Workspace Interno", renderizá ÚNICAMENTE el componente del Score de la Entidad */}
-                {isInternal && (() => {
-                  const internalBadge = internalScore >= 70
-                    ? { text: 'ALTO RIESGO PROPIO', color: 'bg-rose-500/20 text-rose-300 border-rose-500/40' }
-                    : internalScore >= 30
-                    ? { text: 'RIESGO MEDIO INTERNO', color: 'bg-amber-500/20 text-amber-300 border-amber-500/40' }
-                    : { text: 'BAJO RIESGO PROPIO', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' };
-
-                  return (
-                    <ScoreGauge
-                      score={internalScore}
-                      title="Score de la Entidad"
-                      subtitle={`Evaluación basada exclusivamente en los antecedentes internos cargados por ${activeFintech?.name || 'tu entidad'}.`}
-                      badge={internalBadge}
-                      icon={Building2}
-                    />
-                  );
-                })()}
-
-                {/* 2. Si el usuario está en "Consorcio Federal", renderizá ÚNICAMENTE el componente del Score del Consorcio */}
-                {!isInternal && (() => {
-                  const consortiumBadge = consortiumScore >= 70
-                    ? { text: 'ALERTA CONSORCIO', color: 'bg-rose-500/20 text-rose-300 border-rose-500/40' }
-                    : consortiumScore >= 30
-                    ? { text: 'SOSPECHA COMUNITARIA', color: 'bg-amber-500/20 text-amber-300 border-amber-500/40' }
-                    : { text: 'LIMPIO EN CONSORCIO', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' };
-
-                  return (
-                    <ScoreGauge
-                      score={consortiumScore}
-                      title="Score del Consorcio"
-                      subtitle="Calculado con la inteligencia colectiva y cruces criptográficos aportados por toda la Red Federal."
-                      badge={consortiumBadge}
-                      icon={Network}
-                    />
-                  );
-                })()}
-              </div>
-
-              {/* Barra unificada de Decisión y Ámbito */}
-              <div className="flex items-center flex-wrap gap-2.5 pt-1">
-                <span className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-sm font-bold ${rec.class}`}>
-                  <span>{rec.icon}</span>
-                  {rec.text}
-                </span>
-
-                <span className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold ${
-                  result.scope === 'INTERNAL'
-                    ? 'bg-indigo-500/15 border-indigo-500/25 text-indigo-300'
-                    : 'bg-cyan-500/15 border-cyan-500/25 text-cyan-300'
-                }`}>
-                  {result.scope === 'INTERNAL' ? <Building2 className="h-3.5 w-3.5" /> : <Network className="h-3.5 w-3.5" />}
-                  {result.scope === 'INTERNAL' ? 'VISTA: WORKSPACE INTERNO' : 'VISTA: CONSORCIO FEDERAL'}
-                </span>
-              </div>
-
-              {/* Resumen limpio de Tipologías detectadas y Último incidente */}
-              <div className="rounded-xl bg-slate-950/70 border border-white/10 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
-                <div className="flex items-center gap-2">
-                  <ShieldAlert className="h-4 w-4 text-amber-400 shrink-0" />
-                  <span className="text-xs font-bold text-slate-300">Tipologías detectadas:</span>
-                  <span className="text-xs font-semibold text-white">{predominantTypology}</span>
+            {/* ── SEPARACIÓN VISUAL ESTRICTA: RIESGO PROPIO vs RIESGO EN RED ── */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              {/* COLUMNA 1: RIESGO PROPIO (MI ENTIDAD) */}
+              <div className="rounded-2xl border border-indigo-500/25 bg-slate-950/70 p-5 flex flex-col justify-between space-y-4 shadow-lg">
+                <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="h-4 w-4 text-indigo-400" />
+                    <h5 className="text-xs font-bold text-white uppercase tracking-wider">
+                      Riesgo Propio ({activeFintech?.name || 'Mi Entidad'})
+                    </h5>
+                  </div>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                    internalScore >= 70 ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' :
+                    internalScore >= 30 ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' :
+                    'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                  }`}>
+                    {internalScore >= 70 ? 'ALTO RIESGO PROPIO' : internalScore >= 30 ? 'RIESGO MEDIO PROPIO' : 'LIMPIO INTERNAMENTE'}
+                  </span>
                 </div>
-                <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                  <Clock className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-                  <span>Último incidente: <strong className="text-white">{lastIncidentText}</strong></span>
+
+                <ScoreGauge
+                  score={internalScore}
+                  title="Score de Mi Entidad"
+                  subtitle="Antecedentes y transacciones previas registradas en tu propio workspace."
+                  badge={{
+                    text: internalScore >= 70 ? 'ALERTA LOCAL' : internalScore >= 30 ? 'SOSPECHA LOCAL' : 'SIN REPORTES PROPIOS',
+                    color: internalScore >= 70 ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : internalScore >= 30 ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+                  }}
+                  icon={Building2}
+                />
+
+                <div className="rounded-xl bg-slate-900/80 border border-white/5 p-3.5 space-y-2.5 text-xs">
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span>Reportes originados por tu entidad:</span>
+                    <strong className="text-white font-mono">{myEntityReportsCount} incidente(s)</strong>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span>Estado en política interna:</span>
+                    <span className={internalScore >= 70 ? 'text-rose-400 font-bold' : internalScore >= 30 ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'}>
+                      {internalScore >= 70 ? 'Bloqueo Interno Recomendado' : internalScore >= 30 ? 'Desafío 2FA Obligatorio' : 'Habilitado sin fricción'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* COLUMNA 2: RIESGO EN RED (CONSORCIO FEDERAL) */}
+              <div className="rounded-2xl border border-cyan-500/25 bg-slate-950/70 p-5 flex flex-col justify-between space-y-4 shadow-lg">
+                <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Network className="h-4 w-4 text-cyan-400" />
+                    <h5 className="text-xs font-bold text-white uppercase tracking-wider">
+                      Riesgo en Red (Consorcio Federal)
+                    </h5>
+                  </div>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                    consortiumScore >= 70 ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' :
+                    consortiumScore >= 30 ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' :
+                    'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                  }`}>
+                    {consortiumScore >= 70 ? 'ALERTA CONSORCIO' : consortiumScore >= 30 ? 'SOSPECHA EN RED' : 'LIMPIO EN RED'}
+                  </span>
+                </div>
+
+                <ScoreGauge
+                  score={consortiumScore}
+                  title="Score Consolidado de Red"
+                  subtitle="Cruces determinísticos sobre los nodos ciegos del consorcio interbancario."
+                  badge={{
+                    text: consortiumScore >= 70 ? 'RIESGO CRÍTICO' : consortiumScore >= 30 ? 'RIESGO MODERADO' : 'BAJO RIESGO',
+                    color: consortiumScore >= 70 ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : consortiumScore >= 30 ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+                  }}
+                  icon={Network}
+                />
+
+                <div className="rounded-xl bg-slate-900/80 border border-white/5 p-3.5 space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Recomendación de Red:</span>
+                    <span className={`px-2 py-0.5 rounded text-[11px] font-bold border ${rec.class}`}>
+                      {rec.icon} {rec.text}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span>Entidades que reportaron:</span>
+                    <strong className="text-cyan-300 font-mono">
+                      {reportingEntitiesCount > 0 ? `${reportingEntitiesCount} entidad(es) financiera(s) anónima(s)` : '0 entidades'}
+                    </strong>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span>Nivel de Confianza:</span>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${confidenceBadge.color}`}>
+                      {confidenceBadge.text}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span>Tipología predominante:</span>
+                    <strong className="text-white">{predominantTypology}</strong>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span>Recencia del reporte:</span>
+                    <strong className="text-white">{lastIncidentText}</strong>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {okDone && (
-              <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/30 p-2.5 text-xs text-emerald-300 flex items-center gap-2">
-                <CheckCircle className="h-4 w-4 shrink-0 text-emerald-400" />
-                <span>Voto de legitimidad computado. El score de riesgo fue atenuado en tiempo real en la red federada.</span>
-              </div>
-            )}
-
-            {/* Desglose Dato por Dato */}
-            {result.breakdown.identifierDetails && result.breakdown.identifierDetails.length > 0 && (
-              <div className="space-y-2 pt-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                    <Filter className="h-3.5 w-3.5 text-cyan-400" />
-                    {result.breakdown.identifierDetails.length > 1
-                      ? 'Desglose Dato por Dato del Conjunto Evaluado:'
-                      : 'Resultado del Identificador Consultado:'}
+            {/* Motivos del Score (Explicabilidad) */}
+            <div className="rounded-xl bg-slate-950/70 border border-white/10 p-4 space-y-2">
+              <span className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
+                Motivos Determinantes del Score de Riesgo:
+              </span>
+              <div className="flex flex-wrap gap-2 pt-1">
+                {(result.breakdown.reasonCodes && result.breakdown.reasonCodes.length > 0) ? (
+                  result.breakdown.reasonCodes.map(code => {
+                    const info = REASON_CODE_LABELS[code] || { label: code, icon: '⚠️', color: 'bg-slate-700 text-slate-200 border-white/10' };
+                    return (
+                      <span key={code} className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold border ${info.color}`}>
+                        <span>{info.icon}</span>
+                        <span>{info.label}</span>
+                      </span>
+                    );
+                  })
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold border bg-emerald-500/20 text-emerald-300 border-emerald-500/30">
+                    ✅ Sin antecedentes ni factores de riesgo detectados en la red
                   </span>
-                  <span className="text-[11px] font-mono text-slate-500">
-                    {result.breakdown.identifierDetails.filter(d => d.matched).length} con incidentes / {result.breakdown.identifierDetails.length} consultados
-                  </span>
-                </div>
-
-                <div className={`grid gap-2.5 ${result.breakdown.identifierDetails.length > 1 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1'}`}>
-                  {result.breakdown.identifierDetails.map(detail => (
-                    <div
-                      key={detail.type}
-                      className={`rounded-xl p-3 border text-xs transition ${
-                        detail.matched
-                          ? 'bg-rose-950/20 border-rose-500/40 text-rose-200'
-                          : 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="font-bold flex items-center gap-1.5 text-white">
-                          {detail.type === 'DNI' && <CreditCard className="h-3.5 w-3.5 text-cyan-400" />}
-                          {detail.type === 'EMAIL' && <Mail className="h-3.5 w-3.5 text-cyan-400" />}
-                          {detail.type === 'PHONE' && <Phone className="h-3.5 w-3.5 text-cyan-400" />}
-                          {detail.type === 'CBU' && <Building className="h-3.5 w-3.5 text-cyan-400" />}
-                          {detail.type === 'IP' && <Globe className="h-3.5 w-3.5 text-cyan-400" />}
-                          {detail.type === 'DEVICE' && <Fingerprint className="h-3.5 w-3.5 text-purple-400" />}
-                          {detail.type === 'CUIT' && <Hash className="h-3.5 w-3.5 text-cyan-400" />}
-                          {detail.type === 'DNI' ? 'DNI / CUIL' : detail.type === 'CBU' ? 'CBU / CVU' : detail.type === 'DEVICE' ? 'Device ID' : detail.type}
-                        </span>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                            detail.matched
-                              ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-                              : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                          }`}
-                        >
-                          {detail.matched
-                            ? `🚨 ${detail.reportsCount} ${detail.reportsCount === 1 ? 'reporte' : 'reportes'}`
-                            : '✅ Sin reportes'}
-                        </span>
-                      </div>
-
-                      <div className="font-mono text-[11px] text-slate-300 mb-1.5 flex items-center justify-between">
-                        <span>{detail.valueMasked}</span>
-                        <span className="text-[10px] text-slate-500 font-sans">Tokenizado ZK</span>
-                      </div>
-
-                      <div className="rounded-lg bg-black/40 border border-white/5 p-2 mb-2 space-y-1">
-                        <div className="flex items-center gap-1.5 text-[11px]">
-                          <Clock className="h-3 w-3 text-cyan-400 shrink-0" />
-                          <span className="text-slate-400 font-medium">Fecha del último incidente reportado:</span>
-                        </div>
-                        <p className="font-mono text-xs font-bold text-white pl-4.5">
-                          {detail.matched
-                            ? (detail.lastReportedAt || (detail.lastSeenDaysAgo ? `Hace ${detail.lastSeenDaysAgo} días` : '14/09/2026 18:32 hs'))
-                            : 'Sin incidentes reportados'}
-                        </p>
-                      </div>
-
-                      {detail.matched ? (
-                        <div className="text-[11px] text-slate-300 space-y-1">
-                          <p>Reportado en: <strong className="text-white">{detail.distinctEntitiesCount}</strong> entidad(es)</p>
-                          <p>
-                            <span className="text-slate-400 font-medium">Tipologías detectadas:</span>{' '}
-                            <strong className="text-rose-300 font-semibold">
-                              {detail.categories.length > 0
-                                ? detail.categories.map(c => CATEGORY_TRANSLATIONS[c] || c.replace(/_/g, ' ')).join(', ')
-                                : 'Cuenta Mula'}
-                            </strong>
-                          </p>
-                        </div>
-                      ) : (
-                        <p className="text-[11px] text-emerald-400/90 font-medium">
-                          Identificador sin antecedentes en la red.
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                )}
               </div>
-            )}
+            </div>
 
-            {/* ── DESGLOSE TÉCNICO COLAPSABLE: VER AUDITORÍA DE CÁLCULO ── */}
-            <div className="rounded-2xl border border-white/10 bg-slate-950/60 overflow-hidden shadow-xl transition">
+            {/* Acordeón de Detalles Técnicos Criptográficos */}
+            <div className="border-t border-white/10 pt-3">
               <button
                 type="button"
-                onClick={() => setShowGeneralTechnicalDetails(!showGeneralTechnicalDetails)}
-                className="w-full flex items-center justify-between p-4 px-5 text-left hover:bg-white/[0.03] transition group"
+                onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
+                className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-cyan-300 transition"
               >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-800 text-slate-300 border border-white/5 group-hover:border-cyan-500/30 transition">
-                    <Sliders className="h-4 w-4 text-cyan-400" />
-                  </div>
-                  <div>
-                    <span className="text-sm font-bold text-white block">
-                      Ver auditoría de cálculo
-                    </span>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
-                      Detalle del motor matemático (4 dimensiones), pesos y decaimiento temporal
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 group-hover:text-cyan-300 transition">
-                  <span>{showGeneralTechnicalDetails ? 'Ocultar auditoría' : 'Ver auditoría de cálculo'}</span>
-                  <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${showGeneralTechnicalDetails ? 'rotate-180 text-cyan-400' : ''}`} />
-                </div>
+                {showTechnicalDetails ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                <span>{showTechnicalDetails ? 'Ocultar detalles técnicos' : 'Ver desglose matemático y tokens ciegos'}</span>
               </button>
 
-              {showGeneralTechnicalDetails && (
-                <div className="p-4 border-t border-white/10 space-y-2 text-xs bg-black/40 animate-fade-in">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Desglose del Motor Matemático (4 Dimensiones)</div>
-
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-400 flex items-center gap-1">
-                      <span className="text-[10px]">①</span> Severidad Base (con Time Decay)
-                      {result.breakdown.timeDecayApplied && (
-                        <span className="ml-1 rounded bg-slate-600/30 px-1 py-0.5 text-[9px] font-bold text-slate-400 border border-slate-500/20">DECAY ×{result.breakdown.timeDecayFactor.toFixed(2)}</span>
-                      )}
-                    </span>
-                    <span className="font-mono font-bold text-slate-200">+{result.breakdown.historicalReportsScore} pts</span>
+              {showTechnicalDetails && (
+                <div className="mt-3 space-y-3 p-4 rounded-xl bg-slate-950/80 border border-white/5 text-xs text-slate-300 font-mono">
+                  <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                    <span className="text-slate-400">Algoritmo de Blind Indexing:</span>
+                    <span className="text-cyan-400 font-bold">HMAC-SHA256 con Pepper KMS & Domain Separation</span>
                   </div>
-
-                  <div className="flex items-center justify-between">
-                    <span className={`flex items-center gap-1 ${result.breakdown.mismatchDetected ? 'text-rose-400 font-semibold' : 'text-slate-500'}`}>
-                      <span className="text-[10px]">②</span> Discrepancia de Identidad
-                      {result.breakdown.mismatchDetected && <span className="ml-1 rounded bg-rose-500/20 px-1 py-0.5 text-[10px] font-bold text-rose-400 border border-rose-500/30">DETECTADO</span>}
-                    </span>
-                    <span className={`font-mono font-bold ${result.breakdown.mismatchDetected ? 'text-rose-400' : 'text-slate-600'}`}>+{result.breakdown.mismatchPenalty} pts</span>
+                  <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                    <span className="text-slate-400">Time Decay Aplicado:</span>
+                    <span>{result.breakdown.timeDecayApplied ? `Sí (Factor ×${result.breakdown.timeDecayFactor.toFixed(2)})` : 'No'}</span>
                   </div>
-
                   <div className="flex items-center justify-between">
-                    <span className={`flex items-center gap-1 ${result.breakdown.velocityTriggered ? 'text-amber-400 font-semibold' : 'text-slate-500'}`}>
-                      <span className="text-[10px]">②</span> Velocity Spike
-                      {result.breakdown.velocityTriggered && <span className="ml-1 rounded bg-amber-500/20 px-1 py-0.5 text-[10px] font-bold text-amber-400 border border-amber-500/30">ACTIVO</span>}
-                    </span>
-                    <span className={`font-mono font-bold ${result.breakdown.velocityTriggered ? 'text-amber-400' : 'text-slate-600'}`}>+{result.breakdown.velocityPenalty} pts</span>
-                  </div>
-
-                  <div className="border-t border-white/10 pt-2 flex items-center justify-between font-bold">
-                    <span className="text-white">Score Final Computado</span>
-                    <span className="font-mono text-sm" style={{ color: scoreColor(result.breakdown.finalScore) }}>
-                      {result.breakdown.finalScore} / 100
-                    </span>
+                    <span className="text-slate-400">Aristas en Grafo de Red:</span>
+                    <span>{edges.length} arista(s) vinculada(s)</span>
                   </div>
                 </div>
               )}
-            </div>
-
-            {/* Resumen Comunitario ZK */}
-            <div className="space-y-2 pt-1">
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="rounded-xl border border-white/5 bg-slate-800/40 p-2.5">
-                  <span className="text-[11px] text-slate-400 block">Consenso en la Red:</span>
-                  <div className="mt-1 flex items-center gap-1.5 font-bold text-white">
-                    <Building className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-                    {edges.length > 0 ? (
-                      <span>Reportado en <strong className="text-cyan-300">{new Set(edges.map(e => e.reportedByEntityId)).size}</strong> entidad(es)</span>
-                    ) : (
-                      <span className="text-emerald-400">0 entidades reportaron</span>
-                    )}
-                  </div>
-                  <span className="text-[10px] text-slate-500 block mt-0.5">{edges.length} reporte(s) en historial</span>
-                </div>
-                <div className="rounded-xl border border-white/5 bg-slate-800/40 p-2.5">
-                  <span className="text-[11px] text-slate-400 block">Antigüedad del incidente:</span>
-                  <div className="mt-1 flex items-center gap-1.5 font-bold text-white">
-                    <Clock className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-                    {mostRecentTimestamp ? <span>{formatTimeAgo(mostRecentTimestamp)}</span> : <span className="text-emerald-400">Sin registros</span>}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 text-[11px] text-slate-400 bg-white/[0.02] rounded-xl px-3 py-2 border border-white/5">
-                <Lock className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-                <span>Zero-Knowledge: La consulta evalúa datos anonimizados sin exponer hashes ni PII confidencial.</span>
-              </div>
             </div>
           </div>
         );
@@ -1737,7 +1201,7 @@ function SingleLookupView() {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────
+
 // MÓDULO 1B: CONSULTA MASIVA CSV (DNI, EMAIL, TEL, IP, CBU)
 // ─────────────────────────────────────────────────────────────────
 
@@ -2502,14 +1966,18 @@ function LookupModule({ initialSubTab = 'single' }: { initialSubTab?: 'single' |
 // ─────────────────────────────────────────────────────────────────
 
 function ReportFraudModule() {
-  const { reportFraud, activeFintechId, fintechs } = useConsortiumStore();
+  const { reportFraud, retractFraudReport, activeFintechId, fintechs } = useConsortiumStore();
   
   // Selector de Modo: 'single' (Reporte Unitario) vs 'set' (Reporte de Conjunto / Red)
   const [reportMode, setReportMode] = useState<'single' | 'set'>('single');
   const [primaryType, setPrimaryType] = useState<'DNI' | 'CBU'>('DNI');
   const [showOptionalDetails, setShowOptionalDetails] = useState(false);
 
-  // Campo opcional de Ticket Interno
+  // Metadatos Bancarios
+  const [incidentDate, setIncidentDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [certaintyLevel, setCertaintyLevel] = useState<'CONFIRMED' | 'SUSPECTED'>('CONFIRMED');
+  const [amount, setAmount] = useState<string>('');
+  const [currency, setCurrency] = useState<'ARS' | 'USD'>('ARS');
   const [internalTicketId, setInternalTicketId] = useState('');
 
   // Identificadores
@@ -2521,17 +1989,39 @@ function ReportFraudModule() {
   const [device, setDevice] = useState('');
   const [cuit, setCuit] = useState('');
   
-  // Tipologías específicas (sin Fraude Confirmado genérico)
+  // Tipologías específicas
   const SPECIFIC_CATEGORIES = CATEGORIES.filter(c => c.value !== 'FRAUD_CONFIRMED');
   const [category, setCategory] = useState<IncidentCategory>('MULE_ACCOUNT');
   
   const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
+
+  // Modal de confirmación en 2 pasos
+  const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+
+  // Pantalla de éxito post-reporte
+  const [successReport, setSuccessReport] = useState<{
+    incidentId: string;
+    ticketId?: string;
+    timestamp: string;
+    category: IncidentCategory;
+    summary: string;
+  } | null>(null);
+
+  const [retractLoading, setRetractLoading] = useState(false);
+  const [retractedDone, setRetractedDone] = useState(false);
 
   const activeFintech = fintechs.find(f => f.id === activeFintechId);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Validaciones en vivo
+  const cbuValidation = cbu.trim() ? validateCbuChecksum(cbu.trim()) : null;
+  const cuitValidation = cuit.trim() ? validateCuitChecksum(cuit.trim()) : null;
+  const dniValidation = dni.trim() ? validateDniFormat(dni.trim()) : null;
+  const emailValidation = email.trim() ? validateEmailFormat(email.trim()) : null;
+  const phoneValidation = phone.trim() ? validatePhoneFormat(phone.trim()) : null;
+
+  // Paso 1: Validar y abrir modal de previsualización
+  const handleOpenConfirmModal = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -2548,48 +2038,41 @@ function ReportFraudModule() {
       return;
     }
 
-    // Validaciones
-    if (cbu.trim()) {
-      const cleanCbu = cbu.trim().replace(/\D/g, '');
-      if (cleanCbu.length > 0 && cleanCbu.length < 10) {
-        setError('Validación CBU/CVU: Ingrese una cuenta bancaria o CVU válida (mínimo 10 dígitos).');
-        return;
-      }
-    }
-
-    if (cuit.trim()) {
-      const cleanCuit = cuit.trim().replace(/\D/g, '');
-      if (cleanCuit.length > 0 && cleanCuit.length < 10) {
-        setError('Validación CUIT/CUIL: Debe contener al menos 10-11 dígitos numéricos.');
-        return;
-      }
-    }
-
-    if (dni.trim()) {
-      const cleanDni = dni.trim().replace(/\D/g, '');
-      if (cleanDni.length > 0 && cleanDni.length < 6) {
-        setError('Validación DNI: Debe contener al menos 6 dígitos numéricos.');
-        return;
-      }
-    }
-
-    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      setError('Validación Email: Formato de correo electrónico inválido.');
+    if (cbu.trim() && cbuValidation && !cbuValidation.valid) {
+      setError(`Validación de CBU/CVU: ${cbuValidation.reason}`);
       return;
     }
 
-    if (phone.trim() && !/^\+?[\d\s\-()]{6,20}$/.test(phone.trim())) {
-      setError('Validación de teléfono fallida: Formato de número inválido.');
+    if (cuit.trim() && cuitValidation && !cuitValidation.valid) {
+      setError(`Validación de CUIT/CUIL: ${cuitValidation.reason}`);
       return;
     }
 
+    if (dni.trim() && dniValidation && !dniValidation.valid) {
+      setError(`Validación de DNI: ${dniValidation.reason}`);
+      return;
+    }
+
+    if (email.trim() && emailValidation && !emailValidation.valid) {
+      setError(`Validación de Email: ${emailValidation.reason}`);
+      return;
+    }
+
+    if (phone.trim() && phoneValidation && !phoneValidation.valid) {
+      setError(`Validación de Teléfono: ${phoneValidation.reason}`);
+      return;
+    }
+
+    setConfirmModalOpen(true);
+  };
+
+  // Paso 2: Confirmar y persistir reporte en red federal
+  const handleConfirmAndSubmit = async () => {
     setLoading(true);
-    setSuccess(false);
+    setError('');
 
     try {
-      const commonIncidentId = reportMode === 'set'
-        ? `INC-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
-        : undefined;
+      const generatedIncidentId = `INC-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 
       await reportFraud({
         dni: dni.trim() || undefined,
@@ -2601,10 +2084,28 @@ function ReportFraudModule() {
         cuit: cuit.trim() || undefined,
         incidentCategory: category,
         internalTicketId: internalTicketId.trim() || undefined,
-        incidentId: commonIncidentId,
+        incidentId: generatedIncidentId,
+        incidentDate,
+        certaintyLevel,
+        amount: amount.trim() ? parseFloat(amount) : undefined,
+        currency,
       });
 
-      setSuccess(true);
+      const summaryTokens = [
+        dni.trim() ? `DNI: ${dni.slice(0, 2)}***${dni.slice(-3)}` : null,
+        cbu.trim() ? `CBU: ${cbu.slice(0, 4)}***${cbu.slice(-4)}` : null,
+        email.trim() ? `Email: ${email.slice(0, 2)}***@...` : null,
+      ].filter(Boolean).join(' · ');
+
+      setSuccessReport({
+        incidentId: generatedIncidentId,
+        ticketId: internalTicketId.trim() || undefined,
+        timestamp: new Date().toISOString(),
+        category,
+        summary: summaryTokens || 'Identificador tokenizado',
+      });
+
+      // Limpiar formulario
       setDni('');
       setEmail('');
       setPhone('');
@@ -2613,13 +2114,31 @@ function ReportFraudModule() {
       setDevice('');
       setCuit('');
       setInternalTicketId('');
-      setShowOptionalDetails(false);
-      setTimeout(() => setSuccess(false), 5000);
+      setAmount('');
+      setConfirmModalOpen(false);
+      setRetractedDone(false);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Error al registrar el incidente.';
       setError(msg);
+      setConfirmModalOpen(false);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Rectificación / Retiro voluntario inmediato
+  const handleRetractReport = async () => {
+    if (!successReport) return;
+    if (!confirm('¿Confirma la rectificación y retiro de este reporte? Se asentará en auditoría como rectificado por la entidad emisora.')) return;
+
+    setRetractLoading(true);
+    try {
+      await retractFraudReport(successReport.incidentId, 'Rectificación inmediata por analista emisor');
+      setRetractedDone(true);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setRetractLoading(false);
     }
   };
 
@@ -2633,9 +2152,9 @@ function ReportFraudModule() {
               <ShieldAlert className="h-4.5 w-4.5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-white tracking-tight">Ingresar Nuevo Incidente</h3>
+              <h3 className="text-base font-bold text-white tracking-tight">Reporte de Fraude y Lista de Riesgo</h3>
               <p className="text-xs text-slate-400">
-                Registro criptográfico ZK de amenazas para detección y prevención de fraude.
+                Transmisión criptográfica ciega (HMAC-SHA256) preservando el secreto bancario.
               </p>
             </div>
           </div>
@@ -2649,14 +2168,58 @@ function ReportFraudModule() {
         )}
       </div>
 
-      {activeFintech?.status === 'SUSPENDED' && (
-        <div className="rounded-xl border border-rose-500/30 bg-rose-950/20 p-3.5 text-xs text-rose-300 flex items-center gap-2.5">
-          <XCircle className="h-4 w-4 shrink-0 text-rose-400" />
-          <span>Entidad suspendida. Contactá al SuperAdmin para reactivar privilegios de reporte.</span>
+      {/* Pantalla de Éxito Post-Reporte */}
+      {successReport && (
+        <div className="rounded-2xl border border-emerald-500/40 bg-emerald-950/40 p-6 space-y-4 shadow-xl animate-fade-in">
+          <div className="flex items-center justify-between border-b border-emerald-500/20 pb-3">
+            <div className="flex items-center gap-2.5">
+              <CheckCircle className="h-6 w-6 text-emerald-400" />
+              <div>
+                <h4 className="text-sm font-bold text-emerald-200">Incidente Registrado Exitosamente en la Red</h4>
+                <p className="text-xs text-emerald-300/80">Código de Incidente: <strong className="font-mono text-white">{successReport.incidentId}</strong></p>
+              </div>
+            </div>
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+              {successReport.category}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            <div className="bg-slate-950/60 p-3 rounded-xl border border-white/5">
+              <span className="text-slate-400 block text-[10px] uppercase">Datos Transmitidos:</span>
+              <p className="text-white font-medium mt-0.5">{successReport.summary}</p>
+            </div>
+            <div className="bg-slate-950/60 p-3 rounded-xl border border-white/5">
+              <span className="text-slate-400 block text-[10px] uppercase">Ref. / Ticket Interno:</span>
+              <p className="text-white font-mono mt-0.5">{successReport.ticketId || 'Sin ticket'}</p>
+            </div>
+            <div className="bg-slate-950/60 p-3 rounded-xl border border-white/5">
+              <span className="text-slate-400 block text-[10px] uppercase">Estado en Red:</span>
+              <p className="text-emerald-400 font-bold mt-0.5">{retractedDone ? 'Rectificado / Retirado' : 'Activo en Blacklist'}</p>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-emerald-500/20">
+            <p className="text-[11px] text-emerald-300/80">
+              ¿Error en la carga? Podés retirar o rectificar el reporte de inmediato.
+            </p>
+            {!retractedDone ? (
+              <button
+                type="button"
+                onClick={handleRetractReport}
+                disabled={retractLoading}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-rose-500/40 bg-rose-500/20 text-rose-300 text-xs font-semibold hover:bg-rose-500/30 transition"
+              >
+                {retractLoading ? 'Rectificando...' : 'Rectificar / Retirar Reporte'}
+              </button>
+            ) : (
+              <span className="text-xs font-bold text-amber-300">✓ Reporte retirado y anotado en auditoría</span>
+            )}
+          </div>
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleOpenConfirmModal} className="space-y-6">
         {/* 1. Modalidad de Carga */}
         <div className="space-y-2">
           <label className="block text-xs font-semibold text-slate-300">
@@ -2688,11 +2251,6 @@ function ReportFraudModule() {
               <span>Reporte de Conjunto (Red)</span>
             </button>
           </div>
-          <p className="text-[11px] text-slate-500 px-1">
-            {reportMode === 'single'
-              ? 'Registra un identificador puntual como alerta individual.'
-              : 'Vincula múltiples datos bajo un mismo expediente para el grafo de prevención.'}
-          </p>
         </div>
 
         {/* 2. Identificador Principal (DNI o CBU) y Campo de Ingreso */}
@@ -2727,7 +2285,7 @@ function ReportFraudModule() {
             </div>
           </div>
 
-          {/* Input Principal Grande y Limpio */}
+          {/* Input Principal */}
           {primaryType === 'DNI' ? (
             <div className="space-y-1.5">
               <div className="relative">
@@ -2743,6 +2301,11 @@ function ReportFraudModule() {
                   {dni.length > 0 ? `${dni.length} dígitos` : '7-11 dígitos'}
                 </span>
               </div>
+              {dniValidation && (
+                <p className={`text-[11px] font-medium ${dniValidation.valid ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {dniValidation.valid ? '✓ DNI con formato numérico correcto' : dniValidation.reason}
+                </p>
+              )}
             </div>
           ) : (
             <div className="space-y-1.5">
@@ -2761,6 +2324,11 @@ function ReportFraudModule() {
                   {cbu.length} / 22 dígitos
                 </span>
               </div>
+              {cbuValidation && (
+                <p className={`text-[11px] font-medium ${cbuValidation.valid ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {cbuValidation.valid ? '✓ CBU/CVU verificado (Algoritmo Módulo 10 BCRA)' : cbuValidation.reason}
+                </p>
+              )}
             </div>
           )}
 
@@ -2793,7 +2361,72 @@ function ReportFraudModule() {
           )}
         </div>
 
-        {/* 3. Tipología del Incidente */}
+        {/* 3. Metadatos Bancarios (Fecha, Certeza, Monto, Ticket) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 p-4 rounded-xl bg-slate-950/60 border border-white/5">
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1">
+              <Calendar className="h-3.5 w-3.5 text-cyan-400" /> Fecha del Incidente
+            </label>
+            <input
+              type="date"
+              value={incidentDate}
+              onChange={e => setIncidentDate(e.target.value)}
+              className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white focus:border-cyan-400 focus:outline-none font-mono"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1">
+              <ShieldAlert className="h-3.5 w-3.5 text-rose-400" /> Nivel de Certeza
+            </label>
+            <select
+              value={certaintyLevel}
+              onChange={e => setCertaintyLevel(e.target.value as any)}
+              className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white focus:border-rose-400 focus:outline-none font-semibold"
+            >
+              <option value="CONFIRMED">🚨 Fraude Confirmado / Judicializado</option>
+              <option value="SUSPECTED">⚠️ Sospecha Fundada / En Investigación</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1">
+              <CreditCard className="h-3.5 w-3.5 text-emerald-400" /> Monto Involucrado
+            </label>
+            <div className="flex items-center gap-1">
+              <select
+                value={currency}
+                onChange={e => setCurrency(e.target.value as any)}
+                className="rounded-xl border border-white/10 bg-slate-900 px-2 py-2 text-xs text-white focus:outline-none"
+              >
+                <option value="ARS">ARS</option>
+                <option value="USD">USD</option>
+              </select>
+              <input
+                type="number"
+                value={amount}
+                onChange={e => setAmount(e.target.value)}
+                placeholder="ej: 150000"
+                className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-600 focus:border-emerald-400 focus:outline-none font-mono"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1">
+              <FileText className="h-3.5 w-3.5 text-indigo-400" /> Ref. / Ticket Interno
+            </label>
+            <input
+              type="text"
+              value={internalTicketId}
+              onChange={e => setInternalTicketId(e.target.value)}
+              placeholder="ej: TCK-2026-9812"
+              className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-600 focus:border-indigo-400 focus:outline-none font-mono"
+            />
+          </div>
+        </div>
+
+        {/* 4. Tipología del Incidente */}
         <div className="space-y-2.5">
           <label className="block text-xs font-semibold text-slate-300">
             Tipología del Incidente <span className="text-rose-400">*</span>
@@ -2819,38 +2452,26 @@ function ReportFraudModule() {
           </div>
         </div>
 
-        {/* 4. Acordeón Desplegable: Detalles Opcionales */}
-        <div className="border-t border-white/5 pt-3">
-          <button
-            type="button"
-            onClick={() => setShowOptionalDetails(!showOptionalDetails)}
-            className="flex items-center gap-2 text-xs font-medium text-slate-400 hover:text-cyan-400 transition py-1.5 px-2 rounded-lg hover:bg-white/5"
-          >
-            {showOptionalDetails ? (
-              <ChevronUp className="h-4 w-4 text-cyan-400" />
-            ) : (
-              <ChevronDown className="h-4 w-4 text-slate-400" />
-            )}
-            <span>
-              {showOptionalDetails ? 'Ocultar campos opcionales' : '+ Agregar detalles opcionales (Email, Teléfono, IP, Device, Ticket)'}
-            </span>
-          </button>
+        {/* 5. Jerarquía Visual para Campos Opcionales con Incentivo de Red */}
+        <div className="border-t border-white/5 pt-3 space-y-3">
+          <div className="p-3 rounded-xl bg-cyan-950/30 border border-cyan-500/30 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-cyan-400 shrink-0" />
+              <p className="text-xs text-cyan-200">
+                <strong>Maximizar Red (+78%):</strong> Incluir Email, Teléfono, IP o Dispositivo permite que el grafo interbancario vincule cómplices y bloquee transferencias trianguladas.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowOptionalDetails(!showOptionalDetails)}
+              className="text-xs font-bold text-cyan-300 hover:text-white underline shrink-0"
+            >
+              {showOptionalDetails ? 'Ocultar campos' : '+ Agregar campos'}
+            </button>
+          </div>
 
           {showOptionalDetails && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-4">
-              <div>
-                <label className="block text-[11px] font-medium text-slate-400 mb-1">
-                  ID de Ticket / Ref. Interna
-                </label>
-                <input
-                  type="text"
-                  value={internalTicketId}
-                  onChange={e => setInternalTicketId(e.target.value)}
-                  placeholder="ej: TCK-2026-9812"
-                  className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-600 focus:border-cyan-400 focus:outline-none font-mono"
-                />
-              </div>
-
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 pt-2">
               <div>
                 <label className="block text-[11px] font-medium text-slate-400 mb-1">
                   Correo Electrónico
@@ -2872,7 +2493,7 @@ function ReportFraudModule() {
                   type="text"
                   value={phone}
                   onChange={e => setPhone(e.target.value)}
-                  placeholder="ej: +54 9 11 2233-4455"
+                  placeholder="ej: +5491122334455"
                   className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-600 focus:border-cyan-400 focus:outline-none font-mono"
                 />
               </div>
@@ -2892,7 +2513,7 @@ function ReportFraudModule() {
 
               <div>
                 <label className="block text-[11px] font-medium text-slate-400 mb-1">
-                  Device Fingerprint / Hardware ID
+                  Device Fingerprint ID
                 </label>
                 <input
                   type="text"
@@ -2902,25 +2523,10 @@ function ReportFraudModule() {
                   className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-600 focus:border-cyan-400 focus:outline-none font-mono"
                 />
               </div>
-
-              <div>
-                <label className="block text-[11px] font-medium text-slate-400 mb-1">
-                  CUIT / CUIL Alternativo
-                </label>
-                <input
-                  type="text"
-                  value={cuit}
-                  onChange={e => setCuit(e.target.value.replace(/\D/g, '').slice(0, 11))}
-                  placeholder="ej: 20301112227"
-                  maxLength={11}
-                  className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-600 focus:border-cyan-400 focus:outline-none font-mono"
-                />
-              </div>
             </div>
           )}
         </div>
 
-        {/* Mensajes de Feedback */}
         {error && (
           <div className="p-3.5 rounded-xl bg-rose-950/70 border border-rose-500/40 text-rose-200 text-xs flex items-center gap-2.5">
             <XCircle className="h-4 w-4 shrink-0 text-rose-400" />
@@ -2928,43 +2534,108 @@ function ReportFraudModule() {
           </div>
         )}
 
-        {success && (
-          <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/40 p-3.5 text-xs text-emerald-200 flex items-center gap-2.5 shadow-sm">
-            <CheckCircle className="h-4 w-4 shrink-0 text-emerald-400" />
-            <span>¡Incidente registrado exitosamente en el libro mayor criptográfico y red federal!</span>
-          </div>
-        )}
-
-        {/* Botón de Acción Principal */}
+        {/* Botón Principal (Abre Modal de Previsualización) */}
         <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-t border-white/5">
           <p className="text-[11px] text-slate-500">
-            Los datos son convertidos a hashes ciegos (SHA-256 + Salt Federal) preservando el secreto bancario.
+            Los datos son convertidos a hashes ciegos (HMAC-SHA256 con Pepper KMS) preservando el secreto bancario.
           </p>
 
           <button
             type="submit"
-            disabled={loading || activeFintech?.status === 'SUSPENDED'}
+            disabled={loading}
             className="flex items-center justify-center gap-2 rounded-xl bg-rose-600 hover:bg-rose-500 px-6 py-2.5 text-xs font-bold text-white shadow-lg shadow-rose-950/40 active:scale-95 disabled:opacity-50 transition shrink-0"
           >
-            {loading ? (
-              <>
-                <RefreshCw className="h-4 w-4 animate-spin" />
-                <span>Registrando...</span>
-              </>
-            ) : (
-              <>
-                <ShieldAlert className="h-4 w-4" />
-                <span>Registrar Incidente</span>
-              </>
-            )}
+            <ShieldAlert className="h-4 w-4" />
+            <span>Revisar y Registrar Incidente</span>
           </button>
         </div>
       </form>
+
+      {/* ── MODAL DE CONFIRMACIÓN EN 2 PASOS ── */}
+      {confirmModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-white/20 bg-slate-900 p-6 space-y-5 shadow-2xl animate-fade-in">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="h-5 w-5 text-rose-400" />
+                <h4 className="text-sm font-bold text-white">Confirmar Transmisión a la Red Federal</h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setConfirmModalOpen(false)}
+                className="text-slate-400 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs text-slate-300">
+              <p>
+                Estás por emitir un reporte de riesgo a nombre de <strong>{activeFintech?.name || 'tu entidad'}</strong>. Este evento impactará en el score comunitario del consorcio bancario.
+              </p>
+
+              <div className="rounded-xl bg-slate-950 p-4 border border-white/10 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Tipología:</span>
+                  <span className="font-bold text-rose-300">{SPECIFIC_CATEGORIES.find(c => c.value === category)?.label}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Nivel de Certeza:</span>
+                  <span className="font-semibold text-white">{certaintyLevel === 'CONFIRMED' ? 'Fraude Confirmado' : 'Sospecha Fundada'}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Fecha del Incidente:</span>
+                  <span className="font-mono text-white">{incidentDate}</span>
+                </div>
+                {amount && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Monto:</span>
+                    <span className="font-mono font-bold text-emerald-400">{currency} {amount}</span>
+                  </div>
+                )}
+                {internalTicketId && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Ticket Interno:</span>
+                    <span className="font-mono text-slate-200">{internalTicketId}</span>
+                  </div>
+                )}
+                <div className="border-t border-white/10 pt-2 flex items-center justify-between">
+                  <span className="text-slate-400">Tokenización:</span>
+                  <span className="font-mono text-cyan-400 text-[11px]">HMAC-SHA256 (KMS Pepper)</span>
+                </div>
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-200 text-[11px] flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
+                <span>Esta acción es auditable e inmutable. Podrás rectificarla o retirarla luego si fue involuntaria.</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmModalOpen(false)}
+                className="px-4 py-2 rounded-xl border border-white/10 text-xs font-semibold text-slate-400 hover:text-white transition"
+              >
+                Volver a Editar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmAndSubmit}
+                disabled={loading}
+                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-xs font-bold text-white transition shadow-lg shadow-rose-950/50"
+              >
+                {loading ? 'Transmitiendo...' : 'Confirmar y Transmitir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────
+
 // MÓDULO 3: INGESTA MASIVA CSV (REPORTES DE FRAUDE CON IP)
 // ─────────────────────────────────────────────────────────────────
 

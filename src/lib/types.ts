@@ -55,6 +55,14 @@ export interface IdentityNode {
   lookupsLastHour: number;
 }
 
+export type QueryReason =
+  | 'EVALUACION_TRANSFERENCIA'
+  | 'ALTA_ONBOARDING'
+  | 'INVESTIGACION_INTERNA'
+  | 'AUDITORIA_COMPLIANCE'
+  | 'MONITOREO_TRANSACCIONAL'
+  | 'OTRO';
+
 export interface SpecGraphEdge {
   id: string;
   sourceHash: string;
@@ -70,6 +78,10 @@ export interface SpecGraphEdge {
   internalTicketId?: string;
   incidentId?: string;
   revocationReason?: string;
+  incidentDate?: string; // YYYY-MM-DD
+  certaintyLevel?: 'SUSPECTED' | 'CONFIRMED';
+  amount?: number;
+  currency?: 'ARS' | 'USD';
 }
 
 export interface StoreAuditLog {

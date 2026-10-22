@@ -129,6 +129,7 @@ interface ConsortiumStore {
     cbu?: string;
     device?: string;
     cuit?: string;
+    reason?: string;
   }) => Promise<LookupResult>;
 
   reportFraud: (params: {
@@ -142,9 +143,14 @@ interface ConsortiumStore {
     incidentCategory: IncidentCategory;
     internalTicketId?: string;
     incidentId?: string;
+    incidentDate?: string;
+    certaintyLevel?: 'SUSPECTED' | 'CONFIRMED';
+    amount?: number;
+    currency?: 'ARS' | 'USD';
   }) => Promise<void>;
 
   markFalsePositive: (edgeId: string, reason?: string) => void;
+  retractFraudReport: (edgeId: string, reason?: string) => Promise<{ success: boolean; message: string }>;
 
   importCSV: (csvText: string) => Promise<{ imported: number; errors: number }>;
 
@@ -938,7 +944,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
 
       // ── Acciones Fintech ──────────────────────────────────────
 
-      lookupIdentity: async ({ dni, email, phone, ip, cbu, device, cuit }) => {
+      lookupIdentity: async ({ dni, email, phone, ip, cbu, device, cuit, reason }) => {
         const state = get();
         const fintechId = state.partnerSession?.entityId || state.activeFintechId || (state.fintechs[0]?.id) || 'banco-prueba';
         const fintech = state.fintechs.find(f => f.id === fintechId);
@@ -1059,6 +1065,8 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           .filter(Boolean)
           .join(', ');
 
+        const reasonTag = reason ? ` [Motivo: ${reason}]` : '';
+
         set(state2 => ({
           identityNodes: updatedNodes,
           lastLookupResult: result,
@@ -1069,7 +1077,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             state2.auditLogs,
             actorName,
             'LOOKUP',
-            `[${state.activeService}] Consulta de riesgo — Tokens: [${tokensList || 'tok_blind'}] → Score: ${result.breakdown.finalScore} (${result.breakdown.riskLevel}) [${result.breakdown.recommendation}]`
+            `[${state.activeService}] Consulta de riesgo${reasonTag} — Tokens: [${tokensList || 'tok_blind'}] → Score: ${result.breakdown.finalScore} (${result.breakdown.riskLevel}) [${result.breakdown.recommendation}]`
           ),
         }));
 
@@ -1092,7 +1100,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
               timestamp: new Date().toISOString(),
               actor: actorName,
               action: 'LOOKUP',
-              details: `[${state.activeService}] Consulta de riesgo — Tokens: [${tokensList || 'tok_blind'}] → Score: ${result.breakdown.finalScore} (${result.breakdown.riskLevel}) [${result.breakdown.recommendation}]`,
+              details: `[${state.activeService}] Consulta de riesgo${reasonTag} — Tokens: [${tokensList || 'tok_blind'}] → Score: ${result.breakdown.finalScore} (${result.breakdown.riskLevel}) [${result.breakdown.recommendation}]`,
             },
             scope: state.activeService,
           }).catch(err => console.warn('[Supabase Sync Lookup]:', err));
@@ -1101,7 +1109,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         return result;
       },
 
-      reportFraud: async ({ dni, email, phone, ip, cbu, device, cuit, incidentCategory, internalTicketId, incidentId }) => {
+      reportFraud: async ({ dni, email, phone, ip, cbu, device, cuit, incidentCategory, internalTicketId, incidentId, incidentDate, certaintyLevel, amount, currency }) => {
         const state = get();
         const fintechId = state.partnerSession?.entityId || state.activeFintechId || (state.fintechs[0]?.id) || 'entidad-emisora';
         const fintech = state.fintechs.find(f => f.id === fintechId);
@@ -1143,16 +1151,20 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           cuitHash,
           reportedByEntityId: fintechId,
           incidentCategory,
-          uploadedFields: tokensList || 'Token Criptográfico ZK',
+          uploadedFields: tokensList || 'Token Criptográfico Ciego',
           uploadMethod: 'MANUAL',
           entityName: actorName,
           scope: state.activeService,
         });
 
-        // Asignar ticket interno e incidentId común para análisis de grafos
+        // Asignar ticket interno, incidentId y metadatos bancarios
         newEdges.forEach(e => {
           e.internalTicketId = internalTicketId;
           e.incidentId = incidentId;
+          e.incidentDate = incidentDate || new Date().toISOString().split('T')[0];
+          e.certaintyLevel = certaintyLevel || 'CONFIRMED';
+          e.amount = amount;
+          e.currency = currency || 'ARS';
         });
 
         // Registrar device-CUIT link si ambos están presentes
@@ -1179,6 +1191,9 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         if (deviceHash) updatedNodes = upsertIdentityNode(updatedNodes, 'DEVICE', deviceHash, false);
         if (cuitHash) updatedNodes = upsertIdentityNode(updatedNodes, 'CUIT', cuitHash, false);
 
+        const certaintyText = certaintyLevel ? ` [Certeza: ${certaintyLevel}]` : '';
+        const amountText = amount ? ` [Monto: ${amount} ${currency || 'ARS'}]` : '';
+
         set(state2 => ({
           graphEdges: [...state2.graphEdges, ...newEdges],
           identityNodes: updatedNodes,
@@ -1190,7 +1205,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             state2.auditLogs,
             actorName,
             'FRAUD_REPORT',
-            `[${state.activeService}] Reporte ${incidentCategory} ingresado ${internalTicketId ? `(Ticket: ${internalTicketId})` : ''} — Tokens: [${tokensList || 'tok_blind'}] (${newEdges.length} aristas creadas)`
+            `[${state.activeService}] Reporte ${incidentCategory} ingresado ${internalTicketId ? `(Ticket: ${internalTicketId})` : ''}${certaintyText}${amountText} — Tokens: [${tokensList || 'tok_blind'}] (${newEdges.length} aristas creadas)`
           ),
         }));
 
@@ -1220,6 +1235,11 @@ export const useConsortiumStore = create<ConsortiumStore>()(
             scope: state.activeService,
           }).catch(err => console.warn('[Supabase Sync Report]:', err));
         }
+      },
+
+      retractFraudReport: async (edgeId: string, reason?: string) => {
+        get().markFalsePositive(edgeId, reason || 'Rectificación / retiro voluntario por entidad emisora');
+        return { success: true, message: 'Reporte retirado y marcado como rectificado en la red.' };
       },
 
       markFalsePositive: (edgeId: string, reason?: string) => {
