@@ -240,13 +240,22 @@ export default function AdminConsortiumPortal({ onLogout }: AdminConsortiumPorta
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Real-time sync badge */}
-            <div className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 font-mono text-[11px]" title="Sincronización WebSocket en tiempo real activa">
+            {/* Estado de Conexión Real */}
+            <div
+              className={`hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-mono text-[11px] ${
+                supabaseStatus === 'CONNECTED'
+                  ? 'bg-emerald-950/60 border border-emerald-500/40 text-emerald-300'
+                  : 'bg-amber-950/60 border border-amber-500/40 text-amber-300'
+              }`}
+              title={supabaseStatus === 'CONNECTED' ? `Conexión a Supabase activa (${supabaseLatencyMs}ms)` : 'Modo local seguro ZK'}
+            >
               <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                {supabaseStatus === 'CONNECTED' && (
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                )}
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${supabaseStatus === 'CONNECTED' ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
               </span>
-              <span>Real-Time Activo</span>
+              <span>{supabaseStatus === 'CONNECTED' ? `Supabase en Vivo (${supabaseLatencyMs}ms)` : 'Modo Local ZK'}</span>
             </div>
 
             {/* Acceso Rápido al Control de Scores */}

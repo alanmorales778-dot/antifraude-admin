@@ -591,8 +591,9 @@ export const useConsortiumStore = create<ConsortiumStore>()(
                   },
                 });
 
-                // Polling Heartbeat Fallback cada 4 segundos para asegurar consistencia multi-nodo
+                // Polling Heartbeat Fallback cada 20 segundos (únicamente cuando la pestaña está activa)
                 setInterval(async () => {
+                  if (typeof document !== 'undefined' && document.hidden) return;
                   try {
                     const data = await SupabaseService.loadAllData(get().activeService);
                     if (data) {
@@ -616,7 +617,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
                       }
                     }
                   } catch {}
-                }, 4000);
+                }, 20000);
               }
 
               return;

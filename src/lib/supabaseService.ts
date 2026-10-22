@@ -50,14 +50,24 @@ export class SupabaseService {
     if (!this.isAvailable()) return null;
 
     try {
-      // Si entityId está presente (sesión de analista bancario), filtrar aristas y alertas por scope o pertenencia
-      const edgesQuery = entityId
-        ? `graph_edges?select=*&or=(scope.eq.CONSORTIUM,reported_by_entity_id.eq.${entityId})&order=timestamp.desc&limit=1000`
-        : 'graph_edges?select=*&order=timestamp.desc&limit=1000';
+      // Segregación estricta por entorno:
+      // En "Workspace Interno" (scope === 'INTERNAL'):
+      // Las consultas a Supabase deben incluir el filtro WHERE entity_id = id_entidad_actual
+      // En "Consorcio Federal" (scope === 'CONSORTIUM'):
+      // Las consultas evalúan la red completa
+      let edgesQuery = 'graph_edges?select=*&order=timestamp.desc&limit=1000';
+      let alertsQuery = 'network_alerts?select=*&order=created_at.desc';
+      let auditQuery = 'audit_logs?select=*&order=timestamp.desc&limit=200';
 
-      const alertsQuery = entityId
-        ? `network_alerts?select=*&or=(scope.eq.CONSORTIUM,created_by_entity_id.eq.${entityId})&order=created_at.desc`
-        : 'network_alerts?select=*&order=created_at.desc';
+      if (scope === 'INTERNAL' && entityId) {
+        edgesQuery = `graph_edges?select=*&reported_by_entity_id=eq.${encodeURIComponent(entityId)}&order=timestamp.desc&limit=1000`;
+        alertsQuery = `network_alerts?select=*&created_by_entity_id=eq.${encodeURIComponent(entityId)}&order=created_at.desc`;
+        auditQuery = `audit_logs?select=*&or=(actor.eq.${encodeURIComponent(entityId)},details.ilike.*${encodeURIComponent(entityId)}*)&order=timestamp.desc&limit=200`;
+      } else {
+        edgesQuery = 'graph_edges?select=*&order=timestamp.desc&limit=1000';
+        alertsQuery = 'network_alerts?select=*&order=created_at.desc';
+        auditQuery = 'audit_logs?select=*&order=timestamp.desc&limit=200';
+      }
 
       const [
         fintechsRes,
@@ -73,7 +83,7 @@ export class SupabaseService {
         supabaseFetch<any[]>('identity_nodes?select=*'),
         supabaseFetch<any[]>(edgesQuery),
         supabaseFetch<any[]>(alertsQuery),
-        supabaseFetch<any[]>('audit_logs?select=*&order=timestamp.desc&limit=200'),
+        supabaseFetch<any[]>(auditQuery),
         supabaseFetch<any[]>('device_cuit_links?select=*&order=timestamp.desc&limit=1000'),
         supabaseFetch<any[]>('app_users?select=*'),
         supabaseFetch<any[]>('scoring_config?id=eq.consortium_baseline&limit=1'),

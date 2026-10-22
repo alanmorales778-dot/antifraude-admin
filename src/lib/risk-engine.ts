@@ -99,11 +99,13 @@ export async function evaluateRisk(
   // Variable 3: Gravedad del Evento (25%)
   const severityScore = rehabilitated ? 15 : (primaryReason ? getTypologyBaseScore(primaryReason) : 0);
 
-  // Variable 4: Recencia / Decaimiento Temporal (10%)
+  // Variable 4: Recencia / Decaimiento Temporal Real (10%)
   let recencyScore = 100;
+  let timeDecayFactor = 1.0;
   if (lastReportedAt) {
     const daysSince = Math.max(0, (Date.now() - new Date(lastReportedAt).getTime()) / (1000 * 60 * 60 * 24));
-    recencyScore = Math.max(10, Math.round(100 - daysSince * 3.2));
+    timeDecayFactor = Math.exp(-0.005 * daysSince);
+    recencyScore = Math.max(5, Math.round(100 * timeDecayFactor));
   } else {
     recencyScore = 0;
   }
@@ -112,13 +114,16 @@ export async function evaluateRisk(
   const emailVerification = type === 'EMAIL' ? verifyEmailExistence(rawValue, (entity as any)?.firstSeen || entity?.firstReportedAt) : undefined;
   const emailPenalty = emailVerification ? emailVerification.scorePenalty : 0;
 
-  // Ponderación final (0 a 100) - Calibración ML v2.1
+  // Ponderación final (0 a 100) - Calibración ML v2.1 con Decaimiento Temporal Real
   let calculatedScore = 0;
   if (entity && !rehabilitated) {
+    // A medida que pasan los meses sin incidentes, la severidad histórica decae exponencialmente
+    const decayedSeverity = severityScore * timeDecayFactor;
+    const decayedConsensus = consensusScore * (timeDecayFactor < 0.5 ? Math.max(0.15, timeDecayFactor) : 1.0);
     calculatedScore = Math.round(
-      consensusScore * 0.45 +
+      decayedConsensus * 0.45 +
       velocityScore * 0.20 +
-      severityScore * 0.25 +
+      decayedSeverity * 0.25 +
       recencyScore * 0.10
     );
     calculatedScore = Math.min(100, Math.max(5, calculatedScore + emailPenalty));

@@ -220,6 +220,7 @@ function SingleLookupView() {
   const [okLoading, setOkLoading] = useState(false);
   const [okDone, setOkDone] = useState(false);
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
+  const [showGeneralTechnicalDetails, setShowGeneralTechnicalDetails] = useState(false);
 
   const isInternal = activeService === 'INTERNAL';
 
@@ -1204,7 +1205,7 @@ function SingleLookupView() {
                     </div>
                     <div>
                       <span className="text-sm font-bold text-white block">
-                        Ver desglose técnico y auditoría
+                        Ver auditoría de cálculo
                       </span>
                       <p className="text-[11px] text-slate-400 mt-0.5">
                         Detalle del motor matemático (4 dimensiones), tokens ZK y telemetría de red
@@ -1212,7 +1213,7 @@ function SingleLookupView() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 group-hover:text-cyan-300 transition">
-                    <span>{showTechnicalDetails ? 'Ocultar auditoría' : 'Expandir desglose'}</span>
+                    <span>{showTechnicalDetails ? 'Ocultar auditoría' : 'Ver auditoría de cálculo'}</span>
                     <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${showTechnicalDetails ? 'rotate-180 text-cyan-400' : ''}`} />
                   </div>
                 </button>
@@ -1465,11 +1466,11 @@ function SingleLookupView() {
               </div>
             </div>
 
-            {/* Score de Riesgo: Entidad vs Consorcio */}
+            {/* Score de Riesgo: Aislamiento Estricto por Entorno */}
             <div className="space-y-4">
-              <div className={`grid gap-4 ${isInternal ? 'grid-cols-1 max-w-xl mx-auto' : 'grid-cols-1 md:grid-cols-2'}`}>
-                {/* Score 1: Según la Entidad */}
-                {(() => {
+              <div className="max-w-xl mx-auto w-full">
+                {/* 1. Si el usuario está en "Workspace Interno", renderizá ÚNICAMENTE el componente del Score de la Entidad */}
+                {isInternal && (() => {
                   const internalBadge = internalScore >= 70
                     ? { text: 'ALTO RIESGO PROPIO', color: 'bg-rose-500/20 text-rose-300 border-rose-500/40' }
                     : internalScore >= 30
@@ -1479,15 +1480,15 @@ function SingleLookupView() {
                   return (
                     <ScoreGauge
                       score={internalScore}
-                      title="1. Score de la Entidad"
-                      subtitle={`Basado en los reportes y antecedentes internos cargados por tu entidad (${activeFintech?.name || 'Tu Entidad'}).`}
+                      title="Score de la Entidad"
+                      subtitle={`Evaluación basada exclusivamente en los antecedentes internos cargados por ${activeFintech?.name || 'tu entidad'}.`}
                       badge={internalBadge}
                       icon={Building2}
                     />
                   );
                 })()}
 
-                {/* Score 2: Del Consorcio Federal */}
+                {/* 2. Si el usuario está en "Consorcio Federal", renderizá ÚNICAMENTE el componente del Score del Consorcio */}
                 {!isInternal && (() => {
                   const consortiumBadge = consortiumScore >= 70
                     ? { text: 'ALERTA CONSORCIO', color: 'bg-rose-500/20 text-rose-300 border-rose-500/40' }
@@ -1498,8 +1499,8 @@ function SingleLookupView() {
                   return (
                     <ScoreGauge
                       score={consortiumScore}
-                      title="2. Score del Consorcio"
-                      subtitle="Calculado con la inteligencia colectiva y cruces ZK aportados por todo el Consorcio."
+                      title="Score del Consorcio"
+                      subtitle="Calculado con la inteligencia colectiva y cruces criptográficos aportados por toda la Red Federal."
                       badge={consortiumBadge}
                       icon={Network}
                     />
@@ -1507,41 +1508,34 @@ function SingleLookupView() {
                 })()}
               </div>
 
-              {/* Banner Comparativo */}
-              {!isInternal && (() => {
-                if (internalScore < 30 && consortiumScore >= 70) {
-                  return (
-                    <div className="rounded-xl border border-rose-500/40 bg-rose-950/40 p-3.5 text-xs text-rose-200 flex items-start gap-3 shadow-lg">
-                      <ShieldAlert className="h-5 w-5 text-rose-400 shrink-0 mt-0.5 animate-pulse" />
-                      <div>
-                        <span className="font-bold text-rose-300 uppercase tracking-wide block">
-                          🛡️ Detección Preventiva del Consorcio Federal
-                        </span>
-                        <p className="mt-0.5 text-rose-200/90 leading-relaxed text-[11px]">
-                          Tu entidad no registraba este identificador como fraude interno, pero la Red Federal del Consorcio detectó antecedentes críticos reportados por otras entidades financieras.
-                        </p>
-                      </div>
-                    </div>
-                  );
-                }
-                return null;
-              })()}
-
-              {/* Badge + Controles de Acción */}
+              {/* Barra unificada de Decisión y Ámbito */}
               <div className="flex items-center flex-wrap gap-2.5 pt-1">
                 <span className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-sm font-bold ${rec.class}`}>
                   <span>{rec.icon}</span>
                   {rec.text}
                 </span>
 
-                <span className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-bold ${
+                <span className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold ${
                   result.scope === 'INTERNAL'
                     ? 'bg-indigo-500/15 border-indigo-500/25 text-indigo-300'
                     : 'bg-cyan-500/15 border-cyan-500/25 text-cyan-300'
                 }`}>
-                  {result.scope === 'INTERNAL' ? <Building2 className="h-3 w-3" /> : <Network className="h-3 w-3" />}
-                  {result.scope === 'INTERNAL' ? 'VISTA: ESPACIO INTERNO' : 'VISTA: CONSORCIO FEDERAL'}
+                  {result.scope === 'INTERNAL' ? <Building2 className="h-3.5 w-3.5" /> : <Network className="h-3.5 w-3.5" />}
+                  {result.scope === 'INTERNAL' ? 'VISTA: WORKSPACE INTERNO' : 'VISTA: CONSORCIO FEDERAL'}
                 </span>
+              </div>
+
+              {/* Resumen limpio de Tipologías detectadas y Último incidente */}
+              <div className="rounded-xl bg-slate-950/70 border border-white/10 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert className="h-4 w-4 text-amber-400 shrink-0" />
+                  <span className="text-xs font-bold text-slate-300">Tipologías detectadas:</span>
+                  <span className="text-xs font-semibold text-white">{predominantTypology}</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                  <Clock className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                  <span>Último incidente: <strong className="text-white">{lastIncidentText}</strong></span>
+                </div>
               </div>
             </div>
 
@@ -1619,20 +1613,19 @@ function SingleLookupView() {
                       </div>
 
                       {detail.matched ? (
-                        <div className="text-[11px] text-rose-300/90 space-y-0.5">
-                          <p>Reportado en: <strong>{detail.distinctEntitiesCount}</strong> entidad(es)</p>
-                          {detail.categories.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {detail.categories.map(c => (
-                                <span key={c} className="rounded bg-rose-500/30 px-1.5 py-0.2 text-[9px] font-bold text-rose-200">
-                                  {c.replace(/_/g, ' ')}
-                                </span>
-                              ))}
-                            </div>
-                          )}
+                        <div className="text-[11px] text-slate-300 space-y-1">
+                          <p>Reportado en: <strong className="text-white">{detail.distinctEntitiesCount}</strong> entidad(es)</p>
+                          <p>
+                            <span className="text-slate-400 font-medium">Tipologías detectadas:</span>{' '}
+                            <strong className="text-rose-300 font-semibold">
+                              {detail.categories.length > 0
+                                ? detail.categories.map(c => CATEGORY_TRANSLATIONS[c] || c.replace(/_/g, ' ')).join(', ')
+                                : 'Cuenta Mula'}
+                            </strong>
+                          </p>
                         </div>
                       ) : (
-                        <p className="text-[11px] text-emerald-400/90">
+                        <p className="text-[11px] text-emerald-400/90 font-medium">
                           Identificador sin antecedentes en la red.
                         </p>
                       )}
@@ -1642,42 +1635,70 @@ function SingleLookupView() {
               </div>
             )}
 
-            {/* Factores del Motor de Scoring v2 — 4 Dimensiones */}
-            <div className="space-y-1.5 text-xs bg-black/30 rounded-xl p-3 border border-white/5">
-              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Desglose del Motor Matemático (4 Dimensiones)</div>
+            {/* ── DESGLOSE TÉCNICO COLAPSABLE: VER AUDITORÍA DE CÁLCULO ── */}
+            <div className="rounded-2xl border border-white/10 bg-slate-950/60 overflow-hidden shadow-xl transition">
+              <button
+                type="button"
+                onClick={() => setShowGeneralTechnicalDetails(!showGeneralTechnicalDetails)}
+                className="w-full flex items-center justify-between p-4 px-5 text-left hover:bg-white/[0.03] transition group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-800 text-slate-300 border border-white/5 group-hover:border-cyan-500/30 transition">
+                    <Sliders className="h-4 w-4 text-cyan-400" />
+                  </div>
+                  <div>
+                    <span className="text-sm font-bold text-white block">
+                      Ver auditoría de cálculo
+                    </span>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Detalle del motor matemático (4 dimensiones), pesos y decaimiento temporal
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 group-hover:text-cyan-300 transition">
+                  <span>{showGeneralTechnicalDetails ? 'Ocultar auditoría' : 'Ver auditoría de cálculo'}</span>
+                  <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${showGeneralTechnicalDetails ? 'rotate-180 text-cyan-400' : ''}`} />
+                </div>
+              </button>
 
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400 flex items-center gap-1">
-                  <span className="text-[10px]">①</span> Severidad Base (con Time Decay)
-                  {result.breakdown.timeDecayApplied && (
-                    <span className="ml-1 rounded bg-slate-600/30 px-1 py-0.5 text-[9px] font-bold text-slate-400 border border-slate-500/20">DECAY ×{result.breakdown.timeDecayFactor.toFixed(2)}</span>
-                  )}
-                </span>
-                <span className="font-mono font-bold text-slate-200">+{result.breakdown.historicalReportsScore} pts</span>
-              </div>
+              {showGeneralTechnicalDetails && (
+                <div className="p-4 border-t border-white/10 space-y-2 text-xs bg-black/40 animate-fade-in">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Desglose del Motor Matemático (4 Dimensiones)</div>
 
-              <div className="flex items-center justify-between">
-                <span className={`flex items-center gap-1 ${result.breakdown.mismatchDetected ? 'text-rose-400 font-semibold' : 'text-slate-500'}`}>
-                  <span className="text-[10px]">②</span> Discrepancia de Identidad
-                  {result.breakdown.mismatchDetected && <span className="ml-1 rounded bg-rose-500/20 px-1 py-0.5 text-[10px] font-bold text-rose-400 border border-rose-500/30">DETECTADO</span>}
-                </span>
-                <span className={`font-mono font-bold ${result.breakdown.mismatchDetected ? 'text-rose-400' : 'text-slate-600'}`}>+{result.breakdown.mismatchPenalty} pts</span>
-              </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 flex items-center gap-1">
+                      <span className="text-[10px]">①</span> Severidad Base (con Time Decay)
+                      {result.breakdown.timeDecayApplied && (
+                        <span className="ml-1 rounded bg-slate-600/30 px-1 py-0.5 text-[9px] font-bold text-slate-400 border border-slate-500/20">DECAY ×{result.breakdown.timeDecayFactor.toFixed(2)}</span>
+                      )}
+                    </span>
+                    <span className="font-mono font-bold text-slate-200">+{result.breakdown.historicalReportsScore} pts</span>
+                  </div>
 
-              <div className="flex items-center justify-between">
-                <span className={`flex items-center gap-1 ${result.breakdown.velocityTriggered ? 'text-amber-400 font-semibold' : 'text-slate-500'}`}>
-                  <span className="text-[10px]">②</span> Velocity Spike
-                  {result.breakdown.velocityTriggered && <span className="ml-1 rounded bg-amber-500/20 px-1 py-0.5 text-[10px] font-bold text-amber-400 border border-amber-500/30">ACTIVO</span>}
-                </span>
-                <span className={`font-mono font-bold ${result.breakdown.velocityTriggered ? 'text-amber-400' : 'text-slate-600'}`}>+{result.breakdown.velocityPenalty} pts</span>
-              </div>
+                  <div className="flex items-center justify-between">
+                    <span className={`flex items-center gap-1 ${result.breakdown.mismatchDetected ? 'text-rose-400 font-semibold' : 'text-slate-500'}`}>
+                      <span className="text-[10px]">②</span> Discrepancia de Identidad
+                      {result.breakdown.mismatchDetected && <span className="ml-1 rounded bg-rose-500/20 px-1 py-0.5 text-[10px] font-bold text-rose-400 border border-rose-500/30">DETECTADO</span>}
+                    </span>
+                    <span className={`font-mono font-bold ${result.breakdown.mismatchDetected ? 'text-rose-400' : 'text-slate-600'}`}>+{result.breakdown.mismatchPenalty} pts</span>
+                  </div>
 
-              <div className="border-t border-white/10 pt-2 flex items-center justify-between font-bold">
-                <span className="text-white">Score Final Computado</span>
-                <span className="font-mono text-sm" style={{ color: scoreColor(result.breakdown.finalScore) }}>
-                  {result.breakdown.finalScore} / 100
-                </span>
-              </div>
+                  <div className="flex items-center justify-between">
+                    <span className={`flex items-center gap-1 ${result.breakdown.velocityTriggered ? 'text-amber-400 font-semibold' : 'text-slate-500'}`}>
+                      <span className="text-[10px]">②</span> Velocity Spike
+                      {result.breakdown.velocityTriggered && <span className="ml-1 rounded bg-amber-500/20 px-1 py-0.5 text-[10px] font-bold text-amber-400 border border-amber-500/30">ACTIVO</span>}
+                    </span>
+                    <span className={`font-mono font-bold ${result.breakdown.velocityTriggered ? 'text-amber-400' : 'text-slate-600'}`}>+{result.breakdown.velocityPenalty} pts</span>
+                  </div>
+
+                  <div className="border-t border-white/10 pt-2 flex items-center justify-between font-bold">
+                    <span className="text-white">Score Final Computado</span>
+                    <span className="font-mono text-sm" style={{ color: scoreColor(result.breakdown.finalScore) }}>
+                      {result.breakdown.finalScore} / 100
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Resumen Comunitario ZK */}

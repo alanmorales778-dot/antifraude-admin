@@ -96,16 +96,29 @@ function timeDecayFactor(isoTimestamp: string): number {
 
 /**
  * Aplica decaimiento con piso residual según la categoría.
+ * A medida que pasan los meses y años desde el último incidente reportado,
+ * el Score Final Computado disminuye matemáticamente. Esto garantiza que
+ * identidades reportadas hace años no mantengan un score de 100 si no hubo reincidencia.
  */
 function applyDecayWithFloor(
   baseScore: number,
   isoTimestamp: string,
   category: IncidentCategory
 ): number {
+  const daysSince = Math.max(0, (Date.now() - new Date(isoTimestamp).getTime()) / (1000 * 60 * 60 * 24));
   const factor = timeDecayFactor(isoTimestamp);
   const decayed = baseScore * factor;
-  const floor = DECAY_FLOOR[category] ?? 0;
-  return Math.max(decayed, floor);
+
+  // Floor residual calibrado:
+  // Durante los primeros 90 días, el piso protege contra decaimiento prematuro.
+  // Pasados los 90 días (~3 meses), el piso decae progresivamente para que a los 6-12+ meses
+  // la identidad no retenga scores artificialmente altos.
+  const baseFloor = DECAY_FLOOR[category] ?? 0;
+  const residualFloor = daysSince > 90
+    ? baseFloor * Math.exp(-0.005 * (daysSince - 90))
+    : baseFloor;
+
+  return Math.max(decayed, residualFloor);
 }
 
 // ─────────────────────────────────────────────────────────────────

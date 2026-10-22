@@ -293,8 +293,8 @@ export default function UnifiedLogin({
 
           <div className="flex items-center gap-2.5">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#062c1d] border border-[#0f5132] text-[#34d399] font-mono text-[11px]">
-              <span className="w-2 h-2 rounded-full bg-[#10b981] animate-pulse" />
-              Red Federal Activa
+              <span className="w-2 h-2 rounded-full bg-[#10b981]" />
+              Protección ZK Activa
             </span>
           </div>
         </div>

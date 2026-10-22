@@ -102,8 +102,18 @@ export function clearSupabaseConfig(): void {
   localStorage.removeItem(STORAGE_KEY_KEY);
 }
 
+// Cache en memoria para endpoints que no existen (404 / PGRST205) para evitar saturar la consola con bucles
+const _missingEndpointsCache = new Map<string, number>();
+
 /**
- * Realiza una petición REST autenticada a la API PostgREST de Supabase
+ * Invalida el cache de tablas faltantes (útil tras ejecutar una migración)
+ */
+export function resetMissingEndpointsCache(): void {
+  _missingEndpointsCache.clear();
+}
+
+/**
+ * Realiza una petición REST autenticada a la API PostgREST de Supabase con reintentos y backoff
  */
 export async function supabaseFetch<T = any>(
   endpoint: string,
@@ -112,6 +122,7 @@ export async function supabaseFetch<T = any>(
     body?: any;
     headers?: Record<string, string>;
     prefer?: string;
+    maxRetries?: number;
   } = {}
 ): Promise<{ data: T | null; error: string | null; status: number }> {
   const config = getSupabaseConfig();
@@ -119,10 +130,21 @@ export async function supabaseFetch<T = any>(
     return { data: null, error: 'Supabase no está configurado', status: 400 };
   }
 
-  const { method = 'GET', body, headers = {}, prefer } = options;
+  const { method = 'GET', body, headers = {}, prefer, maxRetries = 2 } = options;
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  const fullUrl = `${config.url}/rest/v1${cleanEndpoint}`;
+  const baseTable = cleanEndpoint.split('?')[0];
 
+  // Si este endpoint ya respondió 404 recientemente, no insistir en bucle (cache de 45 segundos)
+  const cachedMissingUntil = _missingEndpointsCache.get(baseTable);
+  if (cachedMissingUntil && Date.now() < cachedMissingUntil && method === 'GET') {
+    return {
+      data: null,
+      error: `La tabla o recurso '${baseTable}' no existe en el esquema remoto de Supabase`,
+      status: 404,
+    };
+  }
+
+  const fullUrl = `${config.url}/rest/v1${cleanEndpoint}`;
   const requestHeaders: Record<string, string> = {
     'apikey': config.anonKey,
     'Authorization': `Bearer ${config.anonKey}`,
@@ -134,38 +156,72 @@ export async function supabaseFetch<T = any>(
     requestHeaders['Prefer'] = prefer;
   }
 
-  try {
-    const res = await fetch(fullUrl, {
-      method,
-      headers: requestHeaders,
-      body: body ? JSON.stringify(body) : undefined,
-    });
+  let attempt = 0;
+  let lastError = '';
+  let lastStatus = 0;
 
-    if (!res.ok) {
-      let errorMsg = `Error ${res.status}: ${res.statusText}`;
-      try {
-        const errorJson = await res.json();
-        errorMsg = errorJson.message || errorJson.details || errorMsg;
-      } catch {
-        // Fallback a texto
+  while (attempt <= maxRetries) {
+    try {
+      const res = await fetch(fullUrl, {
+        method,
+        headers: requestHeaders,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+
+      // Si status es 404 (tabla no creada en Supabase / PGRST205)
+      if (res.status === 404) {
+        _missingEndpointsCache.set(baseTable, Date.now() + 45000);
+        let errorMsg = `Tabla no encontrada (404): ${baseTable}`;
+        try {
+          const errJson = await res.json();
+          errorMsg = errJson.message || errorMsg;
+        } catch {}
+        return { data: null, error: errorMsg, status: 404 };
       }
-      return { data: null, error: errorMsg, status: res.status };
+
+      if (!res.ok) {
+        let errorMsg = `Error ${res.status}: ${res.statusText}`;
+        try {
+          const errorJson = await res.json();
+          errorMsg = errorJson.message || errorJson.details || errorMsg;
+        } catch {}
+
+        // Errores de cliente (400, 401, 403, 409) no deben reintentarse
+        if (res.status >= 400 && res.status < 500) {
+          return { data: null, error: errorMsg, status: res.status };
+        }
+
+        lastError = errorMsg;
+        lastStatus = res.status;
+      } else {
+        // Éxito: limpiar del cache de tablas faltantes por si acababa de crearse
+        _missingEndpointsCache.delete(baseTable);
+
+        if (res.status === 204) {
+          return { data: null, error: null, status: res.status };
+        }
+
+        const data = await res.json();
+        return { data, error: null, status: res.status };
+      }
+    } catch (err: any) {
+      lastError = err?.message || 'Error de red conectando a Supabase';
+      lastStatus = 0;
     }
 
-    // Si status es 204 No Content
-    if (res.status === 204) {
-      return { data: null, error: null, status: res.status };
+    attempt++;
+    if (attempt <= maxRetries) {
+      // Backoff exponencial: 350ms, 900ms
+      const delay = Math.pow(2.5, attempt) * 150;
+      await new Promise(r => setTimeout(r, delay));
     }
-
-    const data = await res.json();
-    return { data, error: null, status: res.status };
-  } catch (err: any) {
-    return {
-      data: null,
-      error: err?.message || 'Error de red conectando a Supabase',
-      status: 0,
-    };
   }
+
+  return {
+    data: null,
+    error: lastError || 'Error tras reintentos con Supabase',
+    status: lastStatus,
+  };
 }
 
 /**

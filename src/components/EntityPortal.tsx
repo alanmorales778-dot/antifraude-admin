@@ -30,6 +30,7 @@ import ConsortiumLogo from '@/components/ConsortiumLogo';
 import SessionTimeoutGuard from '@/components/SessionTimeoutGuard';
 import { useConsortiumStore } from '@/lib/store';
 import { ServiceScope, FintechEntity } from '@/lib/types';
+import { testSupabaseConnection } from '@/lib/supabaseClient';
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, description: 'KPIs y estadísticas' },
@@ -343,18 +344,27 @@ export default function EntityPortal({
               {isInternal ? 'WORKSPACE INTERNO' : 'CONSORCIO FEDERAL'}
             </div>
 
-            {/* Real-time sync badge */}
-            <div className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 font-mono text-[11px]" title="Sincronización WebSocket en tiempo real activa">
+            {/* Conexión Supabase Real */}
+            <div
+              className={`hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-mono text-[11px] ${
+                supabaseStatus === 'CONNECTED'
+                  ? 'bg-emerald-950/60 border border-emerald-500/40 text-emerald-300'
+                  : 'bg-amber-950/60 border border-amber-500/40 text-amber-300'
+              }`}
+              title={supabaseStatus === 'CONNECTED' ? `Conexión a Supabase activa (${supabaseLatencyMs}ms)` : 'Modo local seguro ZK'}
+            >
               <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                {supabaseStatus === 'CONNECTED' && (
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                )}
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${supabaseStatus === 'CONNECTED' ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
               </span>
-              <span>Real-Time Sync Activo</span>
+              <span>{supabaseStatus === 'CONNECTED' ? `Supabase en Vivo (${supabaseLatencyMs}ms)` : 'Modo Seguro Local (ZK)'}</span>
             </div>
 
             <span className="flex items-center gap-1.5 text-[11px] text-[#718096] font-mono">
-              <span className="w-2 h-2 rounded-full bg-[#48bb78] animate-pulse" />
-              Red Federal Activa
+              <span className={`w-2 h-2 rounded-full ${isInternal ? 'bg-blue-400' : 'bg-[#48bb78] animate-pulse'}`} />
+              {isInternal ? 'Workspace Interno' : 'Red Federal Activa'}
             </span>
           </div>
         </header>
