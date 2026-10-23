@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Reunión con Gerencia de Prevención de Fraude - Minuta Ejecutiva</title>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 16mm 14mm 16mm 14mm;
+      @bottom-right {
+        content: counter(page);
+      }
+    }
+    
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #1e293b;
+      background-color: #ffffff;
+      line-height: 1.5;
+      font-size: 10pt;
+    }
+
+    .header {
+      border-bottom: 2px solid #0284c7;
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+    }
+
+    .header-tag {
+      font-size: 8pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #0284c7;
+      margin-bottom: 4px;
+    }
+
+    .header h1 {
+      font-size: 18pt;
+      font-weight: 800;
+      color: #0f172a;
+      line-height: 1.2;
+    }
+
+    .header-meta {
+      margin-top: 8px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      font-size: 8.5pt;
+      color: #64748b;
+    }
+
+    .header-meta span strong {
+      color: #334155;
+    }
+
+    h2 {
+      font-size: 13pt;
+      font-weight: 800;
+      color: #0f172a;
+      border-bottom: 1.5px solid #e2e8f0;
+      padding-bottom: 4px;
+      margin-top: 18px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    h2 .section-letter {
+      background: #0284c7;
+      color: white;
+      width: 20px;
+      height: 20px;
+      border-radius: 4px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9pt;
+      font-weight: 800;
+    }
+
+    h3 {
+      font-size: 10.5pt;
+      font-weight: 700;
+      color: #1e293b;
+      margin-top: 12px;
+      margin-bottom: 6px;
+    }
+
+    p {
+      margin-bottom: 8px;
+      font-size: 9.5pt;
+      color: #334155;
+      text-align: justify;
+    }
+
+    .highlight-box {
+      background: #f8fafc;
+      border-left: 4px solid #0284c7;
+      border-radius: 4px;
+      padding: 10px 12px;
+      margin: 10px 0;
+      font-size: 9pt;
+    }
+
+    .alert-box {
+      background: #fff1f2;
+      border-left: 4px solid #e11d48;
+      border-radius: 4px;
+      padding: 10px 12px;
+      margin: 10px 0;
+      font-size: 9pt;
+      color: #881337;
+    }
+
+    .score-cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin: 10px 0 14px 0;
+    }
+
+    .score-card {
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 8px 10px;
+      background: #ffffff;
+    }
+
+    .score-card.green {
+      border-top: 4px solid #10b981;
+      background: #f0fdf4;
+    }
+
+    .score-card.yellow {
+      border-top: 4px solid #f59e0b;
+      background: #fffbeb;
+    }
+
+    .score-card.red {
+      border-top: 4px solid #ef4444;
+      background: #fef2f2;
+    }
+
+    .score-card-title {
+      font-size: 8.5pt;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .score-card.green .score-card-title { color: #047857; }
+    .score-card.yellow .score-card-title { color: #b45309; }
+    .score-card.red .score-card-title { color: #b91c1c; }
+
+    .score-range {
+      font-size: 14pt;
+      font-weight: 800;
+      margin: 2px 0 4px 0;
+      color: #0f172a;
+    }
+
+    .score-action {
+      font-size: 8pt;
+      color: #475569;
+      line-height: 1.3;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0 14px 0;
+      font-size: 8.5pt;
+    }
+
+    th {
+      background: #0f172a;
+      color: #ffffff;
+      font-weight: 700;
+      text-align: left;
+      padding: 6px 8px;
+      font-size: 8pt;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    td {
+      padding: 6px 8px;
+      border-bottom: 1px solid #e2e8f0;
+      color: #334155;
+      vertical-align: top;
+    }
+
+    tr:nth-child(even) td {
+      background: #f8fafc;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 7.5pt;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .badge-ok { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
+    .badge-partial { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
+    .badge-demo { background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; }
+
+    .badge-alta { background: #fee2e2; color: #b91c1c; font-weight: 800; }
+    .badge-media { background: #fef3c7; color: #b45309; font-weight: 800; }
+    .badge-baja { background: #f1f5f9; color: #475569; font-weight: 800; }
+
+    .question-card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-left: 3px solid #6366f1;
+      border-radius: 4px;
+      padding: 8px 10px;
+      margin-bottom: 8px;
+      break-inside: avoid;
+    }
+
+    .question-title {
+      font-weight: 700;
+      font-size: 9pt;
+      color: #1e1b4b;
+      margin-bottom: 4px;
+    }
+
+    .question-list {
+      padding-left: 16px;
+      font-size: 8.5pt;
+      color: #334155;
+    }
+
+    .question-list li {
+      margin-bottom: 3px;
+    }
+
+    .roadmap-stage {
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      padding: 8px 10px;
+      margin-bottom: 8px;
+      background: #ffffff;
+      break-inside: avoid;
+    }
+
+    .roadmap-stage-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #f1f5f9;
+      padding-bottom: 4px;
+      margin-bottom: 4px;
+    }
+
+    .roadmap-stage-title {
+      font-size: 9pt;
+      font-weight: 800;
+      color: #0284c7;
+    }
+
+    .roadmap-stage-duration {
+      font-size: 8pt;
+      font-weight: 700;
+      color: #64748b;
+      background: #f1f5f9;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .avoid-break {
+      break-inside: avoid;
+    }
+
+    .page-break {
+      page-break-before: always;
+    }
+
+    ul {
+      margin-left: 16px;
+      margin-bottom: 8px;
+      font-size: 9pt;
+    }
+
+    li {
+      margin-bottom: 3px;
+    }
+
+    .formula-box {
+      font-family: Consolas, "Courier New", monospace;
+      background: #0f172a;
+      color: #38bdf8;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 8pt;
+      margin: 6px 0;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-tag">Documento de Trabajo • Comité de Prevención de Fraude</div>
+    <h1>Consorcio Federal Antifraude: Minuta Ejecutiva y Estado del Sistema</h1>
+    <div class="header-meta">
+      <span><strong>Destinataria:</strong> Gerencia de Prevención de Fraude & CISO</span>
+      <span><strong>Plataforma:</strong> antifraude-one.vercel.app</span>
+      <span><strong>Fecha:</strong> Octubre 2026</span>
+      <span><strong>Nivel de Acceso:</strong> Confidencial / Bancario</span>
+    </div>
+  </div>
+
+  <!-- SECCIÓN A -->
+  <div class="avoid-break">
+    <h2><span class="section-letter">A</span> ¿Qué hace hoy el sistema? (Explicación para Negocio)</h2>
+    <p>
+      El sistema funciona como una <strong>red interbancaria de alerta temprana y defensa cruzada</strong> entre entidades financieras (Bancos, Billeteras Virtuales y PSPs). Su misión principal es detectar y bloquear transferencias hacia cuentas puente ("mulas"), usurpaciones de identidad y bandas organizadas <strong>en tiempo real (&lt;15ms)</strong>, antes de que el dinero sea retirado del circuito bancario.
+    </p>
+  </div>
+
+  <div class="highlight-box avoid-break">
+    <strong>1. Datos Analizados con Privacidad Absoluta (Secreto Bancario & Ley 25.326):</strong>
+    <p style="margin-top: 4px; margin-bottom: 4px;">
+      El consorcio <strong>nunca almacena ni transmite datos personales en texto claro</strong>. Cada identificador (CBU/CVU de 22 dígitos con Módulo 10 BCRA, CUIT/CUIL con Módulo 11 AFIP, DNI, Email, Teléfono, IP y Huella Digital de Dispositivo) es transformado en origen en un <strong>Token Ciego Irreversible (HMAC-SHA256 con Pepper custodiado en KMS y Separación de Dominio)</strong>. Dos bancos pueden comprobar si comparten un atacante sin relevar la identidad de sus clientes.
+    </p>
+    <div class="formula-box">
+      Token = HMAC_SHA256( Normalizar(Identificador) , Pepper_Secreto_KMS_256bits )
+    </div>
+  </div>
+
+  <div class="avoid-break">
+    <h3>2. Cómo se calcula el Score de Riesgo (0 a 100):</h3>
+    <p>El motor pondera automáticamente 5 dimensiones matemáticas:</p>
+    <ul>
+      <li><strong>Severidad del Antecedente:</strong> Cuenta Mula confirmada (90 pts base), Fraude (95 pts), Robo Identidad (80 pts), Phishing (60 pts).</li>
+      <li><strong>Efecto Red Multientidad:</strong> Si un mismo DNI/CBU/Dispositivo aparece en 2 bancos el score se multiplica por <strong>1.25x</strong>; en 3 bancos por <strong>1.50x</strong>; y en 4 o más entidades por <strong>1.80x</strong>.</li>
+      <li><strong>Piso Crítico por Granja de Dispositivos:</strong> Si un mismo teléfono/navegador se detecta operando con 3 o más CUITs distintos en poco tiempo, se impone un <strong>piso automático de 85 puntos</strong>.</li>
+      <li><strong>Inteligencia de Email:</strong> Penaliza emails de dominios temporales/descartables (+40 pts) o dominios sin registro MX (+35 pts).</li>
+      <li><strong>Decaimiento Temporal (180 días):**</strong> Las incidencias pierden peso logarítmicamente mes a mes si el titular no reincide.</li>
+    </ul>
+
+    <h3>3. Decisiones y Recomendaciones Operativas:</h3>
+    <div class="score-cards">
+      <div class="score-card green">
+        <div class="score-card-title">Bajo Riesgo</div>
+        <div class="score-range">0 - 34 pts</div>
+        <div class="score-action"><strong>APROBAR:</strong> Transacción legítima aprobada sin fricción. Sin anomalías en red.</div>
+      </div>
+      <div class="score-card yellow">
+        <div class="score-card-title">Riesgo Medio</div>
+        <div class="score-range">35 - 74 pts</div>
+        <div class="score-action"><strong>REVISIÓN / FRICCIÓN:</strong> Desafío 2FA biométrico obligatorio o diferimiento de acreditación por 2hs.</div>
+      </div>
+      <div class="score-card red">
+        <div class="score-card-title">Riesgo Crítico</div>
+        <div class="score-range">75 - 100 pts</div>
+        <div class="score-action"><strong>BLOQUEO AUTOMÁTICO:</strong> Rechazo de transferencia, congelamiento preventivo y alerta federal.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECCIÓN B -->
+  <div class="avoid-break">
+    <h2><span class="section-letter">B</span> Funcionalidades Actuales y Estado de Madurez</h2>
+    
+    <h3>1. Portal Empresa / Bancos Participantes (<code>#partner-portal</code> / <code>/bancos</code>)</h3>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 28%;">Funcionalidad</th>
+          <th style="width: 57%;">Descripción Operativa</th>
+          <th style="width: 15%; text-align: center;">Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Consulta de Riesgo Individual</strong></td>
+          <td>Búsqueda por DNI, CBU/CVU, Email, Teléfono o Device con autodetección de campo y validación sintáctica BCRA/AFIP.</td>
+          <td style="text-align: center;"><span class="badge badge-ok">Funciona</span></td>
+        </tr>
+        <tr>
+          <td><strong>Separación Visual de Riesgo</strong></td>
+          <td>Pantalla dividida en 2 columnas paralelas: <em>Riesgo Propio</em> (antecedentes internos) vs <em>Riesgo en Red</em> (consorcio).</td>
+          <td style="text-align: center;"><span class="badge badge-ok">Funciona</span></td>
+        </tr>
+        <tr>
+          <td><strong>Reporte en 2 Pasos</strong></td>
+          <td>Previsualización con tokens ciegos generados antes de confirmar la carga de fraude en el consorcio.</td>
+          <td style="text-align: center;"><span class="badge badge-ok">Funciona</span></td>
+        </tr>
+        <tr>
+          <td><strong>Desmarque Inmediato</strong></td>
+          <td>Botón post-reporte para retirar o rectificar voluntariamente un reporte erróneo en tiempo real.</td>
+          <td style="text-align: center;"><span class="badge badge-ok">Funciona</span></td>
+        </tr>
+        <tr>
+          <td><strong>Dashboard y Tasa Crítica</strong></td>
+          <td>Tarjetas de KPIs calculadas sobre el día actual (Aprobadas/Revisión/Rechazadas) con tasa acotada [0-100%].</td>
+          <td style="text-align: center;"><span class="badge badge-ok">Funciona</span></td>
+        </tr>
+        <tr>
+          <td><strong>Evaluación Masiva CSV</strong></td>
+          <td>Carga de lotes de transferencias para scoring en cliente.</td>
+          <td style="text-align: center;"><span class="badge badge-partial">Parcial</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>2. Portal de Gobernanza Central / Consorcio (<code>#admin-portal</code> / <code>/admin</code>)</h3>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 28%;">Funcionalidad</th>
+          <th style="width: 57%;">Descripción Operativa</th>
+          <th style="width: 15%; text-align: center;">Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Segundo Factor (2FA TOTP)</strong></td>
+          <td>Google Authenticator / Authy obligatorio con almacenamiento persistente en Supabase (cero reseteos en actualizaciones).</td>
+          <td style="text-align: center;"><span class="badge badge-ok">Funciona</span></td>
+        </tr>
+        <tr>
+          <td><strong>Gestión y Cuarentena</strong></td>
+          <td>Monitoreo de bancos miembros y botón de suspensión administrativa inmediata por WebSockets.</td>
+          <td style="text-align: center;"><span class="badge badge-ok">Funciona</span></td>
+        </tr>
+        <tr>
+          <td><strong>Laboratorio de Calibración</strong></td>
+          <td>Ajuste dinámico de umbrales críticos y pesos de scoring guardados en base de datos.</td>
+          <td style="text-align: center;"><span class="badge badge-ok">Funciona</span></td>
+        </tr>
+        <tr>
+          <td><strong>Auditoría Inmutable</strong></td>
+          <td>Trazabilidad de cada consulta y reporte con marca temporal, actor y motivo para auditorías BCRA.</td>
+          <td style="text-align: center;"><span class="badge badge-ok">Funciona</span></td>
+        </tr>
+        <tr>
+          <td><strong>Explorador de Grafos (3 Saltos)</strong></td>
+          <td>Visualización de redes de mulas interconectadas.</td>
+          <td style="text-align: center;"><span class="badge badge-partial">Parcial (&gt;10k nodos)</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- SECCIÓN C -->
+  <div class="avoid-break">
+    <h2><span class="section-letter">C</span> Limitaciones y Riesgos Detectados</h2>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+      <div class="highlight-box" style="margin: 0;">
+        <strong style="color: #0f172a;">1. Seguridad y Criptografía:</strong>
+        <p style="margin-top: 4px; font-size: 8.5pt;">
+          El Pepper secreto para blind indexing actualmente está en variables de entorno seguras. Para producción bancaria debe residir en un <strong>HSM FIPS 140-2 (AWS CloudHSM / Azure Managed HSM)</strong> con rotación periódica.
+        </p>
+      </div>
+      <div class="highlight-box" style="margin: 0;">
+        <strong style="color: #0f172a;">2. Calibración con Datos Reales:</strong>
+        <p style="margin-top: 4px; font-size: 8.5pt;">
+          Hoy el consorcio opera con incidentes de validación. Es fundamental realizar un piloto con <strong>lotes históricos reales anonimizados</strong> provistos por bancos socios para calibrar falsos positivos antes de ir a producción.
+        </p>
+      </div>
+      <div class="highlight-box" style="margin: 0;">
+        <strong style="color: #0f172a;">3. Marco Legal y Habeas Data:</strong>
+        <p style="margin-top: 4px; font-size: 8.5pt;">
+          Se requiere instrumentar el <strong>Convenio de Adhesión Interbancario de Co-Responsabilidad (Ley 25.326)</strong> y un protocolo formal de rectificación judicial cuando un cliente demuestre ser víctima de usurpación.
+        </p>
+      </div>
+      <div class="highlight-box" style="margin: 0;">
+        <strong style="color: #0f172a;">4. Escalabilidad en Picos Masivos:</strong>
+        <p style="margin-top: 4px; font-size: 8.5pt;">
+          La latencia actual a Supabase es óptima (11-14ms). Para volúmenes de compensación nacional masiva (500 tx/seg) se requerirán réplicas de lectura en Edge con caché Redis/Dragonfly.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECCIÓN D -->
+  <div class="avoid-break">
+    <h2><span class="section-letter">D</span> Puntos de Mejora Priorizados</h2>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 14%; text-align: center;">Prioridad</th>
+          <th style="width: 32%;">Iniciativa / Mejora</th>
+          <th style="width: 38%;">Justificación Técnica y Operativa</th>
+          <th style="width: 16%; text-align: center;">Esfuerzo</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="text-align: center;"><span class="badge badge-alta">ALTA</span></td>
+          <td><strong>Conexión a HSM / KMS Bancario</strong></td>
+          <td>Custodia de clave Pepper de Blind Indexing en bóveda física o HSM en nube. Excluyente para CISO.</td>
+          <td style="text-align: center;">2 semanas</td>
+        </tr>
+        <tr>
+          <td style="text-align: center;"><span class="badge badge-alta">ALTA</span></td>
+          <td><strong>API Asíncrona de Consulta Masiva</strong></td>
+          <td>Endpoint backend para que los motores centrales de los bancos consulten en &lt;20ms por webhook.</td>
+          <td style="text-align: center;">1.5 semanas</td>
+        </tr>
+        <tr>
+          <td style="text-align: center;"><span class="badge badge-alta">ALTA</span></td>
+          <td><strong>Protocolo de Desmarque Judicial</strong></td>
+          <td>Flujo formal de remediación para sobreseídos o víctimas de usurpación con auditoría pericial.</td>
+          <td style="text-align: center;">1 semana</td>
+        </tr>
+        <tr>
+          <td style="text-align: center;"><span class="badge badge-media">MEDIA</span></td>
+          <td><strong>Optimización del Visor de Grafos</strong></td>
+          <td>Paginación y renderizado virtual para clústeres de más de 20.000 vínculos simultáneos.</td>
+          <td style="text-align: center;">1.5 semanas</td>
+        </tr>
+        <tr>
+          <td style="text-align: center;"><span class="badge badge-media">MEDIA</span></td>
+          <td><strong>Integración con Denuncias UFECI</strong></td>
+          <td>Ingesta tokenizada de denuncias penales del Ministerio Público Fiscal para enriquecer la blacklist.</td>
+          <td style="text-align: center;">2 semanas</td>
+        </tr>
+        <tr>
+          <td style="text-align: center;"><span class="badge badge-baja">BAJA</span></td>
+          <td><strong>Certificados Periciales en PDF</strong></td>
+          <td>Exportación de informes con firma hash SHA-256 para presentación directa en juzgados o fiscalías.</td>
+          <td style="text-align: center;">1 semana</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- SECCIÓN E -->
+  <div class="avoid-break">
+    <h2><span class="section-letter">E</span> Preguntas Clave para la Experta en Fraude (Guía de Entrevista)</h2>
+    <p style="font-size: 8.5pt; color: #64748b; margin-bottom: 8px;">
+      Utilizar estas preguntas directas durante la reunión para consensuar las reglas de negocio bancarias:
+    </p>
+
+    <div class="question-card">
+      <div class="question-title">1. Señales y Patrones Críticos de Fraude</div>
+      <ul class="question-list">
+        <li>¿Cuáles son hoy los 3 patrones de fraude de mayor crecimiento y pérdida en su entidad (toma de home banking por vishing, apertura masiva de cuentas mulas remuneradas, préstamos preconcedidos express)?</li>
+        <li>¿Qué atributo consideran más predictivo de una cuenta mula: el CBU/CVU de destino o la huella de dispositivo compartido (Device Fingerprint)?</li>
+      </ul>
+    </div>
+
+    <div class="question-card">
+      <div class="question-title">2. Validación de "Fraude" vs. "Sospecha Fundada"</div>
+      <ul class="question-list">
+        <li>¿Qué estándar probatorio interno exige el banco antes de marcar un CBU en el consorcio (denuncia policial del cliente, pericia forense, o basta la confirmación de la víctima)?</li>
+        <li>¿Qué metadatos adicionales consideran indispensables compartir (hora exacta, monto involucrado, canal APP/Web)?</li>
+      </ul>
+    </div>
+
+    <div class="question-card">
+      <div class="question-title">3. Tolerancia Operativa a Falsos Positivos vs. Falsos Negativos</div>
+      <ul class="question-list">
+        <li>En transferencias inmediatas (Transferencias 3.0), ¿cuál es la tasa máxima de falsos positivos que su centro de atención puede tolerar antes de que el costo de soporte supere las pérdidas por fraude?</li>
+        <li>¿Prefieren un modelo con alto recall (detectar todo indicio con más revisión manual) o alta precisión (bloquear solo ante certeza)?</li>
+      </ul>
+    </div>
+
+    <div class="question-card">
+      <div class="question-title">4. Bloqueo Automático vs. Fricción Dinámica</div>
+      <ul class="question-list">
+        <li>En operaciones críticas (&gt;75 pts), ¿su entidad autorizaría el rechazo automático de la transferencia saliente o prefieren forzar un desafío biométrico facial del titular y diferir la acreditación 2 horas?</li>
+      </ul>
+    </div>
+
+    <div class="question-card">
+      <div class="question-title">5. Regulación, Privacidad (Ley 25.326) y Prueba Piloto</div>
+      <ul class="question-list">
+        <li>¿Cómo evalúa el área de Legales y Compliance el uso de Blind Indexing (HMAC con Pepper KMS) donde el consorcio no custodia datos personales?</li>
+        <li>¿Estarían dispuestos a compartir un lote histórico de 500 cuentas de fraude cerrado (tokenizadas ciegamente) para calibrar el algoritmo antes de la integración en vivo?</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- SECCIÓN F -->
+  <div class="avoid-break">
+    <h2><span class="section-letter">F</span> Propuesta de Próximos Pasos y Roadmap en 3 Etapas</h2>
+
+    <div class="roadmap-stage">
+      <div class="roadmap-stage-header">
+        <div class="roadmap-stage-title">ETAPA 1: Calibración Heurística y Ajuste de Privacidad Bancaria</div>
+        <div class="roadmap-stage-duration">Semanas 1 a 4</div>
+      </div>
+      <p style="margin: 0; font-size: 8.5pt;">
+        • Concluir la mesa de trabajo con la especialista en fraude para ajustar pesos del scoring según tipologías locales.<br>
+        • Implementar la custodia de la clave Pepper en HSM Cloud (AWS CloudHSM o Azure Key Vault) con Blind Indexing FIPS 140-2.<br>
+        • Ejecutar pruebas con lote histórico tokenizado ciegamente provisto por los bancos para medir y acotar falsos positivos.<br>
+        <em><strong>Entregables:</strong> Matriz de scoring calibrada, reporte de no-falsos positivos y dictamen de cumplimiento Ley 25.326.</em>
+      </p>
+    </div>
+
+    <div class="roadmap-stage">
+      <div class="roadmap-stage-header">
+        <div class="roadmap-stage-title">ETAPA 2: Piloto Técnico Controlado en Red Privada (3 Entidades)</div>
+        <div class="roadmap-stage-duration">Semanas 5 a 9</div>
+      </div>
+      <p style="margin: 0; font-size: 8.5pt;">
+        • Conexión de 3 entidades financieras en sandbox seguro interbancario mediante API Gateway con autenticación mTLS.<br>
+        • Simulación de ataques coordinados: inyección de cuentas mulas en un banco y verificación de alerta en &lt;20ms en los otros dos.<br>
+        • Medición del impacto operativo en la cola de trabajo de los analistas de fraude.<br>
+        <em><strong>Entregables:</strong> Certificado de latencia en estrés (&lt;25ms p99) y reporte de intercepción multientidad.</em>
+      </p>
+    </div>
+
+    <div class="roadmap-stage">
+      <div class="roadmap-stage-header">
+        <div class="roadmap-stage-title">ETAPA 3: Homologación Regulatoria y Producción Federal</div>
+        <div class="roadmap-stage-duration">Semanas 10 a 16</div>
+      </div>
+      <p style="margin: 0; font-size: 8.5pt;">
+        • Presentación formal ante mesas de ciberseguridad del BCRA (cumplimiento Comunicaciones "A" 7724 y 6835).<br>
+        • Firma del Convenio Federal de Gobernanza y Confidencialidad entre bancos fundadores.<br>
+        • Despliegue de infraestructura productiva multizona con monitoreo 24/7 y apertura para la adhesión de nuevas entidades.<br>
+        <em><strong>Entregables:</strong> Plataforma en producción, consorcio operativo formal y tablero federal activo.</em>
+      </p>
+    </div>
+
+    <div class="highlight-box" style="margin-top: 14px; text-align: center; font-size: 9pt;">
+      <strong>Plataforma disponible para demostración en vivo durante la reunión:</strong><br>
+      <a href="https://antifraude-one.vercel.app" style="color: #0284c7; font-weight: 700; text-decoration: none;">https://antifraude-one.vercel.app</a>
+      <span style="color: #64748b; margin-left: 8px;">(Acceso: Portal Bancos / Gobernanza con 2FA activo)</span>
+    </div>
+  </div>
+
+</body>
+</html>
