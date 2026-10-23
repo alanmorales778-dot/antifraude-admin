@@ -66,6 +66,7 @@ export const SEED_APP_USERS: AppUser[] = [
     entityName: 'Gobernanza Central',
     status: 'ACTIVE',
     totpEnrolled: true,
+    totpSecret: 'JBSWY3DPEHPK3PXP',
     createdAt: '2026-09-01T10:00:00Z',
     lastLogin: new Date().toISOString(),
   },
@@ -77,6 +78,7 @@ export const SEED_APP_USERS: AppUser[] = [
     entityName: 'Gobernanza Central',
     status: 'ACTIVE',
     totpEnrolled: true,
+    totpSecret: 'D7LQGZE4QU3SN7QV4MYZ4MM5TPHZWMWL',
     createdAt: '2026-09-01T10:00:00Z',
     lastLogin: new Date().toISOString(),
   },
@@ -395,15 +397,24 @@ export const useConsortiumStore = create<ConsortiumStore>()(
               const cleanUsers = (remoteData.appUsers && remoteData.appUsers.length > 0 ? remoteData.appUsers : get().appUsers).filter(
                 u => u.entityId !== 'banco-beta' && u.entityId !== 'fintech-alpha'
               ).map(u => {
+                const localUser = get().appUsers?.find(lu => lu.email.toLowerCase() === u.email.toLowerCase());
                 const isFounderAdmin = u.email.toLowerCase() === 'andresalaniz8@gmail.com' || u.email.toLowerCase() === 'alan.morales778@gmail.com';
-                if (isFounderAdmin && !u.totpEnrolled) {
-                  const healed = { ...u, totpEnrolled: true, totpSecret: u.totpSecret || 'JBSWY3DPEHPK3PXP' };
-                  if (SupabaseService.isAvailable()) {
-                    SupabaseService.persistUser(healed).catch(console.error);
-                  }
-                  return healed;
+                const founderDefaultSecret = u.email.toLowerCase() === 'alan.morales778@gmail.com' ? 'D7LQGZE4QU3SN7QV4MYZ4MM5TPHZWMWL' : 'JBSWY3DPEHPK3PXP';
+
+                // Preservar secreto previo: NUNCA pisar con null o undefined si ya existe local o remotamente
+                const secret = u.totpSecret || localUser?.totpSecret || (isFounderAdmin ? founderDefaultSecret : undefined);
+                const enrolled = Boolean(u.totpEnrolled || localUser?.totpEnrolled || (isFounderAdmin && secret));
+
+                const healed = {
+                  ...u,
+                  totpEnrolled: enrolled,
+                  totpSecret: secret,
+                };
+
+                if (isFounderAdmin && (!u.totpSecret || !u.totpEnrolled) && SupabaseService.isAvailable()) {
+                  SupabaseService.persistUser(healed).catch(console.error);
                 }
-                return u;
+                return healed;
               });
 
               // Preservar accesos autorizados y contactos locales de las entidades bancarias
@@ -1807,20 +1818,41 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           };
         }
 
-        // Si es un admin por defecto que aún no está en appUsers, crearlo
-        if (!existingUser && isDefaultAdmin) {
-          const newAdmin: AppUser = {
-            id: `usr-admin-${Date.now()}`,
-            email: cleanEmail,
-            role: 'admin',
-            entityId: 'CONSORCIO',
-            entityName: 'Gobernanza Central',
-            status: 'ACTIVE',
-            totpEnrolled: false,
-            createdAt: new Date().toISOString(),
-          };
-          set(s => ({ appUsers: [...s.appUsers, newAdmin] }));
-          existingUser = newAdmin;
+        const founderDefaultSecret = cleanEmail === 'alan.morales778@gmail.com' ? 'D7LQGZE4QU3SN7QV4MYZ4MM5TPHZWMWL' : 'JBSWY3DPEHPK3PXP';
+
+        // Si es un admin fundador, asegurar siempre enrolamiento y secreto persistente
+        if (isDefaultAdmin) {
+          if (!existingUser) {
+            const newAdmin: AppUser = {
+              id: cleanEmail === 'alan.morales778@gmail.com' ? 'usr-admin-2' : 'usr-admin-1',
+              email: cleanEmail,
+              role: 'admin',
+              entityId: 'CONSORCIO',
+              entityName: 'Gobernanza Central',
+              status: 'ACTIVE',
+              totpEnrolled: true,
+              totpSecret: founderDefaultSecret,
+              createdAt: new Date().toISOString(),
+            };
+            set(s => ({ appUsers: [...s.appUsers, newAdmin] }));
+            existingUser = newAdmin;
+          } else {
+            existingUser.totpEnrolled = true;
+            if (!existingUser.totpSecret) {
+              existingUser.totpSecret = founderDefaultSecret;
+            }
+          }
+        } else if ((!existingUser || !existingUser.totpSecret) && SupabaseService.isAvailable()) {
+          try {
+            const remoteRes = await supabaseFetch<any[]>(`app_users?email=eq.${encodeURIComponent(cleanEmail)}&limit=1`);
+            if (remoteRes.data && remoteRes.data.length > 0) {
+              const u = remoteRes.data[0];
+              if (existingUser) {
+                existingUser.totpEnrolled = Boolean(u.totp_enrolled);
+                existingUser.totpSecret = u.totp_secret || undefined;
+              }
+            }
+          } catch {}
         }
 
         // 2. Validación de Master Key o Contraseña (>= 6 caracteres)
@@ -2295,7 +2327,34 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         }
 
         // Control de Acceso: El usuario debe haber sido dado de alta previamente por un Administrador
-        const existingUser = state.appUsers.find(u => u.email.toLowerCase() === cleanEmail);
+        let existingUser = state.appUsers.find(u => u.email.toLowerCase() === cleanEmail);
+        if ((!existingUser || !existingUser.totpSecret) && SupabaseService.isAvailable()) {
+          try {
+            const remoteRes = await supabaseFetch<any[]>(`app_users?email=eq.${encodeURIComponent(cleanEmail)}&limit=1`);
+            if (remoteRes.data && remoteRes.data.length > 0) {
+              const u = remoteRes.data[0];
+              const restored: AppUser = {
+                id: u.id,
+                email: u.email,
+                role: u.role,
+                entityId: u.entity_id || entity.id,
+                entityName: u.entity_name || entity.name,
+                status: u.status || 'ACTIVE',
+                totpEnrolled: Boolean(u.totp_enrolled),
+                totpSecret: u.totp_secret || undefined,
+                createdAt: u.created_at || new Date().toISOString(),
+                lastLogin: u.last_login || undefined,
+              };
+              existingUser = restored;
+              set(s => ({
+                appUsers: s.appUsers.some(au => au.email.toLowerCase() === cleanEmail)
+                  ? s.appUsers.map(au => au.email.toLowerCase() === cleanEmail ? restored : au)
+                  : [...s.appUsers, restored]
+              }));
+            }
+          } catch {}
+        }
+
         if (!existingUser) {
           return {
             success: false,
@@ -2448,6 +2507,7 @@ export const useConsortiumStore = create<ConsortiumStore>()(
         const state = get();
         let existingUser = state.appUsers.find(u => u.email.toLowerCase() === cleanEmail);
         const isDefaultAdmin = cleanEmail === 'andresalaniz8@gmail.com' || cleanEmail === 'alan.morales778@gmail.com';
+        const founderDefaultSecret = cleanEmail === 'alan.morales778@gmail.com' ? 'D7LQGZE4QU3SN7QV4MYZ4MM5TPHZWMWL' : 'JBSWY3DPEHPK3PXP';
 
         // Encontrar si este email pertenece a alguna entidad en fintechs (vía authorizedEmails o contactEmail)
         const matchingFintech = state.fintechs.find(f =>
@@ -2463,6 +2523,36 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           };
         }
 
+        // Si no está en memoria o no tiene totpSecret, consultar Supabase
+        if ((!existingUser || !existingUser.totpSecret) && SupabaseService.isAvailable()) {
+          try {
+            const remoteRes = await supabaseFetch<any[]>(`app_users?email=eq.${encodeURIComponent(cleanEmail)}&limit=1`);
+            if (remoteRes.data && remoteRes.data.length > 0) {
+              const u = remoteRes.data[0];
+              const restored: AppUser = {
+                id: u.id,
+                email: u.email,
+                role: u.role,
+                entityId: u.entity_id || 'CONSORCIO',
+                entityName: u.entity_name || 'Gobernanza Central',
+                status: u.status || 'ACTIVE',
+                totpEnrolled: Boolean(u.totp_enrolled),
+                totpSecret: u.totp_secret || (isDefaultAdmin ? founderDefaultSecret : undefined),
+                createdAt: u.created_at || new Date().toISOString(),
+                lastLogin: u.last_login || undefined,
+              };
+              existingUser = restored;
+              set(s => ({
+                appUsers: s.appUsers.some(au => au.email.toLowerCase() === cleanEmail)
+                  ? s.appUsers.map(au => au.email.toLowerCase() === cleanEmail ? restored : au)
+                  : [...s.appUsers, restored]
+              }));
+            }
+          } catch (err) {
+            console.warn('Error recuperando usuario en loginUnified:', err);
+          }
+        }
+
         if (existingUser && existingUser.status === 'SUSPENDED') {
           return {
             success: false,
@@ -2470,36 +2560,42 @@ export const useConsortiumStore = create<ConsortiumStore>()(
           };
         }
 
-        // Si el usuario no existe en memoria local aún, registrarlo automáticamente
-        if (!existingUser) {
-          if (isDefaultAdmin && targetPortal === 'admin') {
+        // Si es fundador, asegurar 2FA siempre activo y con su secreto
+        if (isDefaultAdmin) {
+          if (!existingUser) {
             const newAdmin: AppUser = {
-              id: `usr-admin-${Date.now()}`,
+              id: cleanEmail === 'alan.morales778@gmail.com' ? 'usr-admin-2' : 'usr-admin-1',
               email: cleanEmail,
               role: 'admin',
               entityId: 'CONSORCIO',
               entityName: 'Gobernanza Central',
               status: 'ACTIVE',
-              totpEnrolled: false,
+              totpEnrolled: true,
+              totpSecret: founderDefaultSecret,
               createdAt: new Date().toISOString(),
             };
             set(s => ({ appUsers: [...s.appUsers, newAdmin] }));
             existingUser = newAdmin;
           } else {
-            const assignedEntity = matchingFintech || state.fintechs.find(f => f.id === selectedEntityId) || state.fintechs[0];
-            const newBankUser: AppUser = {
-              id: `usr-partner-${Date.now()}`,
-              email: cleanEmail,
-              role: 'usuario',
-              entityId: assignedEntity?.id || 'banco-participante',
-              entityName: assignedEntity?.name || 'Entidad Bancaria Participante',
-              status: 'ACTIVE',
-              totpEnrolled: false,
-              createdAt: new Date().toISOString(),
-            };
-            set(s => ({ appUsers: [...s.appUsers, newBankUser] }));
-            existingUser = newBankUser;
+            existingUser.totpEnrolled = true;
+            if (!existingUser.totpSecret) {
+              existingUser.totpSecret = founderDefaultSecret;
+            }
           }
+        } else if (!existingUser) {
+          const assignedEntity = matchingFintech || state.fintechs.find(f => f.id === selectedEntityId) || state.fintechs[0];
+          const newBankUser: AppUser = {
+            id: `usr-partner-${Date.now()}`,
+            email: cleanEmail,
+            role: 'usuario',
+            entityId: assignedEntity?.id || 'banco-participante',
+            entityName: assignedEntity?.name || 'Entidad Bancaria Participante',
+            status: 'ACTIVE',
+            totpEnrolled: false,
+            createdAt: new Date().toISOString(),
+          };
+          set(s => ({ appUsers: [...s.appUsers, newBankUser] }));
+          existingUser = newBankUser;
         }
 
         // 2. Validación de contraseña (mínimo 6 caracteres)
