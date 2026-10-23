@@ -1,3 +1,4 @@
+// QA Build Verification: release-v2.1.4-qa-persist
 // ─────────────────────────────────────────────────────────────────
 // INTERFACES DEL SPEC (Store Client-Side / fraudEngine.ts)
 // ─────────────────────────────────────────────────────────────────
